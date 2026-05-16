@@ -1,14 +1,22 @@
 import { BlockList, isIP } from "node:net";
 import type { Request, RequestHandler } from "express";
+import jwt, { type JwtPayload } from "jsonwebtoken";
 import { env } from "../config/env";
 import type { UserService } from "../modules/user/user.service";
 import type { UserRole } from "../shared/types/auth";
 
 const REQUIRED_COE_HEADERS = ["x-coe-email", "x-coe-name", "x-coe-role", "x-coe-status"] as const;
+const COE_TOKEN_COOKIE_NAMES = ["coe_shared_token", "coe_token", "coe_jwt", "coe_auth_token"] as const;
 const ACTIVE_STATUS = "ACTIVE";
 
 type CoeHeaderRole = "ADMIN" | "FACULTY" | "INDUSTRY" | "STUDENT";
 type CoeHeaderName = (typeof REQUIRED_COE_HEADERS)[number];
+type CoeTokenPayload = {
+  email: string;
+  name: string;
+  role: CoeHeaderRole;
+  status: string;
+};
 
 const ALLOWED_COE_ROLES = new Set<CoeHeaderRole>(["ADMIN", "FACULTY", "INDUSTRY", "STUDENT"]);
 
@@ -26,6 +34,27 @@ function normalizeHeaderValue(rawValue: unknown): string {
 
 function getHeaderValue(req: Request, headerName: CoeHeaderName): string {
   return normalizeHeaderValue(req.headers[headerName]);
+}
+
+function getCoeTokenFromRequest(req: Request): string {
+  const explicitHeaderToken = normalizeHeaderValue(req.headers["x-coe-token"]);
+  if (explicitHeaderToken) {
+    return explicitHeaderToken;
+  }
+
+  const authorizationHeader = normalizeHeaderValue(req.headers.authorization);
+  if (authorizationHeader.toLowerCase().startsWith("bearer ")) {
+    return authorizationHeader.slice("bearer ".length).trim();
+  }
+
+  for (const cookieName of COE_TOKEN_COOKIE_NAMES) {
+    const cookieToken = normalizeHeaderValue(req.cookies?.[cookieName]);
+    if (cookieToken) {
+      return cookieToken;
+    }
+  }
+
+  return "";
 }
 
 function normalizeRole(rawRole: string): CoeHeaderRole | null {
@@ -53,6 +82,47 @@ function maskEmail(email: string): string {
 
   const visible = local.slice(0, 2);
   return `${visible}${"*".repeat(Math.max(local.length - visible.length, 0))}@${domain}`;
+}
+
+function defaultNameFromEmail(email: string): string {
+  const localPart = email.split("@")[0]?.trim();
+  return localPart || email;
+}
+
+function decodeAndValidateToken(token: string): CoeTokenPayload | null {
+  const secret = env.COE_JWT_SECRET.trim();
+  if (!secret || !token) {
+    return null;
+  }
+
+  let payload: JwtPayload | string;
+  try {
+    payload = jwt.verify(token, secret, {
+      algorithms: ["HS256"],
+    });
+  } catch {
+    return null;
+  }
+
+  if (!payload || typeof payload === "string") {
+    return null;
+  }
+
+  const email = normalizeHeaderValue(payload.email).toLowerCase();
+  const normalizedRole = normalizeRole(normalizeHeaderValue(payload.role));
+  const status = normalizeHeaderValue(payload.status).toUpperCase();
+  const tokenName = normalizeHeaderValue(payload.name);
+
+  if (!email || !normalizedRole || !status || !isValidEmail(email)) {
+    return null;
+  }
+
+  return {
+    email,
+    role: normalizedRole,
+    status,
+    name: tokenName || defaultNameFromEmail(email),
+  };
 }
 
 function parseTrustedProxyEntries(entries: string[]): BlockList {
@@ -106,7 +176,12 @@ function isTrustedProxySource(req: Request, trustedProxyBlockList: BlockList): b
 }
 
 function logSecurityEvent(
-  event: "auth_missing_headers" | "auth_inactive_user" | "auth_invalid_header_payload" | "auth_untrusted_proxy",
+  event:
+    | "auth_missing_headers"
+    | "auth_inactive_user"
+    | "auth_invalid_header_payload"
+    | "auth_invalid_token_payload"
+    | "auth_untrusted_proxy",
   req: Request,
   details: Record<string, unknown> = {},
 ): void {
@@ -152,53 +227,77 @@ export function createAuthMiddleware(userService: Pick<UserService, "syncAuthent
       const status = getHeaderValue(req, "x-coe-status").toUpperCase();
 
       const missingHeaders = REQUIRED_COE_HEADERS.filter((headerName) => getHeaderValue(req, headerName) === "");
-      if (missingHeaders.length > 0) {
-        logSecurityEvent("auth_missing_headers", req, {
-          missingHeaders,
+      let authenticatedEmail = email;
+      let authenticatedName = name;
+      let authenticatedRole: CoeHeaderRole | null = null;
+      let authenticatedStatus = status;
+
+      if (missingHeaders.length === 0) {
+        if (!isValidEmail(email)) {
+          logSecurityEvent("auth_invalid_header_payload", req, {
+            message: "Invalid x-coe-email format.",
+            email,
+          });
+          res.status(401).json({ message: "Unauthorized: invalid authentication headers." });
+          return;
+        }
+
+        authenticatedRole = normalizeRole(roleHeader);
+        if (!authenticatedRole) {
+          logSecurityEvent("auth_invalid_header_payload", req, {
+            message: "Invalid x-coe-role value.",
+            roleHeader,
+            email: maskEmail(email),
+          });
+          res.status(401).json({ message: "Unauthorized: invalid authentication headers." });
+          return;
+        }
+      } else {
+        const token = getCoeTokenFromRequest(req);
+        const tokenPayload = decodeAndValidateToken(token);
+
+        if (!tokenPayload) {
+          logSecurityEvent("auth_missing_headers", req, {
+            missingHeaders,
+            hasToken: token !== "",
+          });
+          res.status(401).json({ message: "Unauthorized: missing authentication headers." });
+          return;
+        }
+
+        authenticatedEmail = tokenPayload.email;
+        authenticatedName = tokenPayload.name;
+        authenticatedRole = tokenPayload.role;
+        authenticatedStatus = tokenPayload.status;
+      }
+
+      if (authenticatedRole === null) {
+        logSecurityEvent("auth_invalid_token_payload", req, {
+          message: "Token did not contain a valid role.",
         });
-        res.status(401).json({ message: "Unauthorized: missing authentication headers." });
+        res.status(401).json({ message: "Unauthorized: invalid authentication token." });
         return;
       }
 
-      if (!isValidEmail(email)) {
-        logSecurityEvent("auth_invalid_header_payload", req, {
-          message: "Invalid x-coe-email format.",
-          email,
-        });
-        res.status(401).json({ message: "Unauthorized: invalid authentication headers." });
-        return;
-      }
-
-      const normalizedRole = normalizeRole(roleHeader);
-      if (!normalizedRole) {
-        logSecurityEvent("auth_invalid_header_payload", req, {
-          message: "Invalid x-coe-role value.",
-          roleHeader,
-          email: maskEmail(email),
-        });
-        res.status(401).json({ message: "Unauthorized: invalid authentication headers." });
-        return;
-      }
-
-      if (status !== ACTIVE_STATUS) {
+      if (authenticatedStatus !== ACTIVE_STATUS) {
         logSecurityEvent("auth_inactive_user", req, {
-          email: maskEmail(email),
-          status,
+          email: maskEmail(authenticatedEmail),
+          status: authenticatedStatus,
         });
-        res.status(403).json({ message: `Account is ${status || "NOT_ACTIVE"}.` });
+        res.status(403).json({ message: `Account is ${authenticatedStatus || "NOT_ACTIVE"}.` });
         return;
       }
 
       const resolvedUser = await userService.syncAuthenticatedUser({
-        email,
-        role: mapCoeRoleToPlatformRole(normalizedRole),
-        name,
+        email: authenticatedEmail,
+        role: mapCoeRoleToPlatformRole(authenticatedRole),
+        name: authenticatedName || defaultNameFromEmail(authenticatedEmail),
       });
 
       req.user = {
         email: resolvedUser.email,
         role: resolvedUser.role,
-        name: resolvedUser.name ?? name,
+        name: resolvedUser.name ?? authenticatedName,
       };
 
       return next();

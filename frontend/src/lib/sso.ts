@@ -7,7 +7,7 @@ function resolveSsoBaseUrl(): string {
   }
 
   if (typeof window === "undefined") {
-    return "http://localhost:4000";
+    return "https://tcetcercd.in/login";
   }
 
   return `${window.location.protocol}//${window.location.hostname}:4000`;
@@ -15,7 +15,7 @@ function resolveSsoBaseUrl(): string {
 
 export function getMockSsoLoginUrl(): string {
   if (typeof window === "undefined") {
-    return "http://localhost:4000/login?callbackUrl=http%3A%2F%2Flocalhost%3A3001%2Fapi%2Fauth%2Fsso%2Fcallback%3FfrontendOrigin%3Dhttp%253A%252F%252Flocalhost%253A5173";
+    return "https://tcetcercd.in/login";
   }
 
   const backendBaseUrl = getApiBaseUrl();
