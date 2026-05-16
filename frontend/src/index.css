@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* TCET Light - Ivory + Navy + Coral */
+    --background: 42 40% 97%;
+    --foreground: 218 58% 16%;
+
+    --card: 40 44% 99%;
+    --card-foreground: 218 58% 16%;
+
+    --popover: 40 44% 99%;
+    --popover-foreground: 218 58% 16%;
+
+    --primary: 214 84% 46%;
+    --primary-foreground: 40 44% 99%;
+
+    --secondary: 42 26% 91%;
+    --secondary-foreground: 218 58% 16%;
+
+    --muted: 42 24% 92%;
+    --muted-foreground: 217 17% 39%;
+
+    --accent: 12 73% 55%;
+    --accent-foreground: 40 44% 99%;
+
+    --gold: 44 90% 52%;
+    --gold-foreground: 218 58% 16%;
+
+    --success: 142 70% 40%;
+    --success-foreground: 0 0% 100%;
+    --warning: 44 90% 52%;
+    --warning-foreground: 218 58% 16%;
+    --destructive: 0 75% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 219 22% 86%;
+    --input: 219 22% 86%;
+    --ring: 12 73% 55%;
+
+    --radius: 0rem;
+
+    --gradient-hero: linear-gradient(135deg, hsl(214 66% 24%), hsl(207 74% 34%));
+    --gradient-accent: linear-gradient(135deg, hsl(12 73% 55%), hsl(36 90% 56%));
+    --shadow-card: 0 4px 20px -8px hsl(218 58% 16% / 0.12);
+    --shadow-elevated: 0 10px 40px -12px hsl(218 58% 16% / 0.25);
+  }
+
+  .dark {
+    /* TCET Dark - Deep Indigo + Teal */
+    --background: 222 32% 10%;
+    --foreground: 210 40% 96%;
+
+    --card: 224 30% 14%;
+    --card-foreground: 210 40% 96%;
+
+    --popover: 224 30% 14%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 191 91% 55%;
+    --primary-foreground: 222 32% 10%;
+
+    --secondary: 222 24% 21%;
+    --secondary-foreground: 210 40% 96%;
+
+    --muted: 222 24% 18%;
+    --muted-foreground: 214 18% 72%;
+
+    --accent: 167 68% 46%;
+    --accent-foreground: 222 32% 10%;
+
+    --gold: 44 90% 60%;
+    --gold-foreground: 222 32% 10%;
+
+    --success: 142 65% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 44 90% 60%;
+    --warning-foreground: 222 32% 10%;
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 223 20% 24%;
+    --input: 223 20% 24%;
+    --ring: 167 68% 46%;
+
+    --radius: 0rem;
+
+    --gradient-hero: linear-gradient(135deg, hsl(226 52% 18%), hsl(200 56% 24%));
+    --gradient-accent: linear-gradient(135deg, hsl(167 68% 46%), hsl(191 91% 55%));
+    --shadow-card: 0 4px 20px -8px hsl(222 60% 4% / 0.55);
+    --shadow-elevated: 0 10px 40px -12px hsl(222 60% 4% / 0.72);
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-feature-settings: "ss01", "cv11";
+    background-image:
+      radial-gradient(circle at 16% 8%, hsl(var(--primary) / 0.15), transparent 30%),
+      radial-gradient(circle at 84% 12%, hsl(var(--accent) / 0.12), transparent 36%),
+      repeating-linear-gradient(135deg, hsl(var(--muted-foreground) / 0.08) 0 1px, transparent 1px 20px);
+    background-size: auto, auto, 20px 20px;
+    background-attachment: fixed;
+  }
+  .dark body {
+    background-image:
+      radial-gradient(circle at 16% 8%, hsl(var(--primary) / 0.12), transparent 32%),
+      radial-gradient(circle at 84% 12%, hsl(var(--accent) / 0.11), transparent 38%),
+      repeating-linear-gradient(135deg, hsl(var(--muted-foreground) / 0.1) 0 1px, transparent 1px 22px);
+  }
+  h1,h2,h3,h4 { font-family: 'Fraunces', 'Playfair Display', Georgia, serif; letter-spacing: -0.01em; }
+}
+
+@layer utilities {
+  .bg-gradient-hero { background: var(--gradient-hero); }
+  .bg-gradient-accent { background: var(--gradient-accent); }
+  .shadow-card { box-shadow: var(--shadow-card); }
+  .shadow-elevated { box-shadow: var(--shadow-elevated); }
+  .font-display { font-family: 'Fraunces', 'Playfair Display', Georgia, serif; }
+  .font-mono-code { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+  .profile-shell {
+    background:
+      linear-gradient(145deg, hsl(var(--card) / 0.88), hsl(var(--card) / 0.7)),
+      hsl(var(--background));
+    border: 1px solid hsl(var(--border) / 0.8);
+  }
+  .profile-card {
+    background:
+      linear-gradient(160deg, hsl(var(--card) / 0.92), hsl(var(--card) / 0.8));
+    border: 1px solid hsl(var(--border) / 0.85);
+    box-shadow: var(--shadow-card);
+  }
+  .profile-table-header {
+    background: linear-gradient(90deg, hsl(var(--primary) / 0.14), hsl(var(--accent) / 0.12));
+  }
+  .dark .profile-table-header {
+    background: linear-gradient(90deg, hsl(var(--primary) / 0.2), hsl(var(--accent) / 0.18));
+  }
+}

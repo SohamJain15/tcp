@@ -1,0 +1,128 @@
+import cookieParser from "cookie-parser";
+import cors, { type CorsOptions } from "cors";
+import express, { type Express } from "express";
+import helmet from "helmet";
+import type { ApplicationDependencies } from "./bootstrap/dependencies";
+import { env } from "./config/env";
+import { createGlobalApiRateLimiter } from "./middleware/rate-limit";
+import { createLeaderboardRouter } from "./modules/leaderboard/leaderboard.routes";
+import { createProblemRouter } from "./modules/problem/problem.routes";
+import { createSubmissionRouter } from "./modules/submission/submission.routes";
+import { createContestRouter } from "./modules/contest/contest.routes";
+import { createAuthRouter, createLegacyUserRouter, createUserRouter } from "./modules/user/user.routes";
+import { errorHandler, notFoundHandler } from "./shared/middleware/error-handler";
+
+const DEFAULT_FRONTEND_HOME = "http://localhost:5173";
+
+function normalizeOrigin(origin: string): string {
+  return origin.trim().toLowerCase().replace(/\/$/, "");
+}
+
+function resolveAllowedOrigins(): Set<string> {
+  const configuredOrigins = env.corsOrigins.map(normalizeOrigin);
+  return new Set<string>([
+    normalizeOrigin(DEFAULT_FRONTEND_HOME),
+    ...configuredOrigins,
+    // Helpful local aliases for development when the browser uses 127.0.0.1.
+    ...configuredOrigins
+      .filter((origin) => origin.includes("localhost"))
+      .map((origin) => origin.replace("localhost", "127.0.0.1")),
+    normalizeOrigin(DEFAULT_FRONTEND_HOME.replace("localhost", "127.0.0.1")),
+  ]);
+}
+
+function resolveSafeFrontendOrigin(candidateOrigin: unknown, allowedOrigins: Set<string>): string {
+  if (typeof candidateOrigin !== "string" || candidateOrigin.trim() === "") {
+    return DEFAULT_FRONTEND_HOME;
+  }
+
+  const normalizedOrigin = normalizeOrigin(candidateOrigin);
+  return allowedOrigins.has(normalizedOrigin) ? normalizedOrigin : DEFAULT_FRONTEND_HOME;
+}
+
+function resolveCorsOptions(): CorsOptions {
+  const allowedOrigins = resolveAllowedOrigins();
+
+  return {
+    origin: (requestOrigin, callback) => {
+      // Allow non-browser callers (e.g. curl/postman/health checks)
+      if (!requestOrigin) {
+        callback(null, true);
+        return;
+      }
+
+      if (allowedOrigins.has(normalizeOrigin(requestOrigin))) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error("CORS origin not allowed"));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Frontend-Pathname",
+    ],
+  };
+}
+
+export function createApp(dependencies: ApplicationDependencies): Express {
+  const app = express();
+  app.set("trust proxy", true);
+  const corsOptions = resolveCorsOptions();
+  const allowedOrigins = resolveAllowedOrigins();
+  const globalLimiter = createGlobalApiRateLimiter();
+
+  app.disable("x-powered-by");
+  app.use(helmet());
+  app.use(cors(corsOptions));
+  // Express 5 rejects "*" here; use a regex to match all routes for preflight.
+  app.options(/.*/, cors(corsOptions));
+  app.use(cookieParser());
+  app.use(express.json({ limit: "100kb" }));
+  app.use("/api", globalLimiter);
+
+  app.get("/", (_req, res) => {
+    res.json({
+      status: "ok",
+      service: "tcet-code-studio-backend",
+    });
+  });
+
+  app.get("/health", (_req, res) => {
+    res.json({ ok: true });
+  });
+
+  if (dependencies.databaseHealthcheck) {
+    app.get("/test-db", async (_req, res, next) => {
+      try {
+        await dependencies.databaseHealthcheck?.();
+        res.send("Database working");
+      } catch (error) {
+        next(error);
+      }
+    });
+  }
+
+  app.get("/api/logout", (req, res) => {
+    const ssoLogoutUrl = new URL("/logout", env.COE_AUTH_BASE_URL).toString();
+    const frontendOrigin = resolveSafeFrontendOrigin(req.get("origin"), allowedOrigins);
+    const callbackUrl = encodeURIComponent(frontendOrigin);
+    res.redirect(302, `${ssoLogoutUrl}?callbackUrl=${callbackUrl}`);
+  });
+
+  app.use("/api/auth", createAuthRouter(dependencies));
+  app.use("/api/users", createUserRouter(dependencies));
+  app.use("/api/user", createLegacyUserRouter(dependencies));
+  app.use("/api/problems", createProblemRouter(dependencies));
+  app.use("/api/contests", createContestRouter(dependencies));
+  app.use("/api/submissions", createSubmissionRouter(dependencies));
+  app.use("/api/leaderboard", createLeaderboardRouter(dependencies));
+
+  app.use(notFoundHandler);
+  app.use(errorHandler);
+
+  return app;
+}
