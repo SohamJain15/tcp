@@ -98,6 +98,8 @@ export default function FacultyContestDetail() {
   const standings = standingsQuery.data?.items ?? [];
   const attempts = attemptsQuery.data?.items ?? [];
   const review = reviewQuery.data?.review ?? null;
+  const contestDeadline = new Date(new Date(contest.startAt).getTime() + contest.durationMinutes * 60_000);
+  const contestEnded = Date.now() >= contestDeadline.getTime();
 
   return (
     <AppLayout>
@@ -124,17 +126,31 @@ export default function FacultyContestDetail() {
               <Link to={`/faculty/contests/${id}/edit`}>Edit Contest</Link>
             </Button>
             {!contest.resultsPublished && (
-              <Button className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => publishMutation.mutate()} disabled={publishMutation.isPending}>
+              <Button
+                className="bg-accent text-accent-foreground hover:bg-accent/90"
+                onClick={() => publishMutation.mutate()}
+                disabled={publishMutation.isPending || !contestEnded}
+              >
                 {publishMutation.isPending ? "Publishing..." : "Publish Results"}
               </Button>
             )}
           </div>
         </div>
 
+        {!contest.resultsPublished && !contestEnded && (
+          <Card className="border border-border bg-background p-4 text-sm text-muted-foreground shadow-none">
+            Results can be published only after the contest deadline. Students can review the contest after it ends, but standings stay hidden until you publish them.
+          </Card>
+        )}
+
         <Card className="grid gap-4 border border-border bg-background p-5 shadow-none md:grid-cols-4">
           <div>
             <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Start</div>
             <div className="mt-1 text-sm">{new Date(contest.startAt).toLocaleString()}</div>
+          </div>
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Deadline</div>
+            <div className="mt-1 text-sm">{contestDeadline.toLocaleString()}</div>
           </div>
           <div>
             <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Duration</div>

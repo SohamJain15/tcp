@@ -1,4 +1,11 @@
 {
+  "scripts": {
+    "judge0:up": "./scripts/judge0-up.sh",
+    "judge0:down": "./scripts/judge0-down.sh",
+    "judge0:status": "./scripts/judge0-status.sh",
+    "judge0:test-sandbox": "cd backend && npx ts-node src/scripts/test-sandbox.ts",
+    "judge0:test-languages": "cd backend && npx ts-node src/scripts/test-runtime-languages.ts"
+  },
   "dependencies": {
     "cookie-parser": "^1.4.7",
     "express": "^5.2.1",

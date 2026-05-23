@@ -388,7 +388,7 @@ describe("TCET Code Studio backend APIs", () => {
     expect(csvExportResponse.text).toContain("rating");
   });
 
-  it("hides contest answers and standings from students until faculty publishes results", async () => {
+  it("reveals ended contest questions and practice coding without exposing standings until results are published", async () => {
     const { app } = createTestApp();
     const contest = await createContest(app, {
       startTime: "2026-05-06T23:00:00.000Z",
@@ -408,8 +408,28 @@ describe("TCET Code Studio backend APIs", () => {
     expect(contestListResponse.body.items).toHaveLength(1);
     expect(contestListResponse.body.items[0].computedStatus).toBe("Ended");
 
+    const endedContestDetailResponse = await request(app).get(`/api/contests/${contest.id}`);
+    expect(endedContestDetailResponse.status).toBe(200);
+    expect(endedContestDetailResponse.body.contest.questions).toHaveLength(2);
+    expect(endedContestDetailResponse.body.contest.questions[0].correctAnswer).toBe("B");
+
     const studentQuestionResponse = await request(app).get(`/api/contests/${contest.id}/questions/q_mcq_1`);
-    expect(studentQuestionResponse.status).toBe(409);
+    expect(studentQuestionResponse.status).toBe(200);
+    expect(studentQuestionResponse.body.question.correctAnswer).toBe("B");
+
+    const practiceRunResponse = await request(app)
+      .post(`/api/contests/${contest.id}/coding-run`)
+      .send({ questionId: "q_code_1", code: "accepted", language: "python" });
+    expect(practiceRunResponse.status).toBe(200);
+    expect(practiceRunResponse.body.result.status).toBe("ACCEPTED");
+
+    const practiceSubmitResponse = await request(app)
+      .post(`/api/contests/${contest.id}/coding-submissions`)
+      .send({ questionId: "q_code_1", code: "accepted", language: "python" });
+    expect(practiceSubmitResponse.status).toBe(201);
+    expect(practiceSubmitResponse.body.practiceMode).toBe(true);
+    expect(practiceSubmitResponse.body.status).toBe("ACCEPTED");
+    expect(practiceSubmitResponse.body.passedCount).toBe(practiceSubmitResponse.body.totalCount);
 
     const hiddenStandingsResponse = await request(app).get(`/api/contests/${contest.id}/standings`);
     expect(hiddenStandingsResponse.status).toBe(403);
@@ -428,6 +448,22 @@ describe("TCET Code Studio backend APIs", () => {
 
     const visibleStandingsResponse = await request(app).get(`/api/contests/${contest.id}/standings`);
     expect(visibleStandingsResponse.status).toBe(200);
+  });
+
+  it("blocks faculty from publishing contest results before the deadline", async () => {
+    const { app } = createTestApp();
+    const contest = await createContest(app, {
+      startTime: "2026-05-07T00:00:00.000Z",
+      duration: 60,
+      lifecycleState: "Published",
+    });
+
+    const publishResultsResponse = await request(app)
+      .patch(`/api/contests/${contest.id}/results`)
+      .set(facultyHeaders)
+      .send({ resultsPublished: true });
+
+    expect(publishResultsResponse.status).toBe(409);
   });
 
   it("hides upcoming contest questions from students until the contest goes live", async () => {
@@ -537,4 +573,3 @@ describe("TCET Code Studio backend APIs", () => {
     expect(attemptsResponse.body.items[0].violationCount).toBe(4);
   });
 });
-

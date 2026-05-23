@@ -142,10 +142,16 @@ function mapContestQuestionToBuilder(question: ContestQuestion): BuilderQuestion
   };
 }
 
+function toDateTimeLocalValue(isoTimestamp: string): string {
+  const instant = new Date(isoTimestamp);
+  const offsetMs = instant.getTimezoneOffset() * 60_000;
+  return new Date(instant.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
 function mapContestToMetadata(contest: FacultyContestDetail): ContestMetadata {
   return {
     title: contest.title,
-    startTime: contest.startAt.slice(0, 16),
+    startTime: toDateTimeLocalValue(contest.startAt),
     duration: String(contest.durationMinutes),
     type: contest.type,
     targetDepartment: contest.targetDepartment ?? "All",
@@ -225,7 +231,7 @@ export default function CreateContest() {
 
       const payload = {
         title: metadata.title.trim(),
-        startTime: metadata.startTime,
+        startTime: metadata.startTime ? new Date(metadata.startTime).toISOString() : "",
         duration: Number(metadata.duration),
         type: metadata.type,
         targetDepartment: metadata.targetDepartment === "All" ? null : metadata.targetDepartment,

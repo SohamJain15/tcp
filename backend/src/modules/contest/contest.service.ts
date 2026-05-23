@@ -89,7 +89,17 @@ export interface ContestService {
     stdout?: string;
     stderr?: string;
   }>;
-  submitCodingQuestion(user: AuthenticatedUser, contestId: string, input: ContestCodingSubmissionInput): Promise<{ submissionId: string; status: string }>;
+  submitCodingQuestion(user: AuthenticatedUser, contestId: string, input: ContestCodingSubmissionInput): Promise<{
+    submissionId: string;
+    status: string;
+    practiceMode?: boolean;
+    runtimeMs?: number;
+    memoryKb?: number;
+    passedCount?: number;
+    totalCount?: number;
+    stdout?: string;
+    stderr?: string;
+  }>;
   getStandings(user: AuthenticatedUser, contestId: string): Promise<ContestStandingItem[]>;
   exportStandingsCsv(user: AuthenticatedUser, contestId: string): Promise<string>;
   listAttempts(user: AuthenticatedUser, contestId: string): Promise<ContestAttemptSummary[]>;
@@ -197,6 +207,12 @@ function ensureActiveAttempt(attempt: ContestAttemptRecord | null): ContestAttem
 function ensureContestIsLive(contest: ContestRecord, now: Date): void {
   if (computeContestStatus(contest, now) !== "Live") {
     throw new AppError(409, "Contest is not live");
+  }
+}
+
+function ensureContestHasEnded(contest: ContestRecord, now: Date): void {
+  if (computeContestStatus(contest, now) !== "Ended") {
+    throw new AppError(409, "Contest has not ended yet");
   }
 }
 
@@ -495,11 +511,12 @@ export function createContestService(dependencies: ContestServiceDependencies): 
 
       const visibleContest = ensureStudentCanAccessContest(user, contest);
       const attempt = await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email);
+      const contestEnded = computeContestStatus(visibleContest, now) === "Ended";
       const standings =
         visibleContest.resultsPublished
           ? (await dependencies.contestAttemptRepository.listByContest(contestId)).sort(sortStandings).map((item, index) => toContestStandingItem(item, index + 1))
           : [];
-      const report = visibleContest.resultsPublished ? buildStudentReport(visibleContest, attempt, standings) : null;
+      const report = visibleContest.resultsPublished || contestEnded ? buildStudentReport(visibleContest, attempt, standings) : null;
       return toStudentContestDetailResponse(visibleContest, attempt, now, report);
     },
 
@@ -547,10 +564,14 @@ export function createContestService(dependencies: ContestServiceDependencies): 
 
     async updateContestResults(user, contestId, input) {
       const contest = ensureFacultyOwnsContest(user, await dependencies.contestRepository.getById(contestId));
+      const now = dependencies.now();
+      if (input.resultsPublished) {
+        ensureContestHasEnded(contest, now);
+      }
       const updatedContest: ContestRecord = {
         ...contest,
         resultsPublished: input.resultsPublished,
-        updatedAt: dependencies.now(),
+        updatedAt: now,
       };
 
       await dependencies.contestRepository.save(updatedContest);
@@ -638,8 +659,12 @@ export function createContestService(dependencies: ContestServiceDependencies): 
     async getQuestionById(user, contestId, questionId) {
       const now = dependencies.now();
       const contest = ensureStudentCanAccessContest(user, await dependencies.contestRepository.getById(contestId));
-      ensureContestIsLive(contest, now);
-      const attempt = ensureActiveAttempt(await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email));
+      const status = computeContestStatus(contest, now);
+      if (status === "Upcoming") {
+        throw new AppError(409, "Contest questions are not available yet");
+      }
+      const rawAttempt = await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email);
+      const attempt = status === "Live" ? ensureActiveAttempt(rawAttempt) : rawAttempt;
       const question = ensureContestQuestion(contest, questionId);
       return toStudentContestQuestionEnvelope(contest, question, attempt, now);
     },
@@ -689,8 +714,13 @@ export function createContestService(dependencies: ContestServiceDependencies): 
     async runCodingQuestion(user, contestId, input) {
       const now = dependencies.now();
       const contest = ensureStudentCanAccessContest(user, await dependencies.contestRepository.getById(contestId));
-      ensureContestIsLive(contest, now);
-      ensureActiveAttempt(await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email));
+      const status = computeContestStatus(contest, now);
+      if (status === "Upcoming") {
+        throw new AppError(409, "Contest is not live yet");
+      }
+      if (status === "Live") {
+        ensureActiveAttempt(await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email));
+      }
       const question = ensureContestQuestion(contest, input.questionId);
 
       if (question.type !== "Coding") {
@@ -723,13 +753,40 @@ export function createContestService(dependencies: ContestServiceDependencies): 
     async submitCodingQuestion(user, contestId, input) {
       const now = dependencies.now();
       const contest = ensureStudentCanAccessContest(user, await dependencies.contestRepository.getById(contestId));
-      ensureContestIsLive(contest, now);
-      const attempt = ensureActiveAttempt(await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email));
+      const status = computeContestStatus(contest, now);
+      if (status === "Upcoming") {
+        throw new AppError(409, "Contest is not live yet");
+      }
       const question = ensureContestQuestion(contest, input.questionId);
 
       if (question.type !== "Coding") {
         throw new AppError(400, "Question does not accept code submissions");
       }
+
+      if (status === "Ended") {
+        const result = await dependencies.executionProvider.executeSubmission({
+          code: wrapSubmissionCode(input.language, input.code),
+          language: input.language,
+          testCases: [...question.sampleTestCases, ...question.hiddenTestCases],
+          problemId: `${contest.id}:${question.id}:practice`,
+          timeLimitSeconds: question.timeLimitSeconds,
+          memoryLimitMb: question.memoryLimitMb,
+        });
+
+        return {
+          submissionId: `practice_${randomUUID()}`,
+          status: result.status,
+          practiceMode: true,
+          runtimeMs: result.runtimeMs,
+          memoryKb: result.memoryKb,
+          passedCount: result.passedCount,
+          totalCount: result.totalCount,
+          stdout: result.stdout,
+          stderr: result.stderr,
+        };
+      }
+
+      const attempt = ensureActiveAttempt(await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email));
 
       const state = attempt.questionStates.find((item) => item.questionId === question.id);
       if (!state) {

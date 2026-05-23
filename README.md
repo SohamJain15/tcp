@@ -55,6 +55,36 @@ Important notes:
 - Node.js 18+
 - npm
 - Firebase Admin service account key (JSON)
+- Docker
+- Linux `x86_64` host for full local Judge0 sandboxing, or a compatible VM/runtime
+
+## Local Judge0
+
+The deployed backend is already configured to use a local Judge0 endpoint via `JUDGE0_BASE_URL=http://localhost:2358`. To run the compiler stack locally without changing auth or app behavior:
+
+```bash
+npm run judge0:up
+npm run judge0:status
+```
+
+Useful verification commands:
+
+```bash
+npm run judge0:test-sandbox
+npm run judge0:test-languages
+npm run judge0:down
+```
+
+Local Judge0 support files live in:
+
+- `infrastructure/judge0/`
+- `scripts/judge0-*.sh`
+
+Judge0 is exposed at:
+
+```text
+http://localhost:2358
+```
 
 ## Quick Start
 
@@ -251,6 +281,13 @@ Production guidance:
 - Confirm frontend points to backend `3001`.
 - Ensure backend CORS includes frontend origin.
 - Ensure backend is running and reachable through your chosen ingress path.
+
+### Judge0 Is Reachable but Submissions Fail
+
+- Run `npm run judge0:status`.
+- Run `npm run judge0:test-sandbox`.
+- Run `npm run judge0:test-languages`.
+- Confirm `JUDGE0_BASE_URL=http://localhost:2358` in `backend/.env`.
 
 ## Security Notes
 

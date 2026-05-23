@@ -418,6 +418,7 @@ export interface StudentContestQuestionSummary {
   difficulty?: Difficulty;
   statement?: string;
   options?: string[];
+  correctAnswer?: string | string[];
   problemStatement?: string;
   constraints?: string;
   inputFormat?: string;
@@ -583,6 +584,7 @@ export interface ObjectiveContestQuestionDetail extends ContestQuestionBaseDetai
   type: "MCQ" | "MSQ";
   statement: string;
   options: string[];
+  correctAnswer?: string | string[];
 }
 
 export interface CodingContestQuestionDetail extends ContestQuestionBaseDetail {
@@ -711,6 +713,13 @@ export interface ContestCodingSubmissionPayload {
 export interface ContestCodingSubmissionReceipt {
   submissionId: string;
   status: SubmissionStatus;
+  practiceMode?: boolean;
+  runtimeMs?: number;
+  memoryKb?: number;
+  passedCount?: number;
+  totalCount?: number;
+  stdout?: string;
+  stderr?: string;
 }
 
 export interface ContestResultsVisibilityPayload {

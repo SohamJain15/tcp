@@ -27,6 +27,7 @@ lerna-debug.log*
 *.pid
 *.pid.lock
 tmp-*.txt
+dump.rdb
 
 # Firebase / local secrets
 backend/firebase-key.json

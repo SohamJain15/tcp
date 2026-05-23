@@ -120,6 +120,13 @@ export default function ContestDetail() {
     mutationFn: () => contestsApi.submitAttempt(id, pathname),
     onSuccess: async (response) => {
       updateAttemptInCache(response.attempt);
+      if (document.fullscreenElement && document.exitFullscreen) {
+        try {
+          await document.exitFullscreen();
+        } catch {
+          // Let the page continue even if the browser refuses to exit fullscreen.
+        }
+      }
       toast.success("Contest ended successfully");
       await refetch();
     },
@@ -151,8 +158,11 @@ export default function ContestDetail() {
   }
 
   const canAttempt = contest.computedStatus === "Live";
+  const contestEnded = contest.computedStatus === "Ended";
   const attemptIsActive = attempt?.status === "ACTIVE";
   const attemptIsLocked = Boolean(attempt && attempt.status !== "ACTIVE");
+  const showQuestions = contestEnded || attemptIsActive;
+  const showReport = Boolean(report) && (contest.resultsPublished || contestEnded);
   const allQuestionsCompleted = Boolean(
     attempt &&
       contest.questions.length > 0 &&
@@ -184,22 +194,6 @@ export default function ContestDetail() {
                 {startAttemptMutation.isPending ? "Starting..." : "Start Contest"}
               </Button>
             )}
-            {attemptIsActive && document.fullscreenElement == null && (
-              <Button
-                variant="outline"
-                onClick={async () => {
-                  if (document.documentElement.requestFullscreen) {
-                    try {
-                      await document.documentElement.requestFullscreen();
-                    } catch {
-                      toast.error("Unable to enter fullscreen");
-                    }
-                  }
-                }}
-              >
-                Enter Fullscreen
-              </Button>
-            )}
             {attemptIsActive && allQuestionsCompleted && (
               <Button variant="destructive" onClick={() => submitAttemptMutation.mutate()} disabled={submitAttemptMutation.isPending}>
                 {submitAttemptMutation.isPending ? "Ending..." : "End Test"}
@@ -208,24 +202,42 @@ export default function ContestDetail() {
           </div>
         </div>
 
-        <Alert variant="destructive">
-          <AlertTitle>Proctoring Alert</AlertTitle>
-          <AlertDescription>
-            Tab switching, fullscreen exit, and screenshot attempts are tracked. {contest.maxViolations} violations trigger auto-submit.
-            {attempt ? ` Current violations: ${attempt.violationCount}/${contest.maxViolations}.` : ""}
-          </AlertDescription>
-        </Alert>
+        {attemptIsActive ? (
+          <Alert variant="destructive">
+            <AlertTitle>Proctoring Alert</AlertTitle>
+            <AlertDescription>
+              Tab switching, fullscreen exit, and screenshot attempts are tracked. {contest.maxViolations} violations trigger auto-submit.
+              {attempt ? ` Current violations: ${attempt.violationCount}/${contest.maxViolations}.` : ""}
+            </AlertDescription>
+          </Alert>
+        ) : contestEnded ? (
+          <Alert>
+            <AlertTitle>Contest Review & Practice</AlertTitle>
+            <AlertDescription>
+              This contest has ended. Objective solutions are now visible, and coding questions can be explored in practice mode without affecting rankings or your scored attempt.
+            </AlertDescription>
+          </Alert>
+        ) : null}
 
         {attemptIsLocked && (
           <Card className="border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-200 shadow-none">
-            This attempt is {attempt?.status.toLowerCase().replace(/_/g, " ")}. Answers and code submissions are now locked.
+            This attempt is {attempt?.status.toLowerCase().replace(/_/g, " ")}. Scored contest actions are locked.
+            {contestEnded ? " You can still review the questions below and open coding questions in practice mode." : ""}
           </Card>
         )}
 
-        {contest.resultsPublished && report && (
+        {contestEnded && !contest.resultsPublished && (
+          <Card className="border border-border bg-background p-4 text-sm text-muted-foreground shadow-none">
+            The contest is over, so questions and solutions are visible now. Leaderboard ranks stay hidden until faculty publishes results.
+          </Card>
+        )}
+
+        {showReport && report && (
           <Card className="border border-border bg-background p-6 shadow-none">
             <div className="mb-4 flex flex-wrap items-center gap-2">
-              <h2 className="font-display text-xl font-semibold">Published Report Card</h2>
+              <h2 className="font-display text-xl font-semibold">
+                {contest.resultsPublished ? "Published Report Card" : "Report Card"}
+              </h2>
               <Badge variant="outline">{attemptStatusLabel(report.status)}</Badge>
             </div>
 
@@ -287,7 +299,7 @@ export default function ContestDetail() {
           <Card className="border border-border bg-background p-5 text-sm text-muted-foreground shadow-none">
             Questions will be revealed when the contest starts.
           </Card>
-        ) : !attemptIsActive ? (
+        ) : !showQuestions ? (
           <Card className="border border-border bg-background p-5 text-sm text-muted-foreground shadow-none">
             Questions will be revealed after you start the contest and enter the proctored mode.
           </Card>
@@ -366,7 +378,9 @@ export default function ContestDetail() {
 
                 {"type" in question && question.type === "Coding" ? (
                   <Button asChild className="bg-accent text-accent-foreground hover:bg-accent/90">
-                    <Link to={`/student/contests/${id}/questions/${question.id}`}>Open Workspace</Link>
+                    <Link to={`/student/contests/${id}/questions/${question.id}`}>
+                      {contestEnded ? "Open Practice Workspace" : "Open Workspace"}
+                    </Link>
                   </Button>
                 ) : null}
               </div>
@@ -384,9 +398,16 @@ export default function ContestDetail() {
                       );
                     })}
                   </RadioGroup>
-                  <Button onClick={() => answerMutation.mutate({ questionId: question.id, answer: typeof answerValue === "string" ? answerValue : "" })} disabled={!attemptIsActive || typeof answerValue !== "string" || answerValue.length === 0 || answerMutation.isPending}>
-                    Submit Answer
-                  </Button>
+                  {attemptIsActive && (
+                    <Button onClick={() => answerMutation.mutate({ questionId: question.id, answer: typeof answerValue === "string" ? answerValue : "" })} disabled={typeof answerValue !== "string" || answerValue.length === 0 || answerMutation.isPending}>
+                      Submit Answer
+                    </Button>
+                  )}
+                  {contestEnded && question.correctAnswer && (
+                    <Card className="border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm shadow-none">
+                      Correct answer: <span className="font-semibold text-foreground">{question.correctAnswer}</span>
+                    </Card>
+                  )}
                 </div>
               )}
 
@@ -414,9 +435,16 @@ export default function ContestDetail() {
                       );
                     })}
                   </div>
-                  <Button onClick={() => answerMutation.mutate({ questionId: question.id, answer: Array.isArray(answerValue) ? answerValue : [] })} disabled={!attemptIsActive || !Array.isArray(answerValue) || answerValue.length === 0 || answerMutation.isPending}>
-                    Submit Answer
-                  </Button>
+                  {attemptIsActive && (
+                    <Button onClick={() => answerMutation.mutate({ questionId: question.id, answer: Array.isArray(answerValue) ? answerValue : [] })} disabled={!Array.isArray(answerValue) || answerValue.length === 0 || answerMutation.isPending}>
+                      Submit Answer
+                    </Button>
+                  )}
+                  {contestEnded && Array.isArray(question.correctAnswer) && (
+                    <Card className="border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm shadow-none">
+                      Correct answers: <span className="font-semibold text-foreground">{question.correctAnswer.join(", ")}</span>
+                    </Card>
+                  )}
                 </div>
               )}
             </Card>

@@ -22,18 +22,17 @@ function formatDate(isoDate: string): string {
 }
 
 export default function FacultySubmissions() {
-  const [problemIdFilter, setProblemIdFilter] = useState("");
+  const [problemNameFilter, setProblemNameFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<FacultyStatusFilter>("All");
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["faculty-submissions", problemIdFilter, statusFilter],
+    queryKey: ["faculty-submissions", statusFilter],
     queryFn: () =>
       submissionsApi.list(
         {
           pageSize: 100,
           sourceType: "problem",
-          problemId: problemIdFilter.trim() || undefined,
           status: statusFilter === "All" ? undefined : statusFilter,
         },
         "/faculty/submissions",
@@ -46,7 +45,11 @@ export default function FacultySubmissions() {
     enabled: Boolean(selectedSubmissionId),
   });
 
-  const submissions = data?.items ?? [];
+  const submissions = (data?.items ?? []).filter((submission) =>
+    problemNameFilter.trim().length === 0
+      ? true
+      : submission.problemTitle.toLowerCase().includes(problemNameFilter.trim().toLowerCase()),
+  );
   return (
     <AppLayout>
       <div className="container space-y-6 py-8">
@@ -73,12 +76,12 @@ export default function FacultySubmissions() {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="submission-problem-id-filter">Problem ID</Label>
+            <Label htmlFor="submission-problem-name-filter">Problem Name</Label>
             <Input
-              id="submission-problem-id-filter"
-              placeholder="e.g. problem_123"
-              value={problemIdFilter}
-              onChange={(event) => setProblemIdFilter(event.target.value)}
+              id="submission-problem-name-filter"
+              placeholder="Search by problem title"
+              value={problemNameFilter}
+              onChange={(event) => setProblemNameFilter(event.target.value)}
             />
           </div>
         </Card>

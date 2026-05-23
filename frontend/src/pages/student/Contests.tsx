@@ -16,7 +16,7 @@ function getContestCta(status: "Live" | "Upcoming" | "Past", hasAttempted: boole
   if (status === "Upcoming") {
     return "View Contest";
   }
-  return hasAttempted ? "View Report" : "Review";
+  return hasAttempted ? "View Report & Practice" : "Practice Contest";
 }
 
 function getAttemptStatusLabel(status: ContestListItem["attemptStatus"]): string {

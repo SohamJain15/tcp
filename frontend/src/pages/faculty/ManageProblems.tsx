@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, Pencil, Plus, Trash2 } from "lucide-react";
+import { Eye, Pencil, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppLayout } from "@/components/AppLayout";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { problemsApi } from "@/api/services";
 import { toLifecycleLabel } from "@/api/mappers";
+import type { ProblemLifecycleState } from "@/api/types";
 
 export default function ManageProblems() {
   const queryClient = useQueryClient();
@@ -19,7 +20,7 @@ export default function ManageProblems() {
   });
 
   const stateMutation = useMutation({
-    mutationFn: ({ problemId, state }: { problemId: string; state: "Published" | "Archived" }) =>
+    mutationFn: ({ problemId, state }: { problemId: string; state: ProblemLifecycleState }) =>
       problemsApi.updateState(problemId, state, "/faculty/problems"),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["faculty-manage-problems"] });
@@ -111,21 +112,22 @@ export default function ManageProblems() {
                               <Pencil className="h-4 w-4" />
                             </Link>
                           </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className={problem.lifecycleState === "Published" ? "h-8 w-8 text-destructive" : "h-8 w-8 text-success"}
-                            aria-label={`${problem.lifecycleState === "Published" ? "Archive" : "Publish"} ${problem.title}`}
-                            onClick={() =>
+                          <select
+                            aria-label={`Set lifecycle state for ${problem.title}`}
+                            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                            value={problem.lifecycleState}
+                            onChange={(event) =>
                               stateMutation.mutate({
                                 problemId: problem.id,
-                                state: problem.lifecycleState === "Published" ? "Archived" : "Published",
+                                state: event.target.value as ProblemLifecycleState,
                               })
                             }
                             disabled={stateMutation.isPending}
                           >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                            <option value="Draft">Draft</option>
+                            <option value="Published">Published</option>
+                            <option value="Archived">Archived</option>
+                          </select>
                         </div>
                       </td>
                     </tr>

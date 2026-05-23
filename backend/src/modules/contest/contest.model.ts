@@ -141,7 +141,6 @@ export interface ContestListItem {
   attemptStatus: ContestStudentAttemptStatus;
   hasAttempted: boolean;
   startAt: string;
-  startTime: string;
   durationMinutes: number;
   duration: string;
   participantsCount: number;
@@ -158,6 +157,7 @@ export interface StudentContestQuestionSummary {
   difficulty?: Difficulty;
   statement?: string;
   options?: string[];
+  correctAnswer?: string | string[];
   problemStatement?: string;
   constraints?: string;
   inputFormat?: string;
@@ -303,6 +303,7 @@ export interface ObjectiveContestQuestionDetail {
   awardedPoints: number;
   statement: string;
   options: string[];
+  correctAnswer?: string | string[];
 }
 
 export interface CodingContestQuestionDetail {
@@ -422,6 +423,10 @@ export function computeContestStatus(contest: ContestRecord, now: Date): Contest
   return "Ended";
 }
 
+export function computeContestDeadline(contest: ContestRecord): Date {
+  return new Date(contest.startAt.getTime() + contest.durationMinutes * 60_000);
+}
+
 export function computeViolationPenaltyPoints(violationCount: number): number {
   return Math.max(0, violationCount) * 5;
 }
@@ -489,7 +494,6 @@ export function toContestListItem(
     attemptStatus: attempt?.status ?? "NOT_ATTEMPTED",
     hasAttempted: Boolean(attempt),
     startAt: toIsoString(contest.startAt) ?? new Date(0).toISOString(),
-    startTime: contest.startAt.toLocaleString(),
     durationMinutes: contest.durationMinutes,
     duration: `${contest.durationMinutes} mins`,
     participantsCount,
@@ -505,7 +509,8 @@ export function toStudentContestDetailResponse(
   report: StudentContestReport | null = null,
 ): StudentContestDetailResponse {
   const computedStatus = computeContestStatus(contest, now);
-  const includeQuestions = computedStatus === "Live" && attempt?.status === "ACTIVE";
+  const includeQuestions = computedStatus === "Ended" || (computedStatus === "Live" && attempt?.status === "ACTIVE");
+  const revealSolutions = computedStatus === "Ended";
 
   return {
     id: contest.id,
@@ -549,6 +554,12 @@ export function toStudentContestDetailResponse(
             points: question.points,
             statement: question.statement,
             options: question.options,
+            ...(revealSolutions
+              ? {
+                  correctAnswer:
+                    question.type === "MCQ" ? question.correctAnswer : question.correctAnswers,
+                }
+              : {}),
           };
         })
       : [],
@@ -598,11 +609,13 @@ export function toStudentContestQuestionDetailResponse(
   contest: ContestRecord,
   question: ContestQuestion,
   attempt: ContestAttemptRecord | null,
+  now: Date,
 ): StudentContestQuestionDetailResponse {
   const questionIndex = contest.questions.findIndex((item) => item.id === question.id);
   const state = attempt?.questionStates.find((item) => item.questionId === question.id);
   const status = state?.status ?? "UNATTEMPTED";
   const awardedPoints = state?.awardedPoints ?? 0;
+  const revealSolutions = computeContestStatus(contest, now) === "Ended";
 
   if (question.type === "Coding") {
     return {
@@ -635,6 +648,12 @@ export function toStudentContestQuestionDetailResponse(
     awardedPoints,
     statement: question.statement,
     options: question.options,
+    ...(revealSolutions
+      ? {
+          correctAnswer:
+            question.type === "MCQ" ? question.correctAnswer : question.correctAnswers,
+        }
+      : {}),
   };
 }
 
@@ -656,7 +675,7 @@ export function toStudentContestQuestionEnvelope(
       resultsPublished: contest.resultsPublished,
     },
     attempt,
-    question: toStudentContestQuestionDetailResponse(contest, question, attempt),
+    question: toStudentContestQuestionDetailResponse(contest, question, attempt, now),
   };
 }
 

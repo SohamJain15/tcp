@@ -32,8 +32,29 @@ const LANGUAGE_RUNTIME_ALIASES: Partial<Record<ExecutableLanguage, ExecutableLan
 const LANGUAGE_TIME_LIMIT_MULTIPLIERS: Partial<Record<ExecutableLanguage, number>> = {
   python: 3,
   java: 1.5,
+  javascript: 3,
+  vanilla: 3,
+  php: 3,
+  typescript: 4,
+  elixir: 3,
+  erlang: 2,
+  kotlin: 2,
+  scala: 2,
   c: 1,
   cpp: 1,
+};
+
+const LANGUAGE_MEMORY_LIMIT_MULTIPLIERS: Partial<Record<ExecutableLanguage, number>> = {
+  java: 4,
+  javascript: 2,
+  vanilla: 2,
+  php: 2,
+  typescript: 2,
+  go: 2,
+  kotlin: 4,
+  scala: 4,
+  elixir: 6,
+  erlang: 6,
 };
 
 export class Judge0ExecutionProvider implements ExecutionProvider {
@@ -351,6 +372,7 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
   ): Promise<TestExecutionOutcome> {
     try {
       const adjustedTimeLimitSeconds = this.resolveAdjustedTimeLimitSeconds(request.language, request.timeLimitSeconds);
+      const adjustedMemoryLimitKb = this.resolveAdjustedMemoryLimitKb(request.language, request.memoryLimitMb);
 
       const response = await this.client.createSubmissionAndWait({
         source_code: request.code,
@@ -359,7 +381,7 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
         expected_output: testCase.output,
         cpu_time_limit: adjustedTimeLimitSeconds,
         wall_time_limit: Math.max(adjustedTimeLimitSeconds * 2, adjustedTimeLimitSeconds + 1),
-        memory_limit: request.memoryLimitMb * 1024,
+        memory_limit: adjustedMemoryLimitKb,
         enable_network: false,
         redirect_stderr_to_stdout: false,
         enable_per_process_and_thread_time_limit: false,
@@ -391,6 +413,13 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
     const adjustedTimeLimit = baseTimeLimitSeconds * multiplier;
 
     return Math.min(adjustedTimeLimit, MAX_CPU_TIME_LIMIT_SECONDS);
+  }
+
+  private resolveAdjustedMemoryLimitKb(language: ExecutableLanguage, baseMemoryLimitMb: number): number {
+    const normalizedLanguage = this.validateLanguage(language);
+    const runtimeLanguage = this.resolveRuntimeLanguage(normalizedLanguage);
+    const multiplier = LANGUAGE_MEMORY_LIMIT_MULTIPLIERS[runtimeLanguage] ?? 1;
+    return Math.ceil(baseMemoryLimitMb * multiplier * 1024);
   }
 
   private normalizeJudge0Response(response: Judge0SubmissionResponse): TestExecutionOutcome {

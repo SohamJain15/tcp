@@ -53,7 +53,7 @@ describe("Judge0ExecutionProvider", () => {
     expect(client.lastPayload?.wall_time_limit).toBe(10);
     expect(client.lastPayload?.enable_per_process_and_thread_time_limit).toBe(false);
     expect(client.lastPayload?.enable_per_process_and_thread_memory_limit).toBe(false);
-    expect(client.lastPayload?.memory_limit).toBe(256 * 1024);
+    expect(client.lastPayload?.memory_limit).toBe(256 * 4 * 1024);
   });
 
   it("applies a 3x time limit multiplier for Python submissions", async () => {
@@ -71,6 +71,24 @@ describe("Judge0ExecutionProvider", () => {
 
     expect(client.lastPayload?.cpu_time_limit).toBe(3);
     expect(client.lastPayload?.wall_time_limit).toBe(6);
+  });
+
+  it("applies slower-runtime guardrails for Elixir submissions", async () => {
+    const client = new FakeJudge0Client([{ id: 57, name: "Elixir (1.9.4)" }]);
+    const provider = new Judge0ExecutionProvider(client as never);
+
+    await provider.executeRun({
+      code: 'IO.puts("OK")',
+      language: "elixir",
+      problemId: "problem-1",
+      timeLimitSeconds: 1,
+      memoryLimitMb: 256,
+      testCases: [{ input: "", output: "OK\n" }],
+    });
+
+    expect(client.lastPayload?.cpu_time_limit).toBe(3);
+    expect(client.lastPayload?.wall_time_limit).toBe(6);
+    expect(client.lastPayload?.memory_limit).toBe(256 * 6 * 1024);
   });
 
   it("keeps the base time limit for C-family runtimes", async () => {

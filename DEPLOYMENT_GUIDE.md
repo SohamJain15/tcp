@@ -17,6 +17,8 @@ Production requirements:
 * `JUDGE0_BASE_URL=http://localhost:2358`
 * `SUBMISSION_WORKER_CONCURRENCY=4`
 
+For local compiler parity on a development machine, start the bundled Judge0 stack from the repo root with `npm run judge0:up`, then validate it with `npm run judge0:status`.
+
 ## 4. Proxy & Security Configuration
 The backend uses `app.set("trust proxy", 1)` to read Cloudflare's `X-Forwarded-For` headers. 
 Rate limiting is strictly enforced: Global API (150/min), Code Submissions (10/min). Payload size is capped at 100kb.

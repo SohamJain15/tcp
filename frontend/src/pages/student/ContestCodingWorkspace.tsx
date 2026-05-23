@@ -195,6 +195,8 @@ export default function ContestCodingWorkspace() {
   const question = payload?.question;
   const contest = payload?.contest;
   const attemptIsActive = attempt?.status === "ACTIVE";
+  const practiceMode = contest?.computedStatus === "Ended";
+  const interactiveMode = attemptIsActive || practiceMode;
   const availableLanguages: ExecutableLanguage[] =
     question && question.type === "Coding" ? EXECUTABLE_LANGUAGES : ["cpp"];
   const defaultLanguage = (availableLanguages[0] ?? "cpp") as ExecutableLanguage;
@@ -299,6 +301,23 @@ export default function ContestCodingWorkspace() {
     mutationFn: () => contestsApi.submitCodingQuestion(id, { questionId, code, language }, pathname),
     onSuccess: async (response) => {
       setSubmissionReceipt(response);
+      if (response.practiceMode) {
+        setRunResult({
+          problemId: questionId,
+          language,
+          status: response.status,
+          runtimeMs: response.runtimeMs ?? 0,
+          memoryKb: response.memoryKb ?? 0,
+          passedCount: response.passedCount ?? 0,
+          totalCount: response.totalCount ?? 0,
+          executionProvider: "judge0",
+          stdout: response.stdout,
+          stderr: response.stderr,
+        });
+        toast.success("Practice submission evaluated against all contest testcases.");
+        return;
+      }
+
       setRunResult(null);
       await refetch();
       toast.success("Final code submitted. Judging is in progress.");
@@ -332,10 +351,10 @@ export default function ContestCodingWorkspace() {
     return <Navigate to={`/student/contests/${id}`} replace />;
   }
 
-  const isLocked = Boolean(attempt && attempt.status !== "ACTIVE");
+  const isLocked = Boolean(attempt && attempt.status !== "ACTIVE" && !practiceMode);
   const activeResult = runResult;
   const currentQuestionState = attempt?.questionStates.find((state) => state.questionId === questionId) ?? null;
-  const finalSubmissionUsed = Boolean(currentQuestionState?.hasFinalCodingSubmission);
+  const finalSubmissionUsed = Boolean(currentQuestionState?.hasFinalCodingSubmission) && !practiceMode;
 
   return (
     <AppLayout hideNavbar={attemptIsActive} hideFooter={attemptIsActive}>
@@ -422,6 +441,12 @@ export default function ContestCodingWorkspace() {
                   </Button>
                 )}
 
+                {practiceMode && (
+                  <Card className="border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-100 shadow-none">
+                    Practice mode is active. Runs and hidden-test submissions here do not change contest points, report cards, or standings.
+                  </Card>
+                )}
+
                 {isLocked && (
                   <Card className="border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-200 shadow-none">
                     This attempt is {attempt?.status.toLowerCase().replace(/_/g, " ")}. Code execution and submission are now locked.
@@ -450,7 +475,7 @@ export default function ContestCodingWorkspace() {
                       value={language}
                       onChange={(event) => setLanguage(event.target.value as ExecutableLanguage)}
                       className="rounded-md border border-input bg-background px-3 py-1.5 text-sm"
-                      disabled={!attemptIsActive}
+                      disabled={!interactiveMode}
                     >
                       {availableLanguages.map((supportedLanguage) => (
                         <option key={supportedLanguage} value={supportedLanguage}>
@@ -521,18 +546,22 @@ export default function ContestCodingWorkspace() {
                     ) : submissionReceipt ? (
                       <>
                         <span className="font-semibold text-foreground">{toStatusLabel(submissionReceipt.status)}</span>
-                        {" \u2022 "}Final code submitted. Hidden testcases are being checked in the background.
+                        {submissionReceipt.practiceMode
+                          ? ` \u2022 Hidden testcases checked: ${submissionReceipt.passedCount ?? 0}/${submissionReceipt.totalCount ?? 0}.`
+                          : " \u2022 Final code submitted. Hidden testcases are being checked in the background."}
                       </>
                     ) : (
-                      "Run code to see sample testcase results."
+                      practiceMode
+                        ? "Run sample cases or submit against all contest testcases in practice mode."
+                        : "Run code to see sample testcase results."
                     )}
                   </div>
 
                   <div className="flex gap-2">
-                    <Button variant="secondary" onClick={() => runMutation.mutate()} disabled={!attemptIsActive || runMutation.isPending}>
+                    <Button variant="secondary" onClick={() => runMutation.mutate()} disabled={!interactiveMode || runMutation.isPending}>
                       <Play className="mr-2 h-4 w-4" /> {runMutation.isPending ? "Running..." : "Run"}
                     </Button>
-                    <Button className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => submitMutation.mutate()} disabled={!attemptIsActive || finalSubmissionUsed || submitMutation.isPending}>
+                    <Button className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => submitMutation.mutate()} disabled={!interactiveMode || finalSubmissionUsed || submitMutation.isPending}>
                       <Send className="mr-2 h-4 w-4" /> {submitMutation.isPending ? "Submitting..." : "Submit"}
                     </Button>
                   </div>

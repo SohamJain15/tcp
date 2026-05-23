@@ -23,6 +23,7 @@ export function useContestProctoring({
 }: UseContestProctoringOptions) {
   const cooldownsRef = useRef<Record<string, number>>({});
   const sawFullscreenRef = useRef(false);
+  const fullscreenRecoveryRef = useRef(false);
 
   useEffect(() => {
     if (document.fullscreenElement) {
@@ -65,6 +66,23 @@ export function useContestProctoring({
       }
     };
 
+    const restoreFullscreen = async () => {
+      if (fullscreenRecoveryRef.current || document.fullscreenElement) {
+        return;
+      }
+
+      fullscreenRecoveryRef.current = true;
+      try {
+        if (document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen();
+        }
+      } catch {
+        toast.error("Fullscreen is required during an active contest attempt.");
+      } finally {
+        fullscreenRecoveryRef.current = false;
+      }
+    };
+
     const onVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
         void sendEvent({ type: "VISIBILITY_LOSS", details: "Document hidden" }, "switch", "Tab switch detected.");
@@ -87,6 +105,7 @@ export function useContestProctoring({
           "fullscreen",
           "Fullscreen exit detected.",
         );
+        void restoreFullscreen();
       }
     };
 
