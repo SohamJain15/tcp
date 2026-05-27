@@ -49,3 +49,6 @@ Thumbs.db
 
 # Local env files that must stay private
 backend/.env
+
+# Judge0 config
+/infrastructure/judge0/judge0.conf
