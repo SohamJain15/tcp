@@ -1,5 +1,6 @@
-import type { Firestore } from "firebase-admin/firestore";
+import type { Collection, Filter } from "mongodb";
 import { env } from "../../config/env";
+import { getMongoDatabase } from "../../config/mongodb";
 import type { Department, SubmissionStatus, SupportedLanguage } from "../../shared/types/domain";
 import { toDate } from "../../shared/utils/date";
 import {
@@ -69,40 +70,52 @@ function mapSubmissionRecord(submissionId: string, data: Record<string, unknown>
   };
 }
 
+function toSubmissionDocument(submission: SubmissionRecord): Record<string, unknown> {
+  return {
+    ...submission,
+  };
+}
+
+async function getCollection(): Promise<Collection> {
+  const db = await getMongoDatabase();
+  return db.collection("submissions");
+}
+
+function buildFilter(filters: SubmissionListFilters): Filter<Record<string, unknown>> {
+  const filter: Filter<Record<string, unknown>> = {};
+  if (filters.userEmail) filter.userEmail = filters.userEmail;
+  if (filters.resourceOwnerEmail) filter.resourceOwnerEmail = filters.resourceOwnerEmail;
+  if (filters.userDepartment) filter.userDepartment = filters.userDepartment;
+  if (filters.problemId) filter.problemId = filters.problemId;
+  if (filters.contestId) filter.contestId = filters.contestId;
+  if (filters.sourceType) filter.sourceType = filters.sourceType;
+  if (filters.status) filter.status = filters.status;
+  if (filters.language) filter.language = filters.language;
+  return filter;
+}
+
 export class FirestoreSubmissionRepository implements SubmissionRepository {
-  constructor(private readonly firestore: Firestore) {}
-
   async getById(submissionId: string): Promise<SubmissionRecord | null> {
-    const snapshot = await this.firestore.collection("submissions").doc(submissionId).get();
-    if (!snapshot.exists) {
-      return null;
-    }
-
-    return mapSubmissionRecord(submissionId, snapshot.data() as Record<string, unknown>);
+    const collection = await getCollection();
+    const document = await collection.findOne({ id: submissionId });
+    return document ? mapSubmissionRecord(submissionId, document as Record<string, unknown>) : null;
   }
 
   async save(submission: SubmissionRecord): Promise<SubmissionRecord> {
-    await this.firestore.collection("submissions").doc(submission.id).set(submission, { merge: true });
+    const collection = await getCollection();
+    await collection.updateOne({ id: submission.id }, { $set: toSubmissionDocument(submission) }, { upsert: true });
     return submission;
   }
 
   async create(submission: SubmissionRecord): Promise<SubmissionRecord> {
-    await this.firestore.collection("submissions").doc(submission.id).set(submission);
+    const collection = await getCollection();
+    await collection.insertOne(toSubmissionDocument(submission));
     return submission;
   }
 
   async list(filters: SubmissionListFilters = {}): Promise<SubmissionRecord[]> {
-    const snapshot = await this.firestore.collection("submissions").get();
-    return snapshot.docs
-      .map((doc) => mapSubmissionRecord(doc.id, doc.data() as Record<string, unknown>))
-      .filter((submission) => (filters.userEmail ? submission.userEmail === filters.userEmail : true))
-      .filter((submission) => (filters.resourceOwnerEmail ? submission.resourceOwnerEmail === filters.resourceOwnerEmail : true))
-      .filter((submission) => (filters.userDepartment ? submission.userDepartment === filters.userDepartment : true))
-      .filter((submission) => (filters.problemId ? submission.problemId === filters.problemId : true))
-      .filter((submission) => (filters.contestId ? submission.contestId === filters.contestId : true))
-      .filter((submission) => (filters.sourceType ? submission.sourceType === filters.sourceType : true))
-      .filter((submission) => (filters.status ? submission.status === filters.status : true))
-      .filter((submission) => (filters.language ? submission.language === filters.language : true))
-      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    const collection = await getCollection();
+    const documents = await collection.find(buildFilter(filters)).sort({ createdAt: -1 }).toArray();
+    return documents.map((document) => mapSubmissionRecord(String((document as Record<string, unknown>).id ?? ""), document as Record<string, unknown>));
   }
 }

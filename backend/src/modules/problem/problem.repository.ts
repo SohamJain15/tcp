@@ -1,5 +1,6 @@
+import type { Collection } from "mongodb";
 import { DEFAULT_PROBLEM_MEMORY_LIMIT_MB, DEFAULT_PROBLEM_TIME_LIMIT_SECONDS } from "../../shared/constants/domain";
-import type { Firestore } from "firebase-admin/firestore";
+import { getMongoDatabase } from "../../config/mongodb";
 import { toDate } from "../../shared/utils/date";
 import {
   normalizeDepartment,
@@ -22,10 +23,7 @@ function normalizeConstraints(value: unknown): string[] {
   }
 
   if (typeof value === "string") {
-    return value
-      .split(/\r?\n/)
-      .map((item) => item.trim())
-      .filter(Boolean);
+    return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
   }
 
   return [];
@@ -44,11 +42,7 @@ function normalizeTestCase(value: unknown): ProblemTestCase | null {
     return null;
   }
 
-  return {
-    input,
-    output,
-    explanation: typeof record.explanation === "string" ? record.explanation : undefined,
-  };
+  return { input, output, explanation: typeof record.explanation === "string" ? record.explanation : undefined };
 }
 
 function normalizeTestCaseList(values: unknown): ProblemTestCase[] {
@@ -80,11 +74,9 @@ function mapProblemRecord(problemId: string, data: Record<string, unknown>): Pro
         .map(normalizeTestCase)
         .filter((value): value is ProblemTestCase => Boolean(value))
     : [];
-
   const legacyStatementParts = [data.objective, data.task]
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     .map((value) => value.trim());
-
   const statement =
     typeof data.statement === "string"
       ? data.statement
@@ -127,38 +119,40 @@ function mapProblemRecord(problemId: string, data: Record<string, unknown>): Pro
   };
 }
 
+function toProblemDocument(problem: ProblemRecord): Record<string, unknown> {
+  return {
+    ...problem,
+    approved: problem.lifecycleState === "Published",
+    timeLimit: problem.timeLimitSeconds,
+    memoryLimit: problem.memoryLimitMb,
+    targetDepartment: problem.targetDepartment,
+    examples: problem.sampleTestCases.map((testCase) => ({ ...testCase, hidden: false })).concat(
+      problem.hiddenTestCases.map((testCase) => ({ ...testCase, hidden: true })),
+    ),
+  };
+}
+
+async function getCollection(): Promise<Collection> {
+  const db = await getMongoDatabase();
+  return db.collection("problems");
+}
+
 export class FirestoreProblemRepository implements ProblemRepository {
-  constructor(private readonly firestore: Firestore) {}
-
   async getById(problemId: string): Promise<ProblemRecord | null> {
-    const snapshot = await this.firestore.collection("problems").doc(problemId).get();
-    if (!snapshot.exists) {
-      return null;
-    }
-
-    return mapProblemRecord(problemId, snapshot.data() as Record<string, unknown>);
+    const collection = await getCollection();
+    const document = await collection.findOne({ id: problemId });
+    return document ? mapProblemRecord(problemId, document as Record<string, unknown>) : null;
   }
 
   async save(problem: ProblemRecord): Promise<ProblemRecord> {
-    await this.firestore.collection("problems").doc(problem.id).set(
-      {
-        ...problem,
-        approved: problem.lifecycleState === "Published",
-        timeLimit: problem.timeLimitSeconds,
-        memoryLimit: problem.memoryLimitMb,
-        targetDepartment: problem.targetDepartment,
-        examples: problem.sampleTestCases.map((testCase) => ({ ...testCase, hidden: false })).concat(
-          problem.hiddenTestCases.map((testCase) => ({ ...testCase, hidden: true })),
-        ),
-      },
-      { merge: true },
-    );
-
+    const collection = await getCollection();
+    await collection.updateOne({ id: problem.id }, { $set: toProblemDocument(problem) }, { upsert: true });
     return problem;
   }
 
   async list(): Promise<ProblemRecord[]> {
-    const snapshot = await this.firestore.collection("problems").get();
-    return snapshot.docs.map((doc) => mapProblemRecord(doc.id, doc.data() as Record<string, unknown>));
+    const collection = await getCollection();
+    const documents = await collection.find({}).toArray();
+    return documents.map((document) => mapProblemRecord(String((document as Record<string, unknown>).id ?? ""), document as Record<string, unknown>));
   }
 }

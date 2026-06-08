@@ -1,4 +1,5 @@
-import type { Firestore } from "firebase-admin/firestore";
+import type { Collection } from "mongodb";
+import { getMongoDatabase } from "../../config/mongodb";
 import { toDate } from "../../shared/utils/date";
 import { normalizeDepartment, normalizeNumber, normalizeRole } from "../../shared/utils/normalize";
 import type { LeaderboardEntry } from "./leaderboard.model";
@@ -33,35 +34,41 @@ function mapLeaderboardEntry(email: string, data: Record<string, unknown>): Lead
   };
 }
 
+async function getCollection(): Promise<Collection> {
+  const db = await getMongoDatabase();
+  return db.collection("leaderboard");
+}
+
 export class FirestoreLeaderboardRepository implements LeaderboardRepository {
-  constructor(private readonly firestore: Firestore) {}
-
   async getByEmail(email: string): Promise<LeaderboardEntry | null> {
-    const snapshot = await this.firestore.collection("leaderboard").doc(email).get();
-    if (!snapshot.exists) {
-      return null;
-    }
-
-    return mapLeaderboardEntry(email, snapshot.data() as Record<string, unknown>);
+    const collection = await getCollection();
+    const document = await collection.findOne({ email });
+    return document ? mapLeaderboardEntry(email, document as Record<string, unknown>) : null;
   }
 
   async save(entry: LeaderboardEntry): Promise<LeaderboardEntry> {
-    await this.firestore.collection("leaderboard").doc(entry.email).set(
+    const collection = await getCollection();
+    await collection.updateOne(
+      { email: entry.email },
       {
-        ...entry,
-        score: entry.rating,
+        $set: {
+          ...entry,
+          score: entry.rating,
+        },
       },
-      { merge: true },
+      { upsert: true },
     );
     return entry;
   }
 
   async delete(email: string): Promise<void> {
-    await this.firestore.collection("leaderboard").doc(email).delete();
+    const collection = await getCollection();
+    await collection.deleteOne({ email });
   }
 
   async list(): Promise<LeaderboardEntry[]> {
-    const snapshot = await this.firestore.collection("leaderboard").get();
-    return snapshot.docs.map((doc) => mapLeaderboardEntry(doc.id, doc.data() as Record<string, unknown>));
+    const collection = await getCollection();
+    const documents = await collection.find({}).toArray();
+    return documents.map((document) => mapLeaderboardEntry(String((document as Record<string, unknown>).email ?? ""), document as Record<string, unknown>));
   }
 }

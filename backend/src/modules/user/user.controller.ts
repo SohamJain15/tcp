@@ -1,7 +1,5 @@
-import { Buffer } from "node:buffer";
 import type { Request, Response } from "express";
 import { env } from "../../config/env";
-import { firebaseAuth } from "../../firebase";
 import type { UserRecord } from "./user.model";
 import type { UserRepository } from "./user.repository";
 import type { UserService } from "./user.service";
@@ -9,8 +7,6 @@ import { toUserProfileResponse } from "./user.model";
 import { parseUpdateProfilePayload } from "./user.validator";
 
 const DEFAULT_FRONTEND_HOME = "http://localhost:5173";
-const FIREBASE_CUSTOM_TOKEN_COOKIE_NAME = "firebase_custom_token";
-
 function normalizeOrigin(origin: string): string {
   return origin.trim().toLowerCase().replace(/\/$/, "");
 }
@@ -53,40 +49,6 @@ function shouldRedirectToCompleteProfile(user: Pick<UserRecord, "role" | "isProf
   return !user.isProfileComplete || hasInvalidStudentUid(user.uid);
 }
 
-function buildFirebaseUid(email: string): string {
-  return `coe-${Buffer.from(email).toString("base64url").slice(0, 100)}`;
-}
-
-async function ensureFirebaseAuthUser(params: {
-  email: string;
-  role: "STUDENT" | "FACULTY";
-}): Promise<string> {
-  const firebaseUid = buildFirebaseUid(params.email);
-  const userPayload = {
-    email: params.email,
-    disabled: false,
-  };
-
-  try {
-    await firebaseAuth.updateUser(firebaseUid, userPayload);
-  } catch (error) {
-    const code = (error as { code?: string }).code;
-    if (code !== "auth/user-not-found") {
-      throw error;
-    }
-
-    await firebaseAuth.createUser({
-      uid: firebaseUid,
-      ...userPayload,
-    });
-  }
-
-  return firebaseAuth.createCustomToken(firebaseUid, {
-    role: params.role,
-    email: params.email,
-  });
-}
-
 interface UserControllerDependencies {
   userService: UserService;
   userRepository: UserRepository;
@@ -103,28 +65,15 @@ export function createUserController({ userService, userRepository }: UserContro
 
         const existingUser = await userRepository.findByEmail(req.user.email);
         const syncedUser = existingUser ?? (await userService.syncAuthenticatedUser(req.user));
-        const firebaseCustomToken = await ensureFirebaseAuthUser({
-          email: syncedUser.email,
-          role: syncedUser.role,
-        });
         const frontendOrigin = resolveSafeFrontendOrigin(req.query.frontendOrigin);
         const destinationPath = shouldRedirectToCompleteProfile(syncedUser)
           ? "/complete-profile"
           : getDashboardPathForRole(syncedUser.role);
 
-        res.cookie(FIREBASE_CUSTOM_TOKEN_COOKIE_NAME, firebaseCustomToken, {
-          httpOnly: false,
-          sameSite: "lax",
-          secure: env.NODE_ENV === "production",
-          path: "/",
-          maxAge: 5 * 60 * 1000,
-        });
-
         if (req.method === "POST") {
           res.json({
             ok: true,
             user: toUserProfileResponse(syncedUser, null),
-            firebaseCustomToken,
           });
           return;
         }

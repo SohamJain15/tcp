@@ -1,6 +1,5 @@
 import type { RequestHandler } from "express";
-import { env } from "../config/env";
-import { db } from "../firebase";
+import { getMongoDatabase } from "../config/mongodb";
 import { Judge0ExecutionProvider } from "../execution/judge0-execution-provider";
 import { createAuthMiddleware } from "../middleware/auth";
 import { createRequireCompleteProfile } from "../middleware/require-complete-profile";
@@ -68,15 +67,15 @@ export interface DependencyOverrides {
 
 function createRepositories(overrides?: Partial<RepositoryBundle>): RepositoryBundle {
   return {
-    userRepository: overrides?.userRepository ?? new FirestoreUserRepository(db),
-    problemRepository: overrides?.problemRepository ?? new FirestoreProblemRepository(db),
-    submissionRepository: overrides?.submissionRepository ?? new FirestoreSubmissionRepository(db),
-    leaderboardRepository: overrides?.leaderboardRepository ?? new FirestoreLeaderboardRepository(db),
-    contestRepository: overrides?.contestRepository ?? new FirestoreContestRepository(db),
+    userRepository: overrides?.userRepository ?? new FirestoreUserRepository(),
+    problemRepository: overrides?.problemRepository ?? new FirestoreProblemRepository(),
+    submissionRepository: overrides?.submissionRepository ?? new FirestoreSubmissionRepository(),
+    leaderboardRepository: overrides?.leaderboardRepository ?? new FirestoreLeaderboardRepository(),
+    contestRepository: overrides?.contestRepository ?? new FirestoreContestRepository(),
     contestAttemptRepository:
-      overrides?.contestAttemptRepository ?? new FirestoreContestAttemptRepository(db),
+      overrides?.contestAttemptRepository ?? new FirestoreContestAttemptRepository(),
     contestProctoringRepository:
-      overrides?.contestProctoringRepository ?? new FirestoreContestProctoringRepository(db),
+      overrides?.contestProctoringRepository ?? new FirestoreContestProctoringRepository(),
   };
 }
 
@@ -131,10 +130,8 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     authMiddleware: overrides.authMiddleware ?? createAuthMiddleware(userService),
     profileCompletionMiddleware: createRequireCompleteProfile(repositories.userRepository),
     databaseHealthcheck: async () => {
-      await db.collection(env.FIRESTORE_TEST_COLLECTION).doc("demo").set({
-        message: "Firebase connected",
-        time: new Date(),
-      });
+      const db = await getMongoDatabase();
+      await db.command({ ping: 1 });
     },
     userService,
     problemService,

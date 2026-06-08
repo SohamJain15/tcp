@@ -27,12 +27,8 @@ const envSchema = z.object({
   COE_JWT_SECRET: z.string().optional().transform((value) => value?.trim() ?? ""),
   COE_REQUIRE_TRUSTED_PROXY: z.unknown().transform((value) => parseBoolean(value, true)),
   COE_TRUSTED_PROXY_IPS: z.string().default("127.0.0.1,::1,::ffff:127.0.0.1"),
-  FIREBASE_USE_APPLICATION_DEFAULT_CREDENTIALS: z
-    .unknown()
-    .transform((value) => parseBoolean(value, false)),
-  FIREBASE_PROJECT_ID: z.string().optional().transform((value) => value?.trim() ?? ""),
-  FIREBASE_SERVICE_ACCOUNT_PATH: z.string().optional().transform((value) => value?.trim() ?? "./firebase-key.json"),
-  FIRESTORE_TEST_COLLECTION: z.string().min(1).default("test"),
+  MONGODB_URI: z.string().min(1).default("mongodb://127.0.0.1:27017"),
+  MONGODB_DB_NAME: z.string().min(1).default("Tcet-code-platform"),
   CORS_ORIGIN: z.string().min(1).default("http://localhost:5173"),
   EXECUTION_PROVIDER: z.enum(["stub", "judge0"]).default("stub"),
   JUDGE0_BASE_URL: z.string().optional().transform((value) => value?.trim() ?? ""),
@@ -67,7 +63,4 @@ export const env = {
   corsOrigins: parsedEnv.CORS_ORIGIN.split(",")
     .map((origin) => origin.trim())
     .filter(Boolean),
-  firebaseServiceAccountPath: parsedEnv.FIREBASE_SERVICE_ACCOUNT_PATH
-    ? path.resolve(process.cwd(), parsedEnv.FIREBASE_SERVICE_ACCOUNT_PATH)
-    : "",
 } as const;

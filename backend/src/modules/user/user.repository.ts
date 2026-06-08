@@ -1,4 +1,5 @@
-import type { Firestore } from "firebase-admin/firestore";
+import type { Collection } from "mongodb";
+import { getMongoDatabase } from "../../config/mongodb";
 import { toDate } from "../../shared/utils/date";
 import { normalizeDepartment, normalizeNumber, normalizeRole } from "../../shared/utils/normalize";
 import type { UserRecord } from "./user.model";
@@ -19,8 +20,7 @@ function mapUserRecord(email: string, data: Record<string, unknown>): UserRecord
   const rating = normalizeNumber(data.rating ?? data.score, 0);
   const submissionCount = normalizeNumber(data.submissionCount, 0);
   const acceptedSubmissionCount = normalizeNumber(data.acceptedSubmissionCount, 0);
-  const derivedAccuracy =
-    submissionCount > 0 ? Math.round((acceptedSubmissionCount / submissionCount) * 10000) / 100 : 0;
+  const derivedAccuracy = submissionCount > 0 ? Math.round((acceptedSubmissionCount / submissionCount) * 10000) / 100 : 0;
 
   return {
     email: String(data.email ?? email),
@@ -48,23 +48,23 @@ function mapUserRecord(email: string, data: Record<string, unknown>): UserRecord
   };
 }
 
-function toFirestoreUser(user: UserRecord): Record<string, unknown> {
+function toUserDocument(user: UserRecord): Record<string, unknown> {
   return {
     ...user,
     score: user.rating,
   };
 }
 
+async function getCollection(): Promise<Collection> {
+  const db = await getMongoDatabase();
+  return db.collection("users");
+}
+
 export class FirestoreUserRepository implements UserRepository {
-  constructor(private readonly firestore: Firestore) {}
-
   async findByEmail(email: string): Promise<UserRecord | null> {
-    const snapshot = await this.firestore.collection("users").doc(email).get();
-    if (!snapshot.exists) {
-      return null;
-    }
-
-    return mapUserRecord(email, snapshot.data() as Record<string, unknown>);
+    const collection = await getCollection();
+    const document = await collection.findOne({ email });
+    return document ? mapUserRecord(email, document as Record<string, unknown>) : null;
   }
 
   async getByEmail(email: string): Promise<UserRecord | null> {
@@ -84,16 +84,19 @@ export class FirestoreUserRepository implements UserRepository {
       createdAt: existingUser.createdAt,
     };
 
-    await this.firestore.collection("users").doc(email).set(toFirestoreUser(updatedUser), { merge: true });
+    const collection = await getCollection();
+    await collection.updateOne({ email }, { $set: toUserDocument(updatedUser) }, { upsert: true });
     return updatedUser;
   }
 
   async save(user: UserRecord): Promise<UserRecord> {
-    await this.firestore.collection("users").doc(user.email).set(toFirestoreUser(user), { merge: true });
+    const collection = await getCollection();
+    await collection.updateOne({ email: user.email }, { $set: toUserDocument(user) }, { upsert: true });
     return user;
   }
 
   async deleteByEmail(email: string): Promise<void> {
-    await this.firestore.collection("users").doc(email).delete();
+    const collection = await getCollection();
+    await collection.deleteOne({ email });
   }
 }
