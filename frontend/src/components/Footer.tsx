@@ -2,7 +2,7 @@ export function Footer() {
   return (
     <footer className="border-t border-border bg-background py-6 mt-auto">
       <div className="container mx-auto flex flex-col items-center justify-between gap-4 text-sm text-muted-foreground md:flex-row">
-        <p>Â© 2026 TCET Research Culture &amp; Development Cell. All rights reserved.</p>
+        <p>© 2026 TCET Centre of Excellence. All Rights Reserved. Designed for Academic Integrity.</p>
         <div>
           Developed by:{" "}
           <a
@@ -45,3 +45,4 @@ export function Footer() {
     </footer>
   );
 }
+
