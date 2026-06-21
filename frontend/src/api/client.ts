@@ -32,6 +32,16 @@ function resolveApiBaseUrl(): string {
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
+const AUTH_REDIRECT_ALLOWLIST = ["https://coe.tcetmumbai.in", "https://tcetcercd.in"];
+
+function isAllowedLoginUrl(candidateUrl: string): boolean {
+  try {
+    const parsed = new URL(candidateUrl);
+    return AUTH_REDIRECT_ALLOWLIST.some((allowedUrl) => parsed.origin === allowedUrl);
+  } catch {
+    return false;
+  }
+}
 
 export class ApiError extends Error {
   status: number;
@@ -105,16 +115,8 @@ async function parseErrorPayload(response: Response): Promise<ApiErrorPayload> {
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const queryString = buildQueryString(options.query);
-  const pathname =
-    options.pathname ||
-    (typeof window !== "undefined" && typeof window.location?.pathname === "string"
-      ? window.location.pathname
-      : "/");
 
-  const headers: Record<string, string> = {
-    ...(options.headers ?? {}),
-    "x-frontend-pathname": pathname,
-  };
+  const headers: Record<string, string> = { ...(options.headers ?? {}) };
 
   const isJsonBody = options.body !== undefined;
   if (isJsonBody) {
@@ -143,6 +145,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     if (
       errorPayload.status === 401 &&
       errorPayload.loginUrl &&
+      isAllowedLoginUrl(errorPayload.loginUrl) &&
       !options.suppressAuthRedirect &&
       typeof window !== "undefined"
     ) {

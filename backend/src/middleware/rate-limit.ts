@@ -8,10 +8,19 @@ function rateLimitHandler(_req: Request, res: Response): void {
   });
 }
 
+function hasAuthenticationHints(req: Request): boolean {
+  return Boolean(
+    req.headers.authorization ||
+      req.headers["x-coe-token"] ||
+      req.headers["x-coe-email"] ||
+      req.headers.cookie,
+  );
+}
+
 export function createGlobalApiRateLimiter() {
   return rateLimit({
     windowMs: 60 * 1000,
-    max: 600,
+    max: (req) => (hasAuthenticationHints(req) ? 300 : 60),
     standardHeaders: true,
     legacyHeaders: false,
     // `trust proxy` is intentionally enabled for reverse-proxy deployments.
@@ -19,6 +28,7 @@ export function createGlobalApiRateLimiter() {
     validate: {
       trustProxy: false,
     },
+    keyGenerator: (req) => req.headers.authorization?.toString() ?? req.headers["x-coe-email"]?.toString() ?? req.ip ?? "anonymous",
     handler: rateLimitHandler,
   });
 }

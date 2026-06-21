@@ -83,7 +83,8 @@ app.post('/login', (req, res) => {
 
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
-    sameSite: 'lax',
+    secure: callbackUrl.startsWith('https://'),
+    sameSite: 'strict',
     path: '/',
   });
 

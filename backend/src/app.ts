@@ -64,7 +64,6 @@ function resolveCorsOptions(): CorsOptions {
     allowedHeaders: [
       "Content-Type",
       "Authorization",
-      "X-Frontend-Pathname",
     ],
   };
 }
@@ -126,6 +125,23 @@ function createMutationOriginGuard(allowedOrigins: Set<string>) {
   };
 }
 
+function createFrontendPathnameGuard() {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const pathname = req.get("x-frontend-pathname");
+    if (!pathname) {
+      next();
+      return;
+    }
+
+    if (!/^\/[a-zA-Z0-9/_-]*$/.test(pathname)) {
+      res.status(400).json({ message: "Invalid frontend pathname." });
+      return;
+    }
+
+    next();
+  };
+}
+
 export function createApp(dependencies: ApplicationDependencies): Express {
   const app = express();
   app.set("trust proxy", true);
@@ -133,6 +149,7 @@ export function createApp(dependencies: ApplicationDependencies): Express {
   const allowedOrigins = resolveAllowedOrigins();
   const globalLimiter = createGlobalApiRateLimiter();
   const mutationOriginGuard = createMutationOriginGuard(allowedOrigins);
+  const frontendPathnameGuard = createFrontendPathnameGuard();
 
   app.disable("x-powered-by");
   app.use(helmet());
@@ -142,6 +159,7 @@ export function createApp(dependencies: ApplicationDependencies): Express {
   app.use(cookieParser());
   app.use(express.json({ limit: "100kb" }));
   app.use("/api", globalLimiter);
+  app.use("/api", frontendPathnameGuard);
   app.use("/api", mutationOriginGuard);
 
   app.get("/", (_req, res) => {
