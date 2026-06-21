@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { z } from "zod";
 import { normalizeDepartment } from "../../shared/utils/normalize";
 import type { ContestService } from "./contest.service";
 import {
@@ -10,6 +11,8 @@ import {
   createContestSchema,
   updateContestSchema,
 } from "./contest.validator";
+
+const routeIdSchema = z.string().regex(/^[a-z0-9_-]{4,64}$/i);
 
 function getRouteParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -29,7 +32,8 @@ export function createContestController(contestService: ContestService) {
     },
 
     async getContestById(req: Request, res: Response): Promise<void> {
-      const contest = await contestService.getContestById(req.user!, getRouteParam(req.params.contestId));
+      const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
+      const contest = await contestService.getContestById(req.user!, contestId);
       res.json({ contest });
     },
 
@@ -41,9 +45,10 @@ export function createContestController(contestService: ContestService) {
 
     async updateContest(req: Request, res: Response): Promise<void> {
       const payload = updateContestSchema.parse(req.body);
+      const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
       const contest = await contestService.updateContest(
         req.user!,
-        getRouteParam(req.params.contestId),
+        contestId,
         payload,
       );
       res.json({ contest });
@@ -51,21 +56,24 @@ export function createContestController(contestService: ContestService) {
 
     async updateContestResults(req: Request, res: Response): Promise<void> {
       const payload = contestResultsSchema.parse(req.body);
+      const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
       const contest = await contestService.updateContestResults(
         req.user!,
-        getRouteParam(req.params.contestId),
+        contestId,
         payload,
       );
       res.json({ contest });
     },
 
     async startAttempt(req: Request, res: Response): Promise<void> {
-      const attempt = await contestService.startAttempt(req.user!, getRouteParam(req.params.contestId));
+      const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
+      const attempt = await contestService.startAttempt(req.user!, contestId);
       res.status(201).json({ attempt });
     },
 
     async submitAttempt(req: Request, res: Response): Promise<void> {
-      const attempt = await contestService.submitAttempt(req.user!, getRouteParam(req.params.contestId));
+      const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
+      const attempt = await contestService.submitAttempt(req.user!, contestId);
       res.json({ attempt });
     },
 
@@ -73,7 +81,7 @@ export function createContestController(contestService: ContestService) {
       const payload = contestProctoringEventSchema.parse(req.body);
       const attempt = await contestService.recordProctorEvent(
         req.user!,
-        getRouteParam(req.params.contestId),
+        routeIdSchema.parse(getRouteParam(req.params.contestId)),
         payload.type,
         payload.details,
       );
@@ -84,7 +92,7 @@ export function createContestController(contestService: ContestService) {
       const payload = contestAnswerSchema.parse(req.body);
       const attempt = await contestService.answerObjectiveQuestion(
         req.user!,
-        getRouteParam(req.params.contestId),
+        routeIdSchema.parse(getRouteParam(req.params.contestId)),
         payload,
       );
       res.json({ attempt });
@@ -93,8 +101,8 @@ export function createContestController(contestService: ContestService) {
     async getQuestionById(req: Request, res: Response): Promise<void> {
       const payload = await contestService.getQuestionById(
         req.user!,
-        getRouteParam(req.params.contestId),
-        getRouteParam(req.params.questionId),
+        routeIdSchema.parse(getRouteParam(req.params.contestId)),
+        routeIdSchema.parse(getRouteParam(req.params.questionId)),
       );
       res.json(payload);
     },
@@ -103,7 +111,7 @@ export function createContestController(contestService: ContestService) {
       const payload = contestCodingRunSchema.parse(req.body);
       const result = await contestService.runCodingQuestion(
         req.user!,
-        getRouteParam(req.params.contestId),
+        routeIdSchema.parse(getRouteParam(req.params.contestId)),
         payload,
       );
       res.json({ result });
@@ -113,37 +121,42 @@ export function createContestController(contestService: ContestService) {
       const payload = contestCodingSubmissionSchema.parse(req.body);
       const result = await contestService.submitCodingQuestion(
         req.user!,
-        getRouteParam(req.params.contestId),
+        routeIdSchema.parse(getRouteParam(req.params.contestId)),
         payload,
       );
       res.status(201).json(result);
     },
 
     async getStandings(req: Request, res: Response): Promise<void> {
-      const standings = await contestService.getStandings(req.user!, getRouteParam(req.params.contestId));
+      const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
+      const standings = await contestService.getStandings(req.user!, contestId);
       res.json({ items: standings });
     },
 
     async exportStandingsCsv(req: Request, res: Response): Promise<void> {
-      const csv = await contestService.exportStandingsCsv(req.user!, getRouteParam(req.params.contestId));
+      const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
+      const csv = await contestService.exportStandingsCsv(req.user!, contestId);
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename=\"contest-${getRouteParam(req.params.contestId)}-standings.csv\"`,
+        `attachment; filename=\"contest-${contestId}-standings.csv\"`,
       );
       res.send(csv);
     },
 
     async listAttempts(req: Request, res: Response): Promise<void> {
-      const attempts = await contestService.listAttempts(req.user!, getRouteParam(req.params.contestId));
+      const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
+      const attempts = await contestService.listAttempts(req.user!, contestId);
       res.json({ items: attempts });
     },
 
     async getAttemptReview(req: Request, res: Response): Promise<void> {
+      const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
+      const attemptId = routeIdSchema.parse(getRouteParam(req.params.attemptId));
       const review = await contestService.getAttemptReview(
         req.user!,
-        getRouteParam(req.params.contestId),
-        getRouteParam(req.params.attemptId),
+        contestId,
+        attemptId,
       );
       res.json({ review });
     },

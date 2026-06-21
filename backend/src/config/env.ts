@@ -26,7 +26,19 @@ const envSchema = z.object({
   COE_AUTH_BASE_URL: z.string().min(1).default("http://127.0.0.1:4000"),
   COE_JWT_SECRET: z.string().trim().min(32),
   COE_REQUIRE_TRUSTED_PROXY: z.unknown().transform((value) => parseBoolean(value, true)),
-  COE_TRUSTED_PROXY_IPS: z.string().trim().min(1),
+  COE_TRUSTED_PROXY_IPS: z
+    .string()
+    .trim()
+    .min(1)
+    .refine((value) => value.split(",").map((entry) => entry.trim()).filter(Boolean).length <= 20, {
+      message: "COE_TRUSTED_PROXY_IPS must contain at most 20 entries",
+    })
+    .refine(
+      (value) => value.split(",").every((entry) => entry.trim().length <= 45),
+      {
+        message: "Each trusted proxy IP entry must be at most 45 characters",
+      },
+    ),
   MONGODB_URI: z.string().min(1).default("mongodb://127.0.0.1:27017"),
   MONGODB_DB_NAME: z.string().min(1).default("Tcet-code-platform"),
   CORS_ORIGIN: z.string().min(1).default("http://localhost:5173"),

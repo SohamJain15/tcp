@@ -1,6 +1,9 @@
 import type { Request, Response } from "express";
 import type { SubmissionService } from "./submission.service";
 import { submissionQuerySchema, submissionRequestSchema } from "./submission.validator";
+import { z } from "zod";
+
+const submissionIdSchema = z.string().regex(/^(?:submission|practice)_[a-fA-F0-9-]{36}$/);
 
 export function createSubmissionController(submissionService: SubmissionService) {
   return {
@@ -23,7 +26,8 @@ export function createSubmissionController(submissionService: SubmissionService)
     },
 
     async getSubmissionById(req: Request, res: Response): Promise<void> {
-      const submission = await submissionService.getSubmissionById(req.user!, String(req.params.submissionId));
+      const submissionId = submissionIdSchema.parse(req.params.submissionId);
+      const submission = await submissionService.getSubmissionById(req.user!, submissionId);
       res.json({ submission });
     },
   };

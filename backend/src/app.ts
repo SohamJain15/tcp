@@ -156,7 +156,7 @@ export function createApp(dependencies: ApplicationDependencies): Express {
     res.json({ ok: true });
   });
 
-  if (dependencies.databaseHealthcheck) {
+  if (dependencies.databaseHealthcheck && env.NODE_ENV !== "production") {
     app.get("/test-db", async (req, res, next) => {
       try {
         if (!isAllowedInternalSource(req.socket?.remoteAddress ?? "")) {

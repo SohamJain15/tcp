@@ -57,3 +57,19 @@ export function createFinalSubmissionRateLimiters() {
     }),
   ];
 }
+
+export function createCodeExecutionRateLimiter() {
+  return rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: finalSubmissionKey,
+    skip: () => env.NODE_ENV === "test",
+    handler: (_req, res) => {
+      res.status(429).json({
+        message: "You have reached the code execution limit. Please try again later.",
+      });
+    },
+  });
+}

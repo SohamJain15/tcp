@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { z } from "zod";
 import type { ProblemService } from "./problem.service";
 import {
   createProblemSchema,
@@ -10,6 +11,8 @@ import {
   updateProblemSchema,
 } from "./problem.validator";
 
+const routeIdSchema = z.string().regex(/^[a-z0-9_-]{4,64}$/i);
+
 export function createProblemController(problemService: ProblemService) {
   return {
     async listStudentProblems(req: Request, res: Response): Promise<void> {
@@ -19,8 +22,9 @@ export function createProblemController(problemService: ProblemService) {
     },
 
     async getStudentProblemDetail(req: Request, res: Response): Promise<void> {
-      const problem = await problemService.getStudentProblemDetail(req.user!, String(req.params.problemId));
-      res.json({ problem });
+      const problem = routeIdSchema.parse(req.params.problemId);
+      const problemDetail = await problemService.getStudentProblemDetail(req.user!, problem);
+      res.json({ problem: problemDetail });
     },
 
     async listManageProblems(req: Request, res: Response): Promise<void> {
@@ -30,8 +34,9 @@ export function createProblemController(problemService: ProblemService) {
     },
 
     async getManageProblemDetail(req: Request, res: Response): Promise<void> {
-      const problem = await problemService.getManageProblemDetail(req.user!, String(req.params.problemId));
-      res.json({ problem });
+      const problem = routeIdSchema.parse(req.params.problemId);
+      const problemDetail = await problemService.getManageProblemDetail(req.user!, problem);
+      res.json({ problem: problemDetail });
     },
 
     async createProblem(req: Request, res: Response): Promise<void> {
@@ -42,13 +47,15 @@ export function createProblemController(problemService: ProblemService) {
 
     async updateProblem(req: Request, res: Response): Promise<void> {
       const payload = toCanonicalProblemUpdatePayload(updateProblemSchema.parse(req.body));
-      const problem = await problemService.updateProblem(req.user!, String(req.params.problemId), payload);
+      const problemId = routeIdSchema.parse(req.params.problemId);
+      const problem = await problemService.updateProblem(req.user!, problemId, payload);
       res.json({ problem });
     },
 
     async updateProblemState(req: Request, res: Response): Promise<void> {
       const payload = problemStateSchema.parse(req.body);
-      const problem = await problemService.updateProblemState(req.user!, String(req.params.problemId), payload.lifecycleState);
+      const problemId = routeIdSchema.parse(req.params.problemId);
+      const problem = await problemService.updateProblemState(req.user!, problemId, payload.lifecycleState);
       res.json({ problem });
     },
   };
