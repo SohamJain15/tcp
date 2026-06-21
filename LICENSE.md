@@ -1,4 +1,5 @@
-Copyright © 2026 Soham Jain, Aayush Gupta, Gyaneshwar Jha, and Vedant Bist
+Copyright © 2026 TCET Centre of Excellence
+Soham Jain, Aayush Gupta, Gyaneshwar Jha, and Vedant Bist
 
 All rights reserved.
 

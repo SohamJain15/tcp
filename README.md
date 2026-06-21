@@ -53,35 +53,6 @@ cd backend
 npm install
 ```
 
-Create `backend/.env` with values similar to:
-
-```env
-NODE_ENV=development
-PORT=3001
-CORS_ORIGIN=http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173
-COE_AUTH_BASE_URL=http://127.0.0.1:4000
-COE_JWT_SECRET=replace-with-a-32-character-minimum-secret
-COE_REQUIRE_TRUSTED_PROXY=true
-COE_TRUSTED_PROXY_IPS=127.0.0.1,::1,::ffff:127.0.0.1
-FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-key.json
-FIREBASE_PROJECT_ID=your-firebase-project
-MONGODB_URI=mongodb://127.0.0.1:27017
-MONGODB_DB_NAME=Tcet-code-platform
-EXECUTION_PROVIDER=judge0
-JUDGE0_BASE_URL=http://127.0.0.1:2358
-REDIS_HOST=127.0.0.1
-REDIS_PORT=6379
-REDIS_DB=0
-SUBMISSION_QUEUE_NAME=tcet-code-submissions
-SUBMISSION_WORKER_CONCURRENCY=3
-EMBED_SUBMISSION_WORKER=false
-```
-
-Place the Firebase key at:
-
-```text
-backend/firebase-key.json
-```
 
 Run the backend:
 
