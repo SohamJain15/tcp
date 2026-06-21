@@ -344,7 +344,7 @@ export default function StudentProfile() {
                   <CardHeader>
                     <CardTitle className="text-lg font-semibold">Submission Activity</CardTitle>
                   </CardHeader>
-                  <CardContent className="flex justify-center overflow-x-auto pb-6">
+                  <CardContent className="overflow-x-auto pb-6">
                     <SubmissionActivityHeatmap activity={analytics?.submissionHeatmap ?? []} />
                   </CardContent>
                 </Card>

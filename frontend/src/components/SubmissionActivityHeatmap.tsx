@@ -137,7 +137,7 @@ export function SubmissionActivityHeatmap({ submissions = [], activity }: Submis
   const maxStreak = computeMaxStreak(cells);
 
   return (
-    <div className="min-w-[860px] space-y-4">
+    <div className="w-max min-w-[860px] space-y-4">
       <div className="flex flex-wrap items-center gap-6 text-sm">
         <div>
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Submissions (1Y)</div>
@@ -153,7 +153,7 @@ export function SubmissionActivityHeatmap({ submissions = [], activity }: Submis
         </div>
       </div>
 
-      <div className="inline-flex min-w-full flex-col gap-3">
+      <div className="inline-flex w-max flex-col gap-3">
         <div className="flex gap-1 pl-8 text-xs text-muted-foreground">
           {weeks.map((week) => {
             const firstVisibleDay = week.find((day) => day.inRange);
