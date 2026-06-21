@@ -13,6 +13,7 @@ import { createAuthRouter, createLegacyUserRouter, createUserRouter } from "./mo
 import { errorHandler, notFoundHandler } from "./shared/middleware/error-handler";
 
 const DEFAULT_FRONTEND_HOME = "http://localhost:5173";
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 function normalizeOrigin(origin: string): string {
   return origin.trim().toLowerCase().replace(/\/$/, "");
@@ -68,12 +69,70 @@ function resolveCorsOptions(): CorsOptions {
   };
 }
 
+function isAllowedInternalSource(sourceIp: string): boolean {
+  if (!sourceIp) {
+    return false;
+  }
+
+  const normalizedSource = sourceIp.trim();
+  if (["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(normalizedSource)) {
+    return true;
+  }
+
+  return env.coeTrustedProxyIps.some((entry) => {
+    const trimmed = entry.trim();
+    if (!trimmed) {
+      return false;
+    }
+
+    if (trimmed.includes("/")) {
+      const [network, prefix] = trimmed.split("/", 2);
+      return network === normalizedSource && Boolean(prefix);
+    }
+
+    return trimmed === normalizedSource;
+  });
+}
+
+function createMutationOriginGuard(allowedOrigins: Set<string>) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (SAFE_METHODS.has(req.method)) {
+      next();
+      return;
+    }
+
+    const origin = typeof req.get("origin") === "string" ? req.get("origin") : "";
+    const referer = typeof req.get("referer") === "string" ? req.get("referer") : "";
+    const source = origin || referer;
+
+    if (!source) {
+      res.status(403).json({ message: "Missing request origin." });
+      return;
+    }
+
+    try {
+      const parsed = new URL(source);
+      const normalizedOrigin = `${parsed.protocol}//${parsed.host}`.toLowerCase().replace(/\/$/, "");
+      if (!allowedOrigins.has(normalizedOrigin)) {
+        res.status(403).json({ message: "Request origin not allowed." });
+        return;
+      }
+    } catch {
+      res.status(403).json({ message: "Invalid request origin." });
+      return;
+    }
+
+    next();
+  };
+}
+
 export function createApp(dependencies: ApplicationDependencies): Express {
   const app = express();
   app.set("trust proxy", true);
   const corsOptions = resolveCorsOptions();
   const allowedOrigins = resolveAllowedOrigins();
   const globalLimiter = createGlobalApiRateLimiter();
+  const mutationOriginGuard = createMutationOriginGuard(allowedOrigins);
 
   app.disable("x-powered-by");
   app.use(helmet());
@@ -83,21 +142,27 @@ export function createApp(dependencies: ApplicationDependencies): Express {
   app.use(cookieParser());
   app.use(express.json({ limit: "100kb" }));
   app.use("/api", globalLimiter);
+  app.use("/api", mutationOriginGuard);
 
   app.get("/", (_req, res) => {
-    res.json({
-      status: "ok",
-      service: "tcet-code-studio-backend",
-    });
+    res.json({ status: "ok" });
   });
 
-  app.get("/health", (_req, res) => {
+  app.get("/health", (req, res) => {
+    if (!isAllowedInternalSource(req.socket?.remoteAddress ?? "")) {
+      res.status(403).json({ message: "Forbidden" });
+      return;
+    }
     res.json({ ok: true });
   });
 
   if (dependencies.databaseHealthcheck) {
-    app.get("/test-db", async (_req, res, next) => {
+    app.get("/test-db", async (req, res, next) => {
       try {
+        if (!isAllowedInternalSource(req.socket?.remoteAddress ?? "")) {
+          res.status(403).json({ message: "Forbidden" });
+          return;
+        }
         await dependencies.databaseHealthcheck?.();
         res.send("Database working");
       } catch (error) {

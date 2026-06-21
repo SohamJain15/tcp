@@ -664,7 +664,7 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         throw new AppError(409, "Contest questions are not available yet");
       }
       const rawAttempt = await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email);
-      const attempt = status === "Live" ? ensureActiveAttempt(rawAttempt) : rawAttempt;
+      const attempt = ensureActiveAttempt(rawAttempt);
       const question = ensureContestQuestion(contest, questionId);
       return toStudentContestQuestionEnvelope(contest, question, attempt, now);
     },
