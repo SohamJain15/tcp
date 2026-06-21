@@ -91,7 +91,7 @@ function defaultNameFromEmail(email: string): string {
 
 function decodeAndValidateToken(token: string): CoeTokenPayload | null {
   const secret = env.COE_JWT_SECRET.trim();
-  if (!secret || !token) {
+  if (!token) {
     return null;
   }
 
@@ -198,12 +198,8 @@ function logSecurityEvent(
 
 export function createAuthMiddleware(userService: Pick<UserService, "syncAuthenticatedUser">): RequestHandler {
   const trustedProxyBlockList = parseTrustedProxyEntries([
-    "127.0.0.1",
-    "::1",
-    "::ffff:127.0.0.1",
     ...env.coeTrustedProxyIps,
   ]);
-  const requiresTrustedProxySource = env.COE_REQUIRE_TRUSTED_PROXY;
 
   return async (req, res, next) => {
     try {
@@ -211,7 +207,7 @@ export function createAuthMiddleware(userService: Pick<UserService, "syncAuthent
       // CoE auth is handled upstream (Cloudflare/Tailscale/reverse proxy), and only authenticated
       // requests are forwarded to this backend with x-coe-* identity headers.
       // Do NOT expose this backend directly to the public internet, or clients could spoof headers.
-      if (requiresTrustedProxySource && !isTrustedProxySource(req, trustedProxyBlockList)) {
+      if (!isTrustedProxySource(req, trustedProxyBlockList)) {
         logSecurityEvent("auth_untrusted_proxy", req, {
           message: "Rejected request from untrusted source.",
           xForwardedFor: normalizeHeaderValue(req.headers["x-forwarded-for"]),

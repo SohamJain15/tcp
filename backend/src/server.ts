@@ -10,15 +10,8 @@ const embeddedWorker = env.EMBED_SUBMISSION_WORKER ? createSubmissionWorker(depe
 
 const server = app.listen(port, () => {
   console.log(`Server running on port ${port}`);
-  console.log(
-    `[AUTH] CoE trusted-header mode enabled. Trusted proxy enforcement: ${env.COE_REQUIRE_TRUSTED_PROXY ? "ON" : "OFF"}.`,
-  );
-  if (env.COE_REQUIRE_TRUSTED_PROXY) {
-    console.log(`[AUTH] Trusted proxy IP/CIDR allowlist: ${env.coeTrustedProxyIps.join(", ")}`);
-  }
-  if (env.NODE_ENV === "production" && !env.COE_JWT_SECRET) {
-    console.warn("[AUTH] COE_JWT_SECRET is not configured. This is okay today, but required for future direct JWT verification.");
-  }
+  console.log("[AUTH] Trusted proxy enforcement: ON.");
+  console.log(`[AUTH] Trusted proxy IP/CIDR allowlist: ${env.coeTrustedProxyIps.join(", ")}`);
   if (embeddedWorker) {
     console.log("Embedded submission worker is enabled.");
   }
