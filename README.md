@@ -1,132 +1,104 @@
-# TCET Code Studio
+# TCET Coding Platform
 
-TCET Code Studio is a role-based coding platform with a React frontend, an Express backend, and Firebase/Firestore persistence.
+TCET Coding Platform is a full-stack coding platform with a React + Vite frontend, an Express 5 + TypeScript backend, MongoDB persistence, Redis-backed queueing, and Judge0-based code execution.
 
-Authentication is now handled by centralized CoE infrastructure upstream of this backend.
+The current deployment model assumes centralized CoE authentication upstream of the backend.
 
-## Current System Overview
+## Tech Stack
 
-This repo contains:
+- Frontend: React 18, Vite 5, TypeScript 5, React Router, React Query, Tailwind CSS
+- Backend: Express 5, TypeScript 6, Zod, Helmet, cookie-parser, express-rate-limit
+- Data: MongoDB, Redis, BullMQ
+- Code execution: Judge0 or stub execution provider
 
-- `frontend/` - React + Vite + TypeScript app (default: `http://localhost:5173`)
-- `backend/` - Express + TypeScript API (default: `http://localhost:3001`)
+## Repository Layout
 
-Key implemented behavior:
+- `frontend/` — browser app
+- `backend/` — API, auth, queue worker, execution logic
+- `infrastructure/` — Judge0 and deployment-related files
+- `scripts/` — Judge0 helper scripts
 
-- CoE trusted-header auth (`x-coe-*`) from reverse proxy/gateway
-- backend auth callback route remains: `GET /api/auth/sso/callback`
-- automatic user provisioning in Firestore on first authenticated request
-- role-based route protection across backend APIs
-- role-based UI routing in frontend
+## Current Runtime Model
 
-## Authentication Flow (CoE Centralized)
+The backend expects trusted CoE headers from a reverse proxy or gateway:
 
-1. User authenticates with CoE SSO at CoE gateway/infrastructure.
-2. Reverse proxy forwards request to backend and injects trusted identity headers:
-   - `x-coe-email`
-   - `x-coe-name`
-   - `x-coe-role`
-   - `x-coe-status`
-3. Backend `authMiddleware` validates:
-   - required headers present, else `401 Unauthorized`
-   - `x-coe-status === ACTIVE`, else `403 Forbidden`
-   - request source is a trusted proxy (when enabled)
-4. Backend sets `req.user` as:
-   - `{ email, role, name }`
-5. Existing RBAC and existing Firestore auto-provisioning continue unchanged.
+- `x-coe-email`
+- `x-coe-name`
+- `x-coe-role`
+- `x-coe-status`
 
-Important notes:
+Current auth behavior:
 
-- Backend must not be publicly reachable directly.
-- `x-coe-*` headers are trusted only when requests originate from trusted proxy infrastructure.
-- `app.set("trust proxy", true)` is required for reverse-proxy deployments.
-
-## Role Rules
-
-- `STUDENT`
-  - can submit solutions: `POST /api/submissions`
-  - appears on leaderboard
-- `FACULTY`
-  - can manage problems and export leaderboard
-  - cannot submit on student submission endpoint
+- Direct public access to the backend is not supported.
+- Trusted proxy source IPs must be listed in `COE_TRUSTED_PROXY_IPS`.
+- `COE_JWT_SECRET` is required and must be at least 32 characters.
+- `x-coe-status` must be `ACTIVE`.
 
 ## Prerequisites
 
-- Node.js 18+
+- Node.js 18 or newer
 - npm
-- Firebase Admin service account key (JSON)
+- MongoDB
+- Redis
+- Firebase Admin service account JSON
 - Docker
-- Linux `x86_64` host for full local Judge0 sandboxing, or a compatible VM/runtime
+- Judge0 runtime environment for local code execution
 
-## Local Judge0
+## Local Environment Setup
 
-The deployed backend is already configured to use a local Judge0 endpoint via `JUDGE0_BASE_URL=http://localhost:2358`. To run the compiler stack locally without changing auth or app behavior:
-
-```bash
-npm run judge0:up
-npm run judge0:status
-```
-
-Useful verification commands:
-
-```bash
-npm run judge0:test-sandbox
-npm run judge0:test-languages
-npm run judge0:down
-```
-
-Local Judge0 support files live in:
-
-- `infrastructure/judge0/`
-- `scripts/judge0-*.sh`
-
-Judge0 is exposed at:
-
-```text
-http://localhost:2358
-```
-
-## Quick Start
-
-### 1. Backend
+### 1) Backend
 
 ```bash
 cd backend
 npm install
 ```
 
-Create `backend/.env` and set at least:
+Create `backend/.env` with values similar to:
 
 ```env
 NODE_ENV=development
 PORT=3001
-CORS_ORIGIN=http://localhost:5173,http://127.0.0.1:5173
+CORS_ORIGIN=http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173
 COE_AUTH_BASE_URL=http://127.0.0.1:4000
-COE_JWT_SECRET=
+COE_JWT_SECRET=replace-with-a-32-character-minimum-secret
 COE_REQUIRE_TRUSTED_PROXY=true
 COE_TRUSTED_PROXY_IPS=127.0.0.1,::1,::ffff:127.0.0.1
 FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-key.json
+FIREBASE_PROJECT_ID=your-firebase-project
+MONGODB_URI=mongodb://127.0.0.1:27017
+MONGODB_DB_NAME=Tcet-code-platform
+EXECUTION_PROVIDER=judge0
+JUDGE0_BASE_URL=http://127.0.0.1:2358
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_DB=0
+SUBMISSION_QUEUE_NAME=tcet-code-submissions
+SUBMISSION_WORKER_CONCURRENCY=3
+EMBED_SUBMISSION_WORKER=false
 ```
 
-Place Firebase key at:
+Place the Firebase key at:
 
 ```text
 backend/firebase-key.json
 ```
 
-Run backend:
+Run the backend:
 
 ```bash
 npm run dev
 ```
 
-Optional seed:
+Optional backend commands:
 
 ```bash
+npm run dev:worker
+npm run typecheck
+npm run test
 npm run seed
 ```
 
-### 2. Frontend
+### 2) Frontend
 
 ```bash
 cd frontend
@@ -139,88 +111,110 @@ Create `frontend/.env`:
 VITE_API_BASE_URL=http://localhost:3001
 ```
 
-Run frontend:
+Run the frontend:
 
 ```bash
 npm run dev
 ```
 
-## Runtime Ports
+## Judge0 Setup
+
+The backend is configured to use Judge0 through `JUDGE0_BASE_URL=http://127.0.0.1:2358`.
+
+Root-level helper scripts:
+
+```bash
+npm run judge0:up
+npm run judge0:status
+npm run judge0:test-sandbox
+npm run judge0:test-languages
+npm run judge0:down
+```
+
+Judge0 helper files live in:
+
+- `infrastructure/judge0/`
+- `scripts/`
+
+## Ports
 
 - Frontend: `5173`
 - Backend API: `3001`
+- Mock CoE SSO: `4000`
+- Judge0: `2358`
 
-## Required Auth Headers
+## API Summary
 
-All protected backend routes expect these headers from trusted upstream auth middleware:
+### Auth
 
-- `x-coe-email`
-- `x-coe-name`
-- `x-coe-role`
-- `x-coe-status`
-
-`x-coe-role` mapping:
-
-- `STUDENT` -> `STUDENT`
-- `FACULTY`/`ADMIN`/`INDUSTRY` -> `FACULTY`
-
-`x-coe-status` must be `ACTIVE`.
-
-## API Highlights
-
-### Auth and Session
-
-- `GET /api/auth/sso/callback` - validates authenticated user and redirects by role
-- `GET /api/logout` - redirects to CoE logout endpoint
+- `GET /api/auth/sso/callback`
+- `POST /api/auth/sso/callback`
+- `GET /api/logout`
 
 ### Health
 
 - `GET /`
 - `GET /health`
-- `GET /test-db`
+- `GET /test-db` — available only outside production and only for trusted/internal sources
 
 ### Users
 
 - `GET /api/users/me`
-- `GET /api/user/profile` (legacy compatibility)
-- `GET /api/users/:email` (faculty only)
+- `GET /api/users/me/analytics`
+- `PATCH /api/users/me`
+- `GET /api/user/profile`
+- `GET /api/users/:email` — faculty only
+- `GET /api/users/:email/analytics` — faculty only
 
 ### Problems
 
 - `GET /api/problems`
 - `GET /api/problems/:problemId`
-- `GET /api/problems/manage` (faculty only)
-- `GET /api/problems/manage/:problemId` (faculty only)
-- `POST /api/problems` (faculty only)
-- `PATCH /api/problems/:problemId` (faculty only)
-- `PATCH /api/problems/:problemId/state` (faculty only)
+- `GET /api/problems/manage` — faculty only
+- `GET /api/problems/manage/:problemId` — faculty only
+- `POST /api/problems` — faculty only
+- `PATCH /api/problems/:problemId` — faculty only
+- `PATCH /api/problems/:problemId/state` — faculty only
+
+### Contests
+
+- `GET /api/contests`
+- `GET /api/contests/:contestId`
+- `GET /api/contests/:contestId/questions/:questionId` — student only, active attempt required
+- `GET /api/contests/:contestId/standings`
+- `GET /api/contests/:contestId/standings/export` — faculty only
+- `GET /api/contests/:contestId/attempts` — faculty only
+- `GET /api/contests/:contestId/attempts/:attemptId` — faculty only
+- `POST /api/contests/:contestId/attempts` — student only
+- `POST /api/contests/:contestId/attempts/submit` — student only
+- `POST /api/contests/:contestId/proctor-events` — student only
+- `POST /api/contests/:contestId/answers` — student only
+- `POST /api/contests/:contestId/coding-run` — student only
+- `POST /api/contests/:contestId/coding-submissions` — student only
 
 ### Submissions
 
-- `POST /api/submissions/run` (non-persistent test run)
-- `POST /api/submissions` (student only, queued + judged)
+- `POST /api/submissions/run` — student only, rate limited
+- `POST /api/submissions` — student only, queued submission
 - `GET /api/submissions`
 - `GET /api/submissions/:submissionId`
 
 ### Leaderboard
 
 - `GET /api/leaderboard`
-- `GET /api/leaderboard/export` (faculty only)
+- `GET /api/leaderboard/export` — faculty only
 
-## User Auto-Provisioning
+## Script Reference
 
-Users are automatically created/updated when authenticated requests hit protected routes.
+### Root
 
-Provisioned fields include:
+- `npm run judge0:up`
+- `npm run judge0:down`
+- `npm run judge0:status`
+- `npm run judge0:test-sandbox`
+- `npm run judge0:test-languages`
 
-- email
-- role
-- name/uid/department (if present in existing profile flow)
-- stats defaults (`rating`, `score`, `problemsSolved`, etc.)
-
-## Scripts
-
-### Backend (`backend/`)
+### Backend
 
 - `npm run dev`
 - `npm run dev:worker`
@@ -233,7 +227,7 @@ Provisioned fields include:
 - `npm run seed`
 - `npm run loadtest:queue`
 
-### Frontend (`frontend/`)
+### Frontend
 
 - `npm run dev`
 - `npm run build`
@@ -243,57 +237,48 @@ Provisioned fields include:
 - `npm run test`
 - `npm run test:watch`
 
-## Reverse Proxy Deployment Notes
+## Deployment Notes
 
-This backend is designed for reverse-proxy auth architecture and is compatible with:
-
-- Cloudflare Tunnel
-- Tailscale VM deployment
-- Internal gateway/reverse proxy auth layers
-
-Production guidance:
-
-- Keep backend private (bind internal interface or firewall to proxy-only ingress).
-- Ensure proxy strips incoming client `x-coe-*` and injects canonical CoE headers.
-- Set `COE_TRUSTED_PROXY_IPS` to actual proxy source IPs/CIDRs.
+- Keep the backend behind a trusted reverse proxy.
+- Strip any client-supplied `x-coe-*` headers at the proxy.
+- Set `COE_TRUSTED_PROXY_IPS` to the real proxy source IPs/CIDRs only.
+- Keep `COE_JWT_SECRET` configured in production.
 - Keep `COE_REQUIRE_TRUSTED_PROXY=true` in production.
-- Keep `COE_JWT_SECRET` configured for future direct JWT verification support.
+- Do not expose `/health` or `/test-db` publicly.
+
+## Security Notes
+
+- Do not commit `backend/.env`.
+- Do not commit `backend/firebase-key.json`.
+- The frontend validates auth redirects against an allowlist before redirecting.
+- The backend validates route parameters, request origins for state-changing calls, and code execution rate limits.
 
 ## Troubleshooting
 
 ### `401 Unauthorized: missing authentication headers`
 
-- Request reached backend without CoE proxy header injection.
-- Ensure request path goes through reverse proxy/gateway auth layer.
+- The request did not come through the trusted CoE auth path.
+- Verify the reverse proxy is injecting the required headers.
 
 ### `401 Unauthorized source`
 
-- Source IP is not in `COE_TRUSTED_PROXY_IPS`.
-- Add proxy IP/CIDR and restart backend.
+- The request source IP is not in `COE_TRUSTED_PROXY_IPS`.
+- Update the allowlist and restart the backend.
 
 ### `403 Account is NOT_ACTIVE`
 
-- CoE status header value is not `ACTIVE`.
-- Confirm user account state in CoE auth system.
+- CoE marked the user inactive.
+- Confirm the upstream identity payload.
 
 ### `Failed to fetch`
 
-- Confirm frontend points to backend `3001`.
-- Ensure backend CORS includes frontend origin.
-- Ensure backend is running and reachable through your chosen ingress path.
+- Check `VITE_API_BASE_URL`.
+- Confirm backend CORS allows the frontend origin.
+- Confirm the backend is reachable through the configured ingress path.
 
-### Judge0 Is Reachable but Submissions Fail
+### Judge0 execution failures
 
 - Run `npm run judge0:status`.
 - Run `npm run judge0:test-sandbox`.
 - Run `npm run judge0:test-languages`.
-- Confirm `JUDGE0_BASE_URL=http://localhost:2358` in `backend/.env`.
-
-## Security Notes
-
-- Never commit secrets or credentials.
-- Keep these files private:
-  - `backend/.env`
-  - `backend/firebase-key.json`
-- Trusted-header auth is secure only when backend is protected behind trusted proxy infrastructure.
-- If backend is directly exposed to the public internet, header spoofing is possible.
+- Confirm `JUDGE0_BASE_URL=http://127.0.0.1:2358`.
