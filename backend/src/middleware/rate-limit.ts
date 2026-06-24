@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { env } from "../config/env";
 
 function rateLimitHandler(_req: Request, res: Response): void {
@@ -28,7 +28,10 @@ export function createGlobalApiRateLimiter() {
     validate: {
       trustProxy: false,
     },
-    keyGenerator: (req) => req.headers.authorization?.toString() ?? req.headers["x-coe-email"]?.toString() ?? req.ip ?? "anonymous",
+    keyGenerator: (req) =>
+      req.headers.authorization?.toString() ??
+      req.headers["x-coe-email"]?.toString() ??
+      ipKeyGenerator(req.ip),
     handler: rateLimitHandler,
   });
 }
