@@ -31,7 +31,7 @@ export function createGlobalApiRateLimiter() {
     keyGenerator: (req) =>
       req.headers.authorization?.toString() ??
       req.headers["x-coe-email"]?.toString() ??
-      ipKeyGenerator(req.ip),
+      ipKeyGenerator(req.ip ?? "0.0.0.0"),
     handler: rateLimitHandler,
   });
 }
