@@ -196,6 +196,31 @@ function logSecurityEvent(
   });
 }
 
+function logTrustedProxyDiagnostic(req: Request, trustedProxyBlockList: BlockList): void {
+  const rawSourceIp = normalizeHeaderValue(req.socket?.remoteAddress);
+  const normalizedSourceIp = rawSourceIp.trim();
+  const ipVersion = isIP(normalizedSourceIp);
+  const allowed =
+    (ipVersion === 4 || ipVersion === 6) &&
+    trustedProxyBlockList.check(normalizedSourceIp, ipVersion === 4 ? "ipv4" : "ipv6");
+
+  console.warn("[AUTH] Trusted proxy diagnostic:", {
+    method: req.method,
+    path: req.originalUrl,
+    rawSourceIp,
+    normalizedSourceIp,
+    ipVersion,
+    allowed,
+    clientIp: req.ip,
+    forwardedChain: req.ips,
+    xForwardedFor: normalizeHeaderValue(req.headers["x-forwarded-for"]),
+    xRealIp: normalizeHeaderValue(req.headers["x-real-ip"]),
+    cfConnectingIp: normalizeHeaderValue(req.headers["cf-connecting-ip"]),
+    xForwardedProto: normalizeHeaderValue(req.headers["x-forwarded-proto"]),
+    host: normalizeHeaderValue(req.headers.host),
+  });
+}
+
 export function createAuthMiddleware(userService: Pick<UserService, "syncAuthenticatedUser">): RequestHandler {
   const trustedProxyBlockList = parseTrustedProxyEntries([
     ...env.coeTrustedProxyIps,
@@ -208,6 +233,7 @@ export function createAuthMiddleware(userService: Pick<UserService, "syncAuthent
       // requests are forwarded to this backend with x-coe-* identity headers.
       // Do NOT expose this backend directly to the public internet, or clients could spoof headers.
       if (!isTrustedProxySource(req, trustedProxyBlockList)) {
+        logTrustedProxyDiagnostic(req, trustedProxyBlockList);
         logSecurityEvent("auth_untrusted_proxy", req, {
           message: "Rejected request from untrusted source.",
           xForwardedFor: normalizeHeaderValue(req.headers["x-forwarded-for"]),
