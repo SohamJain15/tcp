@@ -43,10 +43,10 @@ export default function ProblemDetails() {
   }
 
   const problem = data.problem;
-  const tags = problem.tags ?? [];
-  const constraints = problem.constraints ?? [];
-  const sampleTestCases = problem.sampleTestCases ?? [];
-  const hiddenTestCases = problem.hiddenTestCases ?? [];
+  const tags = Array.isArray(problem.tags) ? problem.tags : [];
+  const constraints = Array.isArray(problem.constraints) ? problem.constraints : [];
+  const sampleTestCases = Array.isArray(problem.sampleTestCases) ? problem.sampleTestCases : [];
+  const hiddenTestCases = Array.isArray(problem.hiddenTestCases) ? problem.hiddenTestCases : [];
 
   return (
     <AppLayout>

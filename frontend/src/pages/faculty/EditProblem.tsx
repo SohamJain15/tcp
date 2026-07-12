@@ -72,7 +72,7 @@ export default function EditProblem() {
         submitLabel="Update Problem"
         submitMessage="Problem updated"
         draftMessage="Draft changes saved"
-        initialProblem={initialProblem}
+      initialProblem={initialProblem}
         onSubmit={async (editorData) => updateMutation.mutateAsync({ editorData, asDraft: false })}
         onSaveDraft={async (editorData) => updateMutation.mutateAsync({ editorData, asDraft: true })}
         isSubmitting={updateMutation.isPending}

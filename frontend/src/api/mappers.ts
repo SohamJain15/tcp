@@ -141,18 +141,47 @@ export function toLifecycleLabel(state: ProblemLifecycleState): string {
   return state;
 }
 
+function safeStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item).trim()).filter(Boolean) : [];
+}
+
+function safeTestCaseArray(value: unknown): ProblemTestCase[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((testCase) => {
+      if (!testCase || typeof testCase !== "object") {
+        return null;
+      }
+
+      const record = testCase as { input?: unknown; output?: unknown; explanation?: unknown };
+      if (typeof record.input !== "string" || typeof record.output !== "string") {
+        return null;
+      }
+
+      return {
+        input: record.input,
+        output: record.output,
+        ...(typeof record.explanation === "string" ? { explanation: record.explanation } : {}),
+      };
+    })
+    .filter((testCase): testCase is ProblemTestCase => Boolean(testCase));
+}
+
 export function toEditorDataFromStudentProblem(problem: StudentProblemDetail): ProblemEditorData {
   return {
-    title: problem.title,
+    title: problem.title ?? "",
     difficulty: problem.difficulty,
-    tags: problem.tags,
-    statement: problem.statement,
-    inputFormat: problem.inputFormat,
-    outputFormat: problem.outputFormat,
-    constraints: problem.constraints,
-    timeLimitSeconds: problem.timeLimitSeconds,
-    memoryLimitMb: problem.memoryLimitMb,
-    sampleTestCases: problem.sampleTestCases,
+    tags: safeStringArray(problem.tags),
+    statement: problem.statement ?? "",
+    inputFormat: problem.inputFormat ?? "",
+    outputFormat: problem.outputFormat ?? "",
+    constraints: safeStringArray(problem.constraints),
+    timeLimitSeconds: Number(problem.timeLimitSeconds) || 1,
+    memoryLimitMb: Number(problem.memoryLimitMb) || 256,
+    sampleTestCases: safeTestCaseArray(problem.sampleTestCases),
     hiddenTestCases: [],
     targetDepartment: problem.targetDepartment ?? null,
   };
@@ -160,17 +189,17 @@ export function toEditorDataFromStudentProblem(problem: StudentProblemDetail): P
 
 export function toEditorDataFromManageProblem(problem: ManageProblemDetail): ProblemEditorData {
   return {
-    title: problem.title,
+    title: problem.title ?? "",
     difficulty: problem.difficulty,
-    tags: problem.tags,
-    statement: problem.statement,
-    inputFormat: problem.inputFormat,
-    outputFormat: problem.outputFormat,
-    constraints: problem.constraints,
-    timeLimitSeconds: problem.timeLimitSeconds,
-    memoryLimitMb: problem.memoryLimitMb,
-    sampleTestCases: problem.sampleTestCases,
-    hiddenTestCases: problem.hiddenTestCases,
+    tags: safeStringArray(problem.tags),
+    statement: problem.statement ?? "",
+    inputFormat: problem.inputFormat ?? "",
+    outputFormat: problem.outputFormat ?? "",
+    constraints: safeStringArray(problem.constraints),
+    timeLimitSeconds: Number(problem.timeLimitSeconds) || 1,
+    memoryLimitMb: Number(problem.memoryLimitMb) || 256,
+    sampleTestCases: safeTestCaseArray(problem.sampleTestCases),
+    hiddenTestCases: safeTestCaseArray(problem.hiddenTestCases),
     targetDepartment: problem.targetDepartment ?? null,
     lifecycleState: problem.lifecycleState,
   };

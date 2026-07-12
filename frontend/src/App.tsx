@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { RoleRoute } from "@/components/RoleRoute";
+import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
 import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import StudentDashboard from "./pages/student/Dashboard.tsx";
@@ -56,8 +57,8 @@ const App = () => (
             <Route path="/faculty/contests/:id" element={<RoleRoute allowedRole="FACULTY"><FacultyContestDetail /></RoleRoute>} />
             <Route path="/faculty/contests/:id/edit" element={<RoleRoute allowedRole="FACULTY"><CreateContest /></RoleRoute>} />
             <Route path="/faculty/problems" element={<RoleRoute allowedRole="FACULTY"><ManageProblems /></RoleRoute>} />
-            <Route path="/faculty/problems/:id" element={<RoleRoute allowedRole="FACULTY"><ProblemDetails /></RoleRoute>} />
-            <Route path="/faculty/problems/:id/edit" element={<RoleRoute allowedRole="FACULTY"><EditProblem /></RoleRoute>} />
+            <Route path="/faculty/problems/:id" element={<RoleRoute allowedRole="FACULTY"><RouteErrorBoundary><ProblemDetails /></RouteErrorBoundary></RoleRoute>} />
+            <Route path="/faculty/problems/:id/edit" element={<RoleRoute allowedRole="FACULTY"><RouteErrorBoundary><EditProblem /></RouteErrorBoundary></RoleRoute>} />
             <Route path="/faculty/submissions" element={<RoleRoute allowedRole="FACULTY"><FacultySubmissions /></RoleRoute>} />
             <Route path="/faculty/leaderboard" element={<RoleRoute allowedRole="FACULTY"><FacultyLeaderboard /></RoleRoute>} />
             <Route path="/faculty/profile" element={<RoleRoute allowedRole="FACULTY"><FacultyProfile /></RoleRoute>} />
