@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { problemsApi } from "@/api/services";
 import { toLifecycleLabel } from "@/api/mappers";
+import { formatDateTime } from "@/lib/datetime";
 
 export default function ProblemDetails() {
   const { id = "" } = useParams();
