@@ -100,7 +100,7 @@
     @apply bg-background text-foreground;
     font-family: 'Inter', system-ui, sans-serif;
     font-feature-settings: "ss01", "cv11";
-    scrollbar-color: transparent transparent;
+    scrollbar-color: hsl(218 58% 28%) hsl(42 40% 97%);
     scrollbar-width: thin;
   }
   /* Fixed decorative background on its own composited layer — visually identical to
@@ -127,8 +127,8 @@
   h1,h2,h3,h4 { font-family: 'Fraunces', 'Playfair Display', Georgia, serif; letter-spacing: -0.01em; }
 
   *::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 4px;
+    height: 4px;
   }
 
   *::-webkit-scrollbar-button:single-button,
@@ -144,37 +144,33 @@
   }
 
   *::-webkit-scrollbar-track {
-    background: transparent;
+    background: hsl(42 40% 97%);
   }
 
   *::-webkit-scrollbar-thumb {
-    border: 2px solid transparent;
-    border-radius: 0 !important;
-    background: transparent;
+    border: 0;
+    border-radius: 9999px !important;
+    background: hsl(218 58% 28%);
   }
 
   *::-webkit-scrollbar-thumb:hover {
-    background: transparent;
+    background: hsl(218 58% 22%);
   }
 
-  .scrollbars-visible {
-    scrollbar-color: hsl(222 84% 26%) hsl(220 14% 8%);
+  .dark body {
+    scrollbar-color: hsl(214 84% 56%) hsl(222 12% 4%);
   }
 
-  .scrollbars-visible *::-webkit-scrollbar-track {
-    background: hsl(220 14% 8%);
-    border-radius: 0;
+  .dark *::-webkit-scrollbar-track {
+    background: hsl(222 12% 4%);
   }
 
-  .scrollbars-visible *::-webkit-scrollbar-thumb {
-    border-color: hsl(220 14% 8%);
-    border-radius: 0 !important;
-    background: linear-gradient(180deg, hsl(221 81% 28%), hsl(224 77% 20%));
-    box-shadow: none;
+  .dark *::-webkit-scrollbar-thumb {
+    background: hsl(214 84% 56%);
   }
 
-  .scrollbars-visible *::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(180deg, hsl(221 84% 32%), hsl(224 80% 24%));
+  .dark *::-webkit-scrollbar-thumb:hover {
+    background: hsl(214 84% 62%);
   }
 }
 
