@@ -36,7 +36,7 @@ export default function Index() {
           <div className="mt-8 flex items-center justify-center">
             <a href={getMockSsoLoginUrl()}>
               <Button size="lg" className="bg-accent hover:bg-accent/90 text-accent-foreground font-semibold w-64">
-                <LogIn className="h-5 w-5 mr-2" /> Sign in with CoE SSO
+                <LogIn className="h-5 w-5 mr-2" /> Sign In
               </Button>
             </a>
           </div>
@@ -56,7 +56,7 @@ export default function Index() {
             { icon: BookOpen, title: "Faculty Tools", desc: "Create, manage, and review problems with detailed submission analytics." },
           ].map(f => (
             <Card key={f.title} className="p-6 shadow-card hover:shadow-elevated transition-all hover:-translate-y-1">
-              <div className="h-12 w-12 rounded-lg bg-gradient-accent flex items-center justify-center mb-4">
+              <div className="h-12 w-12 rounded-lg bg-accent flex items-center justify-center mb-4">
                 <f.icon className="h-6 w-6 text-accent-foreground" />
               </div>
               <h3 className="font-display text-xl font-bold">{f.title}</h3>

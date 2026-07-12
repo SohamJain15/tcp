@@ -1,10 +1,18 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { Moon, Sun } from "lucide-react";
+import { LogOut, Moon, Sun, User } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTheme } from "./ThemeProvider";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { userApi } from "@/api/services";
 import type { UserRole } from "@/api/types";
@@ -48,6 +56,27 @@ function getAvatarFallback(name: string | null | undefined, role: UserRole): str
 export function Navbar() {
   const { theme, toggle } = useTheme();
   const { pathname } = useLocation();
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const openProfileMenu = () => {
+    if (profileMenuCloseTimer.current) {
+      clearTimeout(profileMenuCloseTimer.current);
+      profileMenuCloseTimer.current = null;
+    }
+    setProfileMenuOpen(true);
+  };
+
+  const scheduleProfileMenuClose = () => {
+    if (profileMenuCloseTimer.current) {
+      clearTimeout(profileMenuCloseTimer.current);
+    }
+    profileMenuCloseTimer.current = setTimeout(() => setProfileMenuOpen(false), 150);
+  };
+
+  const handleLogout = () => {
+    window.location.href = getSessionCloseUrl();
+  };
   const userQuery = useQuery({
     queryKey: ["auth", "me"],
     queryFn: () => userApi.me(pathname, { suppressAuthRedirect: true }),
@@ -117,11 +146,53 @@ export function Navbar() {
             {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
           </Button>
 
-          <Avatar className="h-9 w-9 ring-2 ring-accent/50">
-            <AvatarFallback className="bg-accent text-accent-foreground text-xs font-bold">
-              {avatarText}
-            </AvatarFallback>
-          </Avatar>
+          {userQuery.data ? (
+            <DropdownMenu modal={false} open={profileMenuOpen} onOpenChange={setProfileMenuOpen}>
+              <DropdownMenuTrigger
+                asChild
+                onMouseEnter={openProfileMenu}
+                onMouseLeave={scheduleProfileMenuClose}
+              >
+                <button
+                  type="button"
+                  aria-label="Profile menu"
+                  className="rounded-none outline-none transition-transform duration-150 hover:scale-105 focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  <Avatar className="h-9 w-9 ring-2 ring-accent/50">
+                    <AvatarFallback className="bg-accent text-accent-foreground text-xs font-bold">
+                      {avatarText}
+                    </AvatarFallback>
+                  </Avatar>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                sideOffset={8}
+                className="w-56 rounded-none"
+                onMouseEnter={openProfileMenu}
+                onMouseLeave={scheduleProfileMenuClose}
+              >
+                <DropdownMenuLabel className="font-normal">
+                  <div className="text-sm font-semibold leading-tight">{userQuery.data.user.name ?? avatarText}</div>
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">{userQuery.data.user.email}</div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={handleLogout}
+                  className="cursor-pointer rounded-none text-destructive focus:bg-destructive focus:text-destructive-foreground"
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Avatar className="h-9 w-9 ring-2 ring-accent/50">
+              <AvatarFallback className="bg-accent text-accent-foreground">
+                <User className="h-5 w-5" aria-label="Guest user" />
+              </AvatarFallback>
+            </Avatar>
+          )}
         </div>
       </div>
     </header>

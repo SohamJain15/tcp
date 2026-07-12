@@ -1,17 +1,22 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bar, BarChart, Cell, Pie, PieChart, Tooltip, XAxis, YAxis } from "recharts";
-import { Download } from "lucide-react";
+import { Download, Pencil } from "lucide-react";
+import { toast } from "sonner";
 
 import { AppLayout } from "@/components/AppLayout";
 import { submissionsApi, userApi } from "@/api/services";
+import type { CompleteProfilePayload } from "@/api/types";
 import { SubmissionActivityHeatmap } from "@/components/SubmissionActivityHeatmap";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/Badges";
 import { toLanguageLabel, toStatusLabel } from "@/api/mappers";
@@ -55,6 +60,45 @@ const chartTooltipStyle = {
   color: "hsl(var(--foreground))",
 };
 
+type DifficultyDatum = { name: string; value: number; color?: string };
+type LanguageDatum = { name: string; count: number };
+
+// Memoized so dialog toggles / query refreshes don't re-mount the charts (which
+// would re-trigger their entry animation and feel laggy).
+const DifficultyPieChart = memo(function DifficultyPieChart({ data }: { data: DifficultyDatum[] }) {
+  return (
+    <PieChart width={260} height={220}>
+      <Pie
+        data={data}
+        cx="50%"
+        cy="50%"
+        outerRadius={78}
+        innerRadius={45}
+        dataKey="value"
+        strokeWidth={1}
+        animationDuration={500}
+        animationEasing="ease-out"
+      >
+        {data.map((entry) => (
+          <Cell key={entry.name} fill={entry.color} />
+        ))}
+      </Pie>
+      <Tooltip contentStyle={chartTooltipStyle} />
+    </PieChart>
+  );
+});
+
+const LanguageBarChart = memo(function LanguageBarChart({ data }: { data: LanguageDatum[] }) {
+  return (
+    <BarChart width={320} height={220} data={data}>
+      <XAxis dataKey="name" tickLine={false} axisLine={false} />
+      <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+      <Tooltip contentStyle={chartTooltipStyle} />
+      <Bar dataKey="count" radius={[6, 6, 0, 0]} fill="hsl(var(--primary))" animationDuration={500} animationEasing="ease-out" />
+    </BarChart>
+  );
+});
+
 function escapeHtml(value: unknown): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -77,6 +121,11 @@ export default function StudentProfile() {
   const isFacultyView = Boolean(targetEmail);
   const pathname = isFacultyView ? `/faculty/students/${encodeURIComponent(targetEmail!)}` : "/student/profile";
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editLinkedIn, setEditLinkedIn] = useState("");
+  const [editGithub, setEditGithub] = useState("");
+  const [editSemester, setEditSemester] = useState(1);
+  const queryClient = useQueryClient();
 
   const { data: userData, isLoading, isError, error } = useQuery({
     queryKey: ["student-profile", targetEmail ?? "self"],
@@ -108,6 +157,19 @@ export default function StudentProfile() {
     [analyticsData?.analytics.difficultyBreakdown],
   );
 
+  const editMutation = useMutation({
+    mutationFn: (payload: CompleteProfilePayload) => userApi.updateProfile(payload, pathname),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["student-profile"] });
+      await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+      toast.success("Profile updated");
+      setIsEditOpen(false);
+    },
+    onError: (mutationError) => {
+      toast.error((mutationError as Error).message || "Failed to update profile");
+    },
+  });
+
   const languageData = useMemo(
     () =>
       (analyticsData?.analytics.languageBreakdown ?? []).map((entry) => ({
@@ -136,6 +198,25 @@ export default function StudentProfile() {
   const profile = userData.user;
   const analytics = analyticsData?.analytics;
   const initials = initialsFromName(profile.name, profile.email);
+
+  const openEditDialog = () => {
+    setEditLinkedIn(profile.linkedInUrl ?? "");
+    setEditGithub(profile.githubUrl ?? "");
+    setEditSemester(profile.semester ?? 1);
+    setIsEditOpen(true);
+  };
+
+  const handleEditSave = () => {
+    editMutation.mutate({
+      name: profile.name ?? "",
+      uid: profile.uid ?? "",
+      rollNumber: profile.rollNumber ?? "",
+      department: profile.department!,
+      semester: editSemester,
+      linkedInUrl: editLinkedIn.trim() ? editLinkedIn.trim() : null,
+      githubUrl: editGithub.trim() ? editGithub.trim() : null,
+    });
+  };
   const handleDownloadReportCard = () => {
     const reportWindow = window.open("", "_blank");
     if (!reportWindow) {
@@ -221,9 +302,13 @@ export default function StudentProfile() {
                   Student identity, endorsement profile, and performance snapshot.
                 </p>
               </div>
-              {isFacultyView && (
+              {isFacultyView ? (
                 <Button variant="outline" onClick={handleDownloadReportCard}>
                   <Download className="mr-2 h-4 w-4" /> Download Report Card
+                </Button>
+              ) : (
+                <Button variant="outline" onClick={openEditDialog}>
+                  <Pencil className="mr-2 h-4 w-4" /> Edit Profile
                 </Button>
               )}
             </div>
@@ -316,68 +401,30 @@ export default function StudentProfile() {
                   <Card className="profile-card p-5">
                     <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Problem Difficulty</h2>
                     <div className="mt-4 flex items-center justify-center">
-                      <PieChart width={260} height={220}>
-                        <Pie data={difficultyData} cx="50%" cy="50%" outerRadius={78} innerRadius={45} dataKey="value" strokeWidth={1}>
-                          {difficultyData.map((entry) => (
-                            <Cell key={entry.name} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip contentStyle={chartTooltipStyle} />
-                      </PieChart>
+                      <DifficultyPieChart data={difficultyData} />
                     </div>
                   </Card>
 
                   <Card className="profile-card p-5">
                     <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Language Proficiency</h2>
                     <div className="mt-4 overflow-x-auto">
-                      <BarChart width={320} height={220} data={languageData}>
-                        <XAxis dataKey="name" tickLine={false} axisLine={false} />
-                        <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
-                        <Tooltip contentStyle={chartTooltipStyle} />
-                        <Bar dataKey="count" radius={[6, 6, 0, 0]} fill="hsl(var(--primary))" />
-                      </BarChart>
+                      <LanguageBarChart data={languageData} />
                     </div>
                   </Card>
                 </div>
+              </div>
+            </div>
 
-                <Card className="profile-card">
-                  <CardHeader>
-                    <CardTitle className="text-lg font-semibold">Submission Activity</CardTitle>
-                  </CardHeader>
-                  <CardContent className="overflow-x-auto pb-6">
-                    <SubmissionActivityHeatmap activity={analytics?.submissionHeatmap ?? []} />
-                  </CardContent>
-                </Card>
+            <Card className="profile-card">
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold">Submission Activity</CardTitle>
+              </CardHeader>
+              <CardContent className="overflow-x-auto pb-6">
+                <SubmissionActivityHeatmap activity={analytics?.submissionHeatmap ?? []} />
+              </CardContent>
+            </Card>
 
-                <Card className="profile-card p-5">
-                  <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Recent Accepted</h2>
-                  <div className="mt-4 overflow-hidden rounded-md border border-border">
-                    <div className="profile-table-header grid grid-cols-12 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-foreground/80">
-                      <div className="col-span-5">Problem</div>
-                      <div className="col-span-2">Language</div>
-                      <div className="col-span-2">Status</div>
-                      <div className="col-span-3">When</div>
-                    </div>
-                    {(analytics?.recentAcceptedSubmissions ?? []).map((entry) => (
-                      <div key={entry.submissionId} className="grid grid-cols-12 border-t border-border px-4 py-3 text-sm">
-                        <div className="col-span-5">
-                          <p className="font-medium">{entry.problemTitle}</p>
-                          {entry.contestTitle && <p className="text-xs text-muted-foreground">{entry.contestTitle}</p>}
-                        </div>
-                        <div className="col-span-2 self-center">{toLanguageLabel(entry.language)}</div>
-                        <div className="col-span-2 self-center">
-                          <StatusBadge status={toStatusLabel(entry.status)} />
-                        </div>
-                        <div className="col-span-3 self-center text-xs text-muted-foreground">{formatWhen(entry.createdAt)}</div>
-                      </div>
-                    ))}
-                    {(analytics?.recentAcceptedSubmissions.length ?? 0) === 0 && (
-                      <div className="px-4 py-8 text-center text-sm text-muted-foreground">No accepted submissions yet.</div>
-                    )}
-                  </div>
-                </Card>
-
-                <Card className="profile-card p-5">
+            <Card className="profile-card p-5">
                   <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Submission History</h2>
                   <div className="mt-4 overflow-hidden rounded-md border border-border">
                     <div className="profile-table-header grid grid-cols-12 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-foreground/80">
@@ -414,11 +461,64 @@ export default function StudentProfile() {
                     )}
                   </div>
                 </Card>
-              </div>
-            </div>
           </div>
         </div>
       </div>
+
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl">Edit Profile</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-linkedin">LinkedIn URL</Label>
+              <Input
+                id="edit-linkedin"
+                placeholder="https://www.linkedin.com/in/your-profile"
+                value={editLinkedIn}
+                onChange={(event) => setEditLinkedIn(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-github">GitHub URL</Label>
+              <Input
+                id="edit-github"
+                placeholder="https://github.com/your-username"
+                value={editGithub}
+                onChange={(event) => setEditGithub(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Semester</Label>
+              <Select value={String(editSemester)} onValueChange={(value) => setEditSemester(Number(value))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select semester" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 8 }, (_, index) => index + 1).map((semester) => (
+                    <SelectItem key={semester} value={String(semester)}>
+                      Semester {semester}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditOpen(false)} disabled={editMutation.isPending}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-accent text-accent-foreground hover:bg-accent/90"
+              onClick={handleEditSave}
+              disabled={editMutation.isPending}
+            >
+              {editMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(selectedSubmissionId)} onOpenChange={(open) => !open && setSelectedSubmissionId(null)}>
         <DialogContent className="max-w-4xl">

@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import {
   eachDayOfInterval,
   endOfMonth,
@@ -85,56 +86,60 @@ function computeMaxStreak(cells: DayCell[]): number {
   return maxStreak;
 }
 
-export function SubmissionActivityHeatmap({ submissions = [], activity }: SubmissionActivityHeatmapProps) {
-  const today = startOfDay(new Date());
-  const rangeStart = subDays(today, 364);
-  const gridStart = startOfWeek(rangeStart, { weekStartsOn: 0 });
-  const gridEnd = endOfWeek(today, { weekStartsOn: 0 });
+function SubmissionActivityHeatmapImpl({ submissions = [], activity }: SubmissionActivityHeatmapProps) {
+  const { weeks, monthLabels, totalSubmissions, activeDays, maxStreak } = useMemo(() => {
+    const today = startOfDay(new Date());
+    const rangeStart = subDays(today, 364);
+    const gridStart = startOfWeek(rangeStart, { weekStartsOn: 0 });
+    const gridEnd = endOfWeek(today, { weekStartsOn: 0 });
 
-  const counts = new Map<string, number>();
-  if (activity && activity.length > 0) {
-    activity.forEach((entry) => {
-      const createdAt = startOfDay(new Date(entry.date));
-      if (isBefore(createdAt, rangeStart) || isAfter(createdAt, today)) {
-        return;
-      }
+    const counts = new Map<string, number>();
+    if (activity && activity.length > 0) {
+      activity.forEach((entry) => {
+        const createdAt = startOfDay(new Date(entry.date));
+        if (isBefore(createdAt, rangeStart) || isAfter(createdAt, today)) {
+          return;
+        }
 
-      counts.set(toDayKey(createdAt), entry.submissionCount);
-    });
-  } else {
-    submissions.forEach((submission) => {
-      const createdAt = startOfDay(new Date(submission.createdAt));
-      if (isBefore(createdAt, rangeStart) || isAfter(createdAt, today)) {
-        return;
-      }
+        counts.set(toDayKey(createdAt), entry.submissionCount);
+      });
+    } else {
+      submissions.forEach((submission) => {
+        const createdAt = startOfDay(new Date(submission.createdAt));
+        if (isBefore(createdAt, rangeStart) || isAfter(createdAt, today)) {
+          return;
+        }
 
-      const key = toDayKey(createdAt);
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    });
-  }
-
-  const cells = eachDayOfInterval({ start: gridStart, end: gridEnd }).map((date) => ({
-    date,
-    count: counts.get(toDayKey(date)) ?? 0,
-    inRange: !isBefore(date, rangeStart) && !isAfter(date, today),
-  }));
-
-  const weeks = chunkIntoWeeks(cells);
-  const monthLabels: Array<{ key: string; label: string }> = [];
-  let currentMonth = startOfMonth(rangeStart);
-
-  while (!isAfter(currentMonth, today)) {
-    const monthEnd = endOfMonth(currentMonth);
-    const labelDate = startOfWeek(currentMonth, { weekStartsOn: 0 });
-    if (!isBefore(labelDate, gridStart) && !isAfter(labelDate, gridEnd)) {
-      monthLabels.push({ key: toDayKey(labelDate), label: format(currentMonth, "MMM") });
+        const key = toDayKey(createdAt);
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      });
     }
-    currentMonth = startOfMonth(subDays(monthEnd, -1));
-  }
 
-  const totalSubmissions = Array.from(counts.values()).reduce((total, count) => total + count, 0);
-  const activeDays = cells.filter((cell) => cell.inRange && cell.count > 0).length;
-  const maxStreak = computeMaxStreak(cells);
+    const cells = eachDayOfInterval({ start: gridStart, end: gridEnd }).map((date) => ({
+      date,
+      count: counts.get(toDayKey(date)) ?? 0,
+      inRange: !isBefore(date, rangeStart) && !isAfter(date, today),
+    }));
+
+    const weeks = chunkIntoWeeks(cells);
+    const monthLabels: Array<{ key: string; label: string }> = [];
+    let currentMonth = startOfMonth(rangeStart);
+
+    while (!isAfter(currentMonth, today)) {
+      const monthEnd = endOfMonth(currentMonth);
+      const labelDate = startOfWeek(currentMonth, { weekStartsOn: 0 });
+      if (!isBefore(labelDate, gridStart) && !isAfter(labelDate, gridEnd)) {
+        monthLabels.push({ key: toDayKey(labelDate), label: format(currentMonth, "MMM") });
+      }
+      currentMonth = startOfMonth(subDays(monthEnd, -1));
+    }
+
+    const totalSubmissions = Array.from(counts.values()).reduce((total, count) => total + count, 0);
+    const activeDays = cells.filter((cell) => cell.inRange && cell.count > 0).length;
+    const maxStreak = computeMaxStreak(cells);
+
+    return { weeks, monthLabels, totalSubmissions, activeDays, maxStreak };
+  }, [activity, submissions]);
 
   return (
     <div className="w-max min-w-[860px] space-y-4">
@@ -206,3 +211,5 @@ export function SubmissionActivityHeatmap({ submissions = [], activity }: Submis
     </div>
   );
 }
+
+export const SubmissionActivityHeatmap = memo(SubmissionActivityHeatmapImpl);

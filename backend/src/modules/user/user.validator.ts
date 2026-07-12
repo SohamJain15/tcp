@@ -17,15 +17,32 @@ const baseProfileSchema = z.object({
   githubUrl: optionalUrlSchema,
 });
 
-const studentProfileSchema = baseProfileSchema.extend({
-  uid: z
-    .string()
-    .trim()
-    .min(1, "UID is required")
-    .refine((value) => !value.toLowerCase().includes("mock"), "Enter your real UID"),
-  rollNumber: z.string().trim().min(1, "Roll number is required"),
-  semester: z.coerce.number().int().min(1).max(8),
-});
+// TCET UID format: admission_year-branch+div+rollno-passout_year, e.g. 24-COMPA35-28
+const UID_REGEX = /^\d{2}-[A-Z]{2,8}[A-Z]\d{1,3}-\d{2}$/;
+const UID_PARSE_REGEX = /^(\d{2})-([A-Z]+?)([A-Z])(\d{1,3})-(\d{2})$/;
+
+function deriveRollNumberFromUid(uid: string): string {
+  const match = UID_PARSE_REGEX.exec(uid);
+  return match ? String(Number(match[4])) : "";
+}
+
+const studentProfileSchema = baseProfileSchema
+  .extend({
+    uid: z
+      .string()
+      .trim()
+      .transform((value) => value.toUpperCase())
+      .refine((value) => value.length > 0, "UID is required")
+      .refine((value) => !value.toLowerCase().includes("mock"), "Enter your real UID")
+      .refine((value) => UID_REGEX.test(value), "Invalid UID format. Expected e.g. 24-AIDSA51-28"),
+    rollNumber: z.string().trim().optional(),
+    semester: z.coerce.number().int().min(1).max(8),
+  })
+  .transform((value) => ({
+    ...value,
+    // Roll number is always derived from the validated UID; client value is ignored.
+    rollNumber: deriveRollNumberFromUid(value.uid),
+  }));
 
 const facultyProfileSchema = baseProfileSchema.extend({
   designation: z.string().trim().min(1, "Designation is required"),
