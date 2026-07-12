@@ -79,7 +79,7 @@ export function Navbar() {
   }, [showLinks]);
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-border bg-gradient-hero text-primary-foreground dark:bg-card dark:text-foreground">
+    <header className="sticky top-0 z-40 w-full border-b border-border bg-gradient-hero text-primary-foreground">
       <div className="container flex h-16 items-center gap-4">
         <Link to="/" className="flex items-center gap-3 shrink-0">
           <img src="/logo.png" alt="TCET Coding Platform logo" className="h-10 w-10 rounded-md bg-background object-cover ring-2 ring-accent/40" />
@@ -98,7 +98,7 @@ export function Navbar() {
                 "px-3 py-2 rounded-none text-sm font-medium transition-colors",
                 isActive
                   ? "bg-accent text-accent-foreground shadow-sm"
-                  : "text-primary-foreground/80 hover:text-primary-foreground hover:bg-white/10 dark:text-foreground/70 dark:hover:bg-secondary"
+                  : "text-primary-foreground/80 hover:text-primary-foreground hover:bg-white/10"
               )}
             >
               {l.label}
@@ -112,7 +112,7 @@ export function Navbar() {
             size="icon"
             onClick={toggle}
             aria-label="Toggle theme"
-            className="text-primary-foreground hover:bg-white/10 dark:text-foreground dark:hover:bg-secondary"
+            className="text-primary-foreground hover:bg-white/10"
           >
             {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
           </Button>

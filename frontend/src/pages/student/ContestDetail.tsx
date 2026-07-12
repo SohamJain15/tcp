@@ -14,9 +14,9 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useContestProctoring } from "./useContestProctoring";
 
 function difficultyBadgeClass(difficulty: "Easy" | "Medium" | "Hard"): string {
-  if (difficulty === "Easy") return "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300";
-  if (difficulty === "Medium") return "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300";
-  return "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300";
+  if (difficulty === "Easy") return "bg-green-100 text-green-800";
+  if (difficulty === "Medium") return "bg-yellow-100 text-yellow-800";
+  return "bg-red-100 text-red-800";
 }
 
 function questionStatusLabel(status: "UNATTEMPTED" | "ATTEMPTED" | "SOLVED"): string {

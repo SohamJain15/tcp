@@ -32,7 +32,7 @@ function resolveApiBaseUrl(): string {
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
-const AUTH_REDIRECT_ALLOWLIST = ["https://coe.tcetmumbai.in", "https://tcetcercd.in"];
+const AUTH_REDIRECT_ALLOWLIST = ["https://www.tcetmumbai.in","https://tcetcercd.in"];
 
 function isAllowedLoginUrl(candidateUrl: string): boolean {
   try {

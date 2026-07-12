@@ -600,7 +600,7 @@ export default function ProblemDetail() {
                           path={`${id}/${language}/${getSolutionFilename(language)}`}
                           height="100%"
                           language={getMonacoLanguage(language)}
-                          theme="vs-dark"
+                          theme="vs"
                           value={code}
                           onChange={(nextValue) =>
                             setDraftsByLanguage((currentDrafts) => ({

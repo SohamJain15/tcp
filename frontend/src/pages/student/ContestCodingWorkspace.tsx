@@ -383,7 +383,7 @@ export default function ContestCodingWorkspace() {
                 <Badge variant="outline">Q{question.questionNumber}</Badge>
                 <Badge variant="outline">{contest.computedStatus}</Badge>
                 <Badge variant="outline">{question.points} pts</Badge>
-                <Badge className="bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300">{question.difficulty}</Badge>
+                <Badge className="bg-red-100 text-red-800">{question.difficulty}</Badge>
               </div>
 
               <h1 className="mt-4 font-display text-2xl font-bold">{question.title}</h1>
@@ -508,7 +508,7 @@ export default function ContestCodingWorkspace() {
                 <Editor
                   height="520px"
                   language={getMonacoLanguage(language)}
-                  theme="vs-dark"
+                  theme="vs"
                   value={code}
                   onMount={(editor, monaco) => {
                     editorRef.current = editor;

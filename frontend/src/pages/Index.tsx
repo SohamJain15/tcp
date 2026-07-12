@@ -23,14 +23,14 @@ export default function Index() {
   return (
     <AppLayout>
       {/* Hero */}
-      <section className="relative overflow-hidden bg-gradient-hero text-primary-foreground dark:bg-card dark:text-foreground">
+      <section className="relative overflow-hidden bg-gradient-hero text-primary-foreground">
         <div className="absolute inset-0 opacity-10 [background-image:radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] [background-size:24px_24px]" />
         <div className="container relative py-20 md:py-28 text-center">
           <p className="font-deva text-accent text-lg md:text-xl">॥ शास्त्रं कोडः तीर्थं चेतः ॥</p>
           <h1 className="font-display text-4xl md:text-6xl font-bold mt-4 max-w-3xl mx-auto leading-tight">
             The TCET <span className="text-accent">Coding Platform</span>
           </h1>
-          <p className="mt-5 text-lg md:text-xl text-primary-foreground/80 dark:text-muted-foreground max-w-2xl mx-auto">
+          <p className="mt-5 text-lg md:text-xl text-primary-foreground/80 max-w-2xl mx-auto">
             Where TCET students sharpen their craft and faculty cultivate the next generation of engineers.
           </p>
           <div className="mt-8 flex items-center justify-center">
@@ -67,10 +67,10 @@ export default function Index() {
       </section>
 
       <section className="container pb-20">
-        <Card className="p-10 shadow-elevated bg-gradient-hero text-primary-foreground dark:bg-card dark:text-foreground text-center">
+        <Card className="p-10 shadow-elevated bg-gradient-hero text-primary-foreground text-center">
           <Sparkles className="h-8 w-8 text-accent mx-auto" />
           <h2 className="font-display text-3xl md:text-4xl font-bold mt-3">Begin your journey today.</h2>
-          <p className="text-primary-foreground/80 dark:text-muted-foreground mt-2 max-w-xl mx-auto">Join hundreds of TCET students already building their problem-solving muscle.</p>
+          <p className="text-primary-foreground/80 mt-2 max-w-xl mx-auto">Join hundreds of TCET students already building their problem-solving muscle.</p>
           <a href={getMockSsoLoginUrl()}>
             <Button size="lg" className="mt-6 bg-accent hover:bg-accent/90 text-accent-foreground font-semibold">
               Continue to Platform

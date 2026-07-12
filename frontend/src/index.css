@@ -49,48 +49,48 @@
   }
 
   .dark {
-    /* TCET Dark - Deep Indigo + Teal */
-    --background: 222 32% 10%;
-    --foreground: 210 40% 96%;
+    /* Keep the same palette as light mode, only invert the canvas */
+    --background: 222 12% 4%;
+    --foreground: 42 40% 97%;
 
-    --card: 224 30% 14%;
-    --card-foreground: 210 40% 96%;
+    --card: 222 12% 8%;
+    --card-foreground: 42 40% 97%;
 
-    --popover: 224 30% 14%;
-    --popover-foreground: 210 40% 96%;
+    --popover: 222 12% 8%;
+    --popover-foreground: 42 40% 97%;
 
-    --primary: 191 91% 55%;
-    --primary-foreground: 222 32% 10%;
+    --primary: 214 84% 56%;
+    --primary-foreground: 42 40% 97%;
 
-    --secondary: 222 24% 21%;
-    --secondary-foreground: 210 40% 96%;
+    --secondary: 222 12% 12%;
+    --secondary-foreground: 42 40% 97%;
 
-    --muted: 222 24% 18%;
-    --muted-foreground: 214 18% 72%;
+    --muted: 222 12% 12%;
+    --muted-foreground: 217 17% 70%;
 
-    --accent: 167 68% 46%;
-    --accent-foreground: 222 32% 10%;
+    --accent: 12 73% 62%;
+    --accent-foreground: 42 40% 97%;
 
-    --gold: 44 90% 60%;
-    --gold-foreground: 222 32% 10%;
+    --gold: 44 90% 58%;
+    --gold-foreground: 222 12% 4%;
 
-    --success: 142 65% 45%;
+    --success: 142 70% 45%;
     --success-foreground: 0 0% 100%;
-    --warning: 44 90% 60%;
-    --warning-foreground: 222 32% 10%;
-    --destructive: 0 70% 55%;
+    --warning: 44 90% 58%;
+    --warning-foreground: 222 12% 4%;
+    --destructive: 0 75% 58%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 223 20% 24%;
-    --input: 223 20% 24%;
-    --ring: 167 68% 46%;
+    --border: 222 10% 18%;
+    --input: 222 10% 18%;
+    --ring: 12 73% 62%;
 
     --radius: 0rem;
 
-    --gradient-hero: linear-gradient(135deg, hsl(226 52% 18%), hsl(200 56% 24%));
-    --gradient-accent: linear-gradient(135deg, hsl(167 68% 46%), hsl(191 91% 55%));
-    --shadow-card: 0 4px 20px -8px hsl(222 60% 4% / 0.55);
-    --shadow-elevated: 0 10px 40px -12px hsl(222 60% 4% / 0.72);
+    --gradient-hero: linear-gradient(135deg, hsl(222 12% 6%), hsl(222 12% 10%));
+    --gradient-accent: linear-gradient(135deg, hsl(12 73% 55%), hsl(44 90% 52%));
+    --shadow-card: 0 4px 20px -8px hsl(222 60% 2% / 0.7);
+    --shadow-elevated: 0 10px 40px -12px hsl(222 60% 2% / 0.8);
   }
 }
 
@@ -109,9 +109,9 @@
   }
   .dark body {
     background-image:
-      radial-gradient(circle at 16% 8%, hsl(var(--primary) / 0.12), transparent 32%),
-      radial-gradient(circle at 84% 12%, hsl(var(--accent) / 0.11), transparent 38%),
-      repeating-linear-gradient(135deg, hsl(var(--muted-foreground) / 0.1) 0 1px, transparent 1px 22px);
+      radial-gradient(circle at 16% 8%, hsl(var(--primary) / 0.08), transparent 32%),
+      radial-gradient(circle at 84% 12%, hsl(var(--accent) / 0.07), transparent 38%),
+      repeating-linear-gradient(135deg, hsl(var(--muted-foreground) / 0.08) 0 1px, transparent 1px 22px);
   }
   h1,h2,h3,h4 { font-family: 'Fraunces', 'Playfair Display', Georgia, serif; letter-spacing: -0.01em; }
 }
@@ -137,8 +137,5 @@
   }
   .profile-table-header {
     background: linear-gradient(90deg, hsl(var(--primary) / 0.14), hsl(var(--accent) / 0.12));
-  }
-  .dark .profile-table-header {
-    background: linear-gradient(90deg, hsl(var(--primary) / 0.2), hsl(var(--accent) / 0.18));
   }
 }

@@ -62,8 +62,8 @@ export default function FacultyProfile() {
     <AppLayout>
       <div className="container py-8">
         <div className="profile-shell relative mx-auto max-w-4xl overflow-hidden p-6 md:p-8">
-          <div className="pointer-events-none absolute inset-0 opacity-45 [background-image:radial-gradient(circle_at_15%_10%,hsl(var(--primary)/0.2),transparent_34%),radial-gradient(circle_at_84%_18%,hsl(var(--accent)/0.16),transparent_40%)] dark:opacity-60" />
-          <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:repeating-linear-gradient(120deg,hsl(var(--muted-foreground)/0.1)_0_1px,transparent_1px_22px)] dark:opacity-45" />
+          <div className="pointer-events-none absolute inset-0 opacity-45 [background-image:radial-gradient(circle_at_15%_10%,hsl(var(--primary)/0.2),transparent_34%),radial-gradient(circle_at_84%_18%,hsl(var(--accent)/0.16),transparent_40%)]" />
+          <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:repeating-linear-gradient(120deg,hsl(var(--muted-foreground)/0.1)_0_1px,transparent_1px_22px)]" />
 
           <Card className="profile-card relative mx-auto max-w-3xl space-y-6 p-6">
           {loading ? (
@@ -88,7 +88,7 @@ export default function FacultyProfile() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-4">
                   <Avatar className="h-14 w-14 border border-border">
-                    <AvatarFallback className="bg-primary/10 font-semibold text-primary dark:bg-primary/15 dark:text-primary">
+                    <AvatarFallback className="bg-primary/10 font-semibold text-primary">
                       {avatarInitials(profile.name, profile.email)}
                     </AvatarFallback>
                   </Avatar>

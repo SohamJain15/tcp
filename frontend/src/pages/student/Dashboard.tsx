@@ -66,7 +66,7 @@ export default function StudentDashboard() {
         { label: "Problems Solved", value: user.problemsSolved, icon: CheckCircle2, accent: "text-success" },
         { label: "Submissions", value: user.submissionCount, icon: Activity, accent: "text-accent" },
         { label: "Current Rank", value: user.rank ? `#${user.rank}` : "N/A", icon: Trophy, accent: "text-gold" },
-        { label: "Accuracy", value: `${user.accuracy}%`, icon: Target, accent: "text-primary dark:text-accent" },
+        { label: "Accuracy", value: `${user.accuracy}%`, icon: Target, accent: "text-primary" },
       ]
     : [];
 
@@ -74,7 +74,7 @@ export default function StudentDashboard() {
     <AppLayout>
       <div className="container mx-auto space-y-6 p-6 md:p-8">
         <Card className="overflow-hidden border-0 shadow-elevated">
-          <div className="relative bg-gradient-hero p-8 text-primary-foreground dark:bg-card dark:text-foreground">
+          <div className="relative bg-gradient-hero p-8 text-primary-foreground">
             <div className="absolute inset-0 opacity-10 [background-image:radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] [background-size:24px_24px]" />
             <div className="relative flex flex-col justify-between gap-6 md:flex-row md:items-center">
               <div>
@@ -92,7 +92,7 @@ export default function StudentDashboard() {
                   <Button
                     size="lg"
                     variant="outline"
-                    className="border-white/30 bg-transparent text-primary-foreground hover:bg-white/10 dark:border-border dark:text-foreground dark:hover:bg-secondary"
+                    className="border-white/30 bg-transparent text-primary-foreground hover:bg-white/10"
                   >
                     Leaderboard
                   </Button>

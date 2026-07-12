@@ -208,8 +208,8 @@ export default function StudentProfile() {
     <AppLayout>
       <div className="container mx-auto p-4 md:p-8">
         <div className="profile-shell relative overflow-hidden p-6 md:p-8">
-          <div className="pointer-events-none absolute inset-0 opacity-50 [background-image:radial-gradient(circle_at_18%_16%,hsl(var(--primary)/0.16),transparent_34%),radial-gradient(circle_at_82%_10%,hsl(var(--accent)/0.14),transparent_36%)] dark:opacity-70" />
-          <div className="pointer-events-none absolute inset-0 [background-image:repeating-linear-gradient(130deg,hsl(var(--muted-foreground)/0.09)_0_1px,transparent_1px_20px)] opacity-30 dark:opacity-40" />
+          <div className="pointer-events-none absolute inset-0 opacity-50 [background-image:radial-gradient(circle_at_18%_16%,hsl(var(--primary)/0.16),transparent_34%),radial-gradient(circle_at_82%_10%,hsl(var(--accent)/0.14),transparent_36%)]" />
+          <div className="pointer-events-none absolute inset-0 [background-image:repeating-linear-gradient(130deg,hsl(var(--muted-foreground)/0.09)_0_1px,transparent_1px_20px)] opacity-30" />
 
           <div className="relative space-y-6">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -243,7 +243,7 @@ export default function StudentProfile() {
 
               <div className="flex items-center gap-4 pt-8">
                 <Avatar className="h-14 w-14 border border-border">
-                  <AvatarFallback className="bg-primary/10 font-semibold text-primary dark:bg-primary/15 dark:text-primary">
+                  <AvatarFallback className="bg-primary/10 font-semibold text-primary">
                     {initials}
                   </AvatarFallback>
                 </Avatar>
@@ -436,7 +436,7 @@ export default function StudentProfile() {
                   {(selectedSubmissionData.submission.memoryKb / 1024).toFixed(1)} MB
                 </span>
               </div>
-              <pre className="max-h-96 overflow-auto rounded-lg bg-[hsl(220_50%_8%)] p-4 font-mono-code text-xs text-[hsl(40_30%_92%)]">
+          <pre className="max-h-96 overflow-auto rounded-lg bg-background p-4 font-mono-code text-xs text-foreground">
                 {selectedSubmissionData.submission.code || "// No code payload returned"}
               </pre>
             </>
