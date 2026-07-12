@@ -173,6 +173,10 @@
   .dark *::-webkit-scrollbar-thumb:hover {
     background: hsl(214 84% 62%);
   }
+
+  .dark *::-webkit-scrollbar {
+    background: hsl(222 12% 4%);
+  }
 }
 
 @layer utilities {
