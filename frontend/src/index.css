@@ -161,7 +161,8 @@
     scrollbar-color: hsl(214 84% 56%) hsl(222 12% 4%);
   }
 
-  .dark *::-webkit-scrollbar-track {
+  .dark *::-webkit-scrollbar-track,
+  .dark *::-webkit-scrollbar-corner {
     background: hsl(222 12% 4%);
   }
 
