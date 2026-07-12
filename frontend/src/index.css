@@ -87,8 +87,8 @@
 
     --radius: 0rem;
 
-    --gradient-hero: linear-gradient(135deg, hsl(222 12% 6%), hsl(222 12% 10%));
-    --gradient-accent: linear-gradient(135deg, hsl(12 73% 55%), hsl(44 90% 52%));
+    --gradient-hero: linear-gradient(135deg, hsl(222 12% 6%), hsl(214 58% 14%));
+    --gradient-accent: linear-gradient(135deg, hsl(214 84% 46%), hsl(12 73% 55%));
     --shadow-card: 0 4px 20px -8px hsl(222 60% 2% / 0.7);
     --shadow-elevated: 0 10px 40px -12px hsl(222 60% 2% / 0.8);
   }
@@ -110,6 +110,7 @@
   .dark body {
     background-image:
       radial-gradient(circle at 16% 8%, hsl(var(--primary) / 0.08), transparent 32%),
+      radial-gradient(circle at 74% 18%, hsl(214 84% 46% / 0.09), transparent 30%),
       radial-gradient(circle at 84% 12%, hsl(var(--accent) / 0.07), transparent 38%),
       repeating-linear-gradient(135deg, hsl(var(--muted-foreground) / 0.08) 0 1px, transparent 1px 22px);
   }
@@ -138,10 +139,11 @@
   .dark .profile-card {
     background:
       linear-gradient(160deg, hsl(var(--card) / 0.98), hsl(var(--card) / 0.88)),
+      radial-gradient(circle at top left, hsl(var(--primary) / 0.14), transparent 30%),
       radial-gradient(circle at top right, hsl(var(--accent) / 0.12), transparent 36%);
     border: 1px solid hsl(var(--border) / 0.95);
   }
   .profile-table-header {
-    background: linear-gradient(90deg, hsl(var(--primary) / 0.14), hsl(var(--accent) / 0.12));
+    background: linear-gradient(90deg, hsl(var(--primary) / 0.14), hsl(214 84% 46% / 0.12), hsl(var(--accent) / 0.12));
   }
 }
