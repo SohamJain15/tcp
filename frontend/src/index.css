@@ -100,7 +100,7 @@
     @apply bg-background text-foreground;
     font-family: 'Inter', system-ui, sans-serif;
     font-feature-settings: "ss01", "cv11";
-    scrollbar-color: hsl(218 58% 28%) hsl(42 40% 97%);
+    scrollbar-color: hsl(var(--muted-foreground) / 0.22) transparent;
     scrollbar-width: thin;
   }
   /* Fixed decorative background on its own composited layer — visually identical to
@@ -127,8 +127,8 @@
   h1,h2,h3,h4 { font-family: 'Fraunces', 'Playfair Display', Georgia, serif; letter-spacing: -0.01em; }
 
   *::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
+    width: 7px;
+    height: 7px;
   }
 
   *::-webkit-scrollbar-button:single-button,
@@ -144,38 +144,35 @@
   }
 
   *::-webkit-scrollbar-track {
-    background: hsl(42 40% 97%);
+    background: transparent;
   }
 
   *::-webkit-scrollbar-thumb {
-    border: 0;
+    border: 2px solid transparent;
+    background-clip: content-box;
     border-radius: 9999px !important;
-    background: hsl(218 58% 28%);
+    background: hsl(var(--muted-foreground) / 0.22);
   }
 
   *::-webkit-scrollbar-thumb:hover {
-    background: hsl(218 58% 22%);
+    background: hsl(var(--muted-foreground) / 0.32);
   }
 
   .dark body {
-    scrollbar-color: hsl(214 84% 56%) hsl(222 12% 4%);
+    scrollbar-color: hsl(var(--muted-foreground) / 0.28) transparent;
   }
 
   .dark *::-webkit-scrollbar-track,
   .dark *::-webkit-scrollbar-corner {
-    background: hsl(222 12% 4%);
+    background: transparent;
   }
 
   .dark *::-webkit-scrollbar-thumb {
-    background: hsl(214 84% 56%);
+    background: hsl(var(--muted-foreground) / 0.28);
   }
 
   .dark *::-webkit-scrollbar-thumb:hover {
-    background: hsl(214 84% 62%);
-  }
-
-  .dark *::-webkit-scrollbar {
-    background: hsl(222 12% 4%);
+    background: hsl(var(--muted-foreground) / 0.4);
   }
 }
 
