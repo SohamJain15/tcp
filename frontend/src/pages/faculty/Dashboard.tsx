@@ -406,7 +406,7 @@ export default function FacultyDashboard() {
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
                   Submission Activity (14 Days)
                 </h2>
-                <div className="mt-4 h-[220px] flex-1">
+                <div className="mt-4 min-h-[220px] flex-1">
                   <SubmissionTrendChart data={submissionTrend} />
                 </div>
               </Card>
@@ -420,7 +420,7 @@ export default function FacultyDashboard() {
 
               <Card className="profile-card flex h-full flex-col p-5 lg:col-span-2">
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Language Usage</h2>
-                <div className="mt-4 h-[220px] flex-1">
+                <div className="mt-4 min-h-[220px] flex-1">
                   <LanguageUsageChart data={languageUsage} />
                 </div>
               </Card>
@@ -429,7 +429,7 @@ export default function FacultyDashboard() {
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
                   Problem Difficulty Mix
                 </h2>
-                <div className="mt-4 h-[220px] flex-1">
+                <div className="mt-4 min-h-[220px] flex-1">
                   <DifficultyMixChart data={difficultyMix} />
                 </div>
               </Card>
