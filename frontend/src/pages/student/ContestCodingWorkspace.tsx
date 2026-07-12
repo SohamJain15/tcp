@@ -314,7 +314,7 @@ export default function ContestCodingWorkspace() {
           stdout: response.stdout,
           stderr: response.stderr,
         });
-        toast.success("Practice submission evaluated against all contest testcases.");
+        toast.success("Code ran against all contest test cases.");
         return;
       }
 
@@ -367,8 +367,12 @@ export default function ContestCodingWorkspace() {
             <ChevronLeft className="h-4 w-4" /> Back to contest
           </Link>
           <div className="text-xs text-muted-foreground">
-            Time limit: {question.timeLimitSeconds}s {"\u2022"} Memory: {question.memoryLimitMb} MB {"\u2022"} Violations:{" "}
-            {attempt?.violationCount ?? 0}/{contest.maxViolations}
+            Time limit: {question.timeLimitSeconds}s {"\u2022"} Memory: {question.memoryLimitMb} MB
+            {!practiceMode && (
+              <>
+                {" \u2022 "}Violations: {attempt?.violationCount ?? 0}/{contest.maxViolations}
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -443,7 +447,7 @@ export default function ContestCodingWorkspace() {
 
                 {practiceMode && (
                   <Card className="border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-100 shadow-none">
-                    Practice mode is active. Runs and hidden-test submissions here do not change contest points, report cards, or standings.
+                    Practice mode — run your code against all test cases. Submissions and scoring are disabled.
                   </Card>
                 )}
 
@@ -547,23 +551,33 @@ export default function ContestCodingWorkspace() {
                       <>
                         <span className="font-semibold text-foreground">{toStatusLabel(submissionReceipt.status)}</span>
                         {submissionReceipt.practiceMode
-                          ? ` \u2022 Hidden testcases checked: ${submissionReceipt.passedCount ?? 0}/${submissionReceipt.totalCount ?? 0}.`
+                          ? ` \u2022 All test cases: ${submissionReceipt.passedCount ?? 0}/${submissionReceipt.totalCount ?? 0} passed.`
                           : " \u2022 Final code submitted. Hidden testcases are being checked in the background."}
                       </>
                     ) : (
                       practiceMode
-                        ? "Run sample cases or submit against all contest testcases in practice mode."
+                        ? "Practice mode: run against sample cases or all contest test cases. Submissions are disabled."
                         : "Run code to see sample testcase results."
                     )}
                   </div>
 
                   <div className="flex gap-2">
-                    <Button variant="secondary" onClick={() => runMutation.mutate()} disabled={!interactiveMode || runMutation.isPending}>
-                      <Play className="mr-2 h-4 w-4" /> {runMutation.isPending ? "Running..." : "Run"}
+                    <Button variant="secondary" onClick={() => runMutation.mutate()} disabled={!interactiveMode || runMutation.isPending || submitMutation.isPending}>
+                      <Play className="mr-2 h-4 w-4" /> {runMutation.isPending ? "Running..." : practiceMode ? "Run Samples" : "Run"}
                     </Button>
-                    <Button className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => submitMutation.mutate()} disabled={!interactiveMode || finalSubmissionUsed || submitMutation.isPending}>
-                      <Send className="mr-2 h-4 w-4" /> {submitMutation.isPending ? "Submitting..." : "Submit"}
-                    </Button>
+                    {practiceMode ? (
+                      <Button
+                        className="bg-accent text-accent-foreground hover:bg-accent/90"
+                        onClick={() => submitMutation.mutate()}
+                        disabled={runMutation.isPending || submitMutation.isPending}
+                      >
+                        <Play className="mr-2 h-4 w-4" /> {submitMutation.isPending ? "Running..." : "Run All Tests"}
+                      </Button>
+                    ) : (
+                      <Button className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => submitMutation.mutate()} disabled={!interactiveMode || finalSubmissionUsed || submitMutation.isPending}>
+                        <Send className="mr-2 h-4 w-4" /> {submitMutation.isPending ? "Submitting..." : "Submit"}
+                      </Button>
+                    )}
                   </div>
                 </div>
 

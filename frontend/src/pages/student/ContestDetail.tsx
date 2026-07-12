@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, useParams } from "react-router-dom";
-import { ChevronDown, ChevronLeft } from "lucide-react";
+import { ChevronDown, ChevronLeft, Eye } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppLayout } from "@/components/AppLayout";
@@ -144,6 +144,7 @@ export default function ContestDetail() {
   const pathname = `/student/contests/${id}`;
   const queryClient = useQueryClient();
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
+  const [revealedAnswers, setRevealedAnswers] = useState<Record<string, boolean>>({});
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["contest-detail", id],
@@ -550,9 +551,19 @@ export default function ContestDetail() {
                     </Button>
                   )}
                   {contestEnded && question.correctAnswer && (
-                    <Card className="border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm shadow-none">
-                      Correct answer: <span className="font-semibold text-foreground">{question.correctAnswer}</span>
-                    </Card>
+                    revealedAnswers[question.id] ? (
+                      <Card className="border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm shadow-none">
+                        Correct answer: <span className="font-semibold text-foreground">{question.correctAnswer}</span>
+                      </Card>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setRevealedAnswers((current) => ({ ...current, [question.id]: true }))}
+                      >
+                        <Eye className="mr-2 h-4 w-4" /> View Answer
+                      </Button>
+                    )
                   )}
                 </div>
               )}
@@ -587,9 +598,19 @@ export default function ContestDetail() {
                     </Button>
                   )}
                   {contestEnded && Array.isArray(question.correctAnswer) && (
-                    <Card className="border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm shadow-none">
-                      Correct answers: <span className="font-semibold text-foreground">{question.correctAnswer.join(", ")}</span>
-                    </Card>
+                    revealedAnswers[question.id] ? (
+                      <Card className="border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm shadow-none">
+                        Correct answers: <span className="font-semibold text-foreground">{question.correctAnswer.join(", ")}</span>
+                      </Card>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setRevealedAnswers((current) => ({ ...current, [question.id]: true }))}
+                      >
+                        <Eye className="mr-2 h-4 w-4" /> View Answer
+                      </Button>
+                    )
                   )}
                 </div>
               )}

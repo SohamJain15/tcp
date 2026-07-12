@@ -664,7 +664,9 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         throw new AppError(409, "Contest questions are not available yet");
       }
       const rawAttempt = await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email);
-      const attempt = ensureActiveAttempt(rawAttempt);
+      // Live contests require an active attempt; ended contests open in practice mode
+      // where any (or no) attempt is fine — the envelope mapper accepts a null attempt.
+      const attempt = status === "Live" ? ensureActiveAttempt(rawAttempt) : rawAttempt;
       const question = ensureContestQuestion(contest, questionId);
       return toStudentContestQuestionEnvelope(contest, question, attempt, now);
     },

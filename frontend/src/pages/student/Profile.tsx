@@ -1,7 +1,7 @@
 import { memo, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bar, BarChart, Cell, Pie, PieChart, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Download, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
@@ -53,49 +53,132 @@ function formatWhen(isoDate: string): string {
   return new Date(isoDate).toLocaleString();
 }
 
+// Sharp-cornered, token-driven tooltip so it stays readable in light AND dark mode.
 const chartTooltipStyle = {
-  backgroundColor: "hsl(var(--background))",
-  borderColor: "hsl(var(--border))",
-  borderRadius: "8px",
+  backgroundColor: "hsl(var(--card))",
+  border: "1px solid hsl(var(--border))",
+  borderRadius: "0px",
   color: "hsl(var(--foreground))",
+  fontSize: "12px",
+  boxShadow: "var(--shadow-card)",
 };
+
+const chartTooltipLabelStyle = { color: "hsl(var(--foreground))", fontWeight: 600 };
+const chartTooltipItemStyle = { color: "hsl(var(--foreground))" };
 
 type DifficultyDatum = { name: string; value: number; color?: string };
 type LanguageDatum = { name: string; count: number };
+type TrendDatum = { month: string; count: number };
 
 // Memoized so dialog toggles / query refreshes don't re-mount the charts (which
 // would re-trigger their entry animation and feel laggy).
 const DifficultyPieChart = memo(function DifficultyPieChart({ data }: { data: DifficultyDatum[] }) {
+  const total = data.reduce((sum, entry) => sum + entry.value, 0);
+
   return (
-    <PieChart width={260} height={220}>
-      <Pie
-        data={data}
-        cx="50%"
-        cy="50%"
-        outerRadius={78}
-        innerRadius={45}
-        dataKey="value"
-        strokeWidth={1}
-        animationDuration={500}
-        animationEasing="ease-out"
-      >
+    <div className="flex h-full flex-col">
+      <div className="relative h-[190px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="50%"
+              outerRadius={80}
+              innerRadius={54}
+              paddingAngle={data.length > 1 ? 3 : 0}
+              dataKey="value"
+              stroke="hsl(var(--card))"
+              strokeWidth={2}
+              animationDuration={500}
+              animationEasing="ease-out"
+            >
+              {data.map((entry) => (
+                <Cell key={entry.name} fill={entry.color} />
+              ))}
+            </Pie>
+            <Tooltip contentStyle={chartTooltipStyle} labelStyle={chartTooltipLabelStyle} itemStyle={chartTooltipItemStyle} />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <span className="font-display text-2xl font-bold leading-none">{total}</span>
+          <span className="mt-1 text-[10px] uppercase tracking-widest text-muted-foreground">Solved</span>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1.5">
         {data.map((entry) => (
-          <Cell key={entry.name} fill={entry.color} />
+          <span key={entry.name} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="h-2.5 w-2.5" style={{ backgroundColor: entry.color }} aria-hidden />
+            {entry.name}
+            <span className="font-mono-code font-semibold text-foreground">{entry.value}</span>
+          </span>
         ))}
-      </Pie>
-      <Tooltip contentStyle={chartTooltipStyle} />
-    </PieChart>
+        {data.length === 0 && <span className="text-xs text-muted-foreground">No solved problems yet.</span>}
+      </div>
+    </div>
   );
 });
 
 const LanguageBarChart = memo(function LanguageBarChart({ data }: { data: LanguageDatum[] }) {
   return (
-    <BarChart width={320} height={220} data={data}>
-      <XAxis dataKey="name" tickLine={false} axisLine={false} />
-      <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
-      <Tooltip contentStyle={chartTooltipStyle} />
-      <Bar dataKey="count" radius={[6, 6, 0, 0]} fill="hsl(var(--primary))" animationDuration={500} animationEasing="ease-out" />
-    </BarChart>
+    <div className="h-[220px] w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+          <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
+          <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
+          <Tooltip
+            contentStyle={chartTooltipStyle}
+            labelStyle={chartTooltipLabelStyle}
+            itemStyle={chartTooltipItemStyle}
+            cursor={{ fill: "hsl(var(--muted) / 0.35)" }}
+          />
+          <Bar
+            dataKey="count"
+            name="Submissions"
+            radius={0}
+            fill="hsl(var(--primary))"
+            maxBarSize={44}
+            animationDuration={500}
+            animationEasing="ease-out"
+          />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+});
+
+const SubmissionTrendChart = memo(function SubmissionTrendChart({ data }: { data: TrendDatum[] }) {
+  return (
+    <div className="h-[220px] w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+          <defs>
+            <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="hsl(var(--accent))" stopOpacity={0.35} />
+              <stop offset="100%" stopColor="hsl(var(--accent))" stopOpacity={0.02} />
+            </linearGradient>
+          </defs>
+          <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
+          <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
+          <Tooltip
+            contentStyle={chartTooltipStyle}
+            labelStyle={chartTooltipLabelStyle}
+            itemStyle={chartTooltipItemStyle}
+            cursor={{ stroke: "hsl(var(--accent))", strokeWidth: 1, strokeDasharray: "3 3" }}
+          />
+          <Area
+            type="monotone"
+            dataKey="count"
+            name="Submissions"
+            stroke="hsl(var(--accent))"
+            strokeWidth={2}
+            fill="url(#trendFill)"
+            animationDuration={500}
+            animationEasing="ease-out"
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
   );
 });
 
@@ -178,6 +261,29 @@ export default function StudentProfile() {
       })),
     [analyticsData?.analytics.languageBreakdown],
   );
+
+  // Monthly submission counts for the last 6 months, aggregated from the
+  // already-fetched heatmap data (no extra API calls).
+  const submissionTrend = useMemo(() => {
+    const entries = analyticsData?.analytics.submissionHeatmap ?? [];
+    const now = new Date();
+    const months = Array.from({ length: 6 }, (_, index) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
+      return {
+        year: date.getFullYear(),
+        month: date.getMonth(),
+        label: date.toLocaleString("en-US", { month: "short" }),
+      };
+    });
+
+    return months.map(({ year, month, label }) => ({
+      month: label,
+      count: entries.reduce((sum, entry) => {
+        const date = new Date(entry.date);
+        return date.getFullYear() === year && date.getMonth() === month ? sum + entry.submissionCount : sum;
+      }, 0),
+    }));
+  }, [analyticsData?.analytics.submissionHeatmap]);
 
   if (isLoading) {
     return (
@@ -315,7 +421,7 @@ export default function StudentProfile() {
 
             <div className="grid grid-cols-1 gap-6 md:grid-cols-12">
               <div className="md:col-span-4">
-                <Card className="profile-card relative p-6">
+                <Card className="profile-card relative h-full p-6">
               <Badge
                 className={`absolute right-6 top-6 border-0 ${
                   profile.isProfileComplete
@@ -340,51 +446,45 @@ export default function StudentProfile() {
 
               <Separator className="my-5" />
 
-              <div className="flex flex-col gap-3 text-sm">
-                <div className="flex justify-between gap-3">
-                  <span className="text-muted-foreground">Email</span>
-                  <span className="font-medium">{profile.email}</span>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <span className="text-muted-foreground">Roll Number</span>
-                  <span className="font-medium">{profile.rollNumber ?? "Not set"}</span>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <span className="text-muted-foreground">Department</span>
-                  <span className="font-medium">{profile.department ?? "Not set"}</span>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <span className="text-muted-foreground">Semester</span>
-                  <span className="font-medium">{profile.semester ?? "Not set"}</span>
-                </div>
+              <div className="grid grid-cols-[110px,1fr] gap-x-4 gap-y-3 text-sm">
+                <span className="text-muted-foreground">Email</span>
+                <span className="min-w-0 truncate font-medium">{profile.email}</span>
+
+                <span className="text-muted-foreground">Roll Number</span>
+                <span className="font-medium">{profile.rollNumber ?? "Not set"}</span>
+
+                <span className="text-muted-foreground">Department</span>
+                <span className="font-medium">{profile.department ?? "Not set"}</span>
+
+                <span className="text-muted-foreground">Semester</span>
+                <span className="font-medium">{profile.semester ?? "Not set"}</span>
+
                 {profile.role === "FACULTY" && (
-                  <div className="flex justify-between gap-3">
+                  <>
                     <span className="text-muted-foreground">Designation</span>
                     <span className="font-medium">{profile.designation ?? "Not set"}</span>
-                  </div>
+                  </>
                 )}
-                <div className="flex justify-between gap-3">
-                  <span className="text-muted-foreground">GitHub</span>
-                  <a
-                    href={profile.githubUrl ?? undefined}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="max-w-[62%] truncate font-medium text-primary hover:underline"
-                  >
-                    {profile.githubUrl ?? "Not set"}
-                  </a>
-                </div>
-                <div className="flex justify-between gap-3">
-                  <span className="text-muted-foreground">LinkedIn</span>
-                  <a
-                    href={profile.linkedInUrl ?? undefined}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="max-w-[62%] truncate font-medium text-primary hover:underline"
-                  >
-                    {profile.linkedInUrl ?? "Not set"}
-                  </a>
-                </div>
+
+                <span className="text-muted-foreground">GitHub</span>
+                <a
+                  href={profile.githubUrl ?? undefined}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="min-w-0 truncate font-medium text-primary hover:underline"
+                >
+                  {profile.githubUrl ?? "Not set"}
+                </a>
+
+                <span className="text-muted-foreground">LinkedIn</span>
+                <a
+                  href={profile.linkedInUrl ?? undefined}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="min-w-0 truncate font-medium text-primary hover:underline"
+                >
+                  {profile.linkedInUrl ?? "Not set"}
+                </a>
               </div>
                 </Card>
               </div>
@@ -397,18 +497,25 @@ export default function StudentProfile() {
                   {statCard("Accuracy", `${profile.accuracy}%`)}
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <Card className="profile-card p-5">
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                  <Card className="profile-card flex h-full flex-col p-5">
                     <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Problem Difficulty</h2>
-                    <div className="mt-4 flex items-center justify-center">
+                    <div className="mt-4 flex-1">
                       <DifficultyPieChart data={difficultyData} />
                     </div>
                   </Card>
 
-                  <Card className="profile-card p-5">
+                  <Card className="profile-card flex h-full flex-col p-5">
                     <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Language Proficiency</h2>
-                    <div className="mt-4 overflow-x-auto">
+                    <div className="mt-4 flex-1">
                       <LanguageBarChart data={languageData} />
+                    </div>
+                  </Card>
+
+                  <Card className="profile-card flex h-full flex-col p-5">
+                    <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Submission Trend</h2>
+                    <div className="mt-4 flex-1">
+                      <SubmissionTrendChart data={submissionTrend} />
                     </div>
                   </Card>
                 </div>
