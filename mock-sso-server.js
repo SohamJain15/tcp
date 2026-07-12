@@ -1,13 +1,34 @@
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const PORT = 4000;
-const COE_SHARED_TOKEN_SECRET = 'TCET_LIVE_SECRET_999';
 const DEFAULT_CALLBACK_URL = process.env.MOCK_SSO_DEFAULT_CALLBACK_URL || 'http://localhost:5173';
 const COOKIE_NAME = 'coe_shared_token';
 const ALLOWED_ROLES = new Set(['ADMIN', 'FACULTY', 'STUDENT', 'INDUSTRY']);
+
+function readEnvValue(filePath, key) {
+  try {
+    const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/);
+    const match = lines.find((line) => line.trim().startsWith(`${key}=`));
+    if (!match) return '';
+
+    return match
+      .slice(match.indexOf('=') + 1)
+      .trim()
+      .replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, '$1$2');
+  } catch {
+    return '';
+  }
+}
+
+const COE_SHARED_TOKEN_SECRET =
+  process.env.COE_JWT_SECRET ||
+  readEnvValue(path.join(__dirname, 'backend', '.env'), 'COE_JWT_SECRET') ||
+  'TCET_LIVE_SECRET_999';
 
 app.use(cookieParser());
 app.use(express.urlencoded({ extended: false }));
@@ -62,6 +83,7 @@ app.post('/login', (req, res) => {
   const callbackUrl = typeof req.body.callbackUrl === 'string' && req.body.callbackUrl.trim() !== ''
     ? req.body.callbackUrl
     : DEFAULT_CALLBACK_URL;
+  const name = email.split('@')[0] || email;
 
   if (!email) {
     res.status(400).send('Email is required.');
@@ -71,6 +93,7 @@ app.post('/login', (req, res) => {
   const token = jwt.sign(
     {
       email,
+      name,
       role,
       status: 'ACTIVE',
     },

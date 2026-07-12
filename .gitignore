@@ -52,3 +52,7 @@ backend/.env
 
 # Judge0 config
 /infrastructure/judge0/judge0.conf
+
+.claude/
+
+mock-sso-server.js
