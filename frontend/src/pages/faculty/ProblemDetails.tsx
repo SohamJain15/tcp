@@ -43,6 +43,10 @@ export default function ProblemDetails() {
   }
 
   const problem = data.problem;
+  const tags = problem.tags ?? [];
+  const constraints = problem.constraints ?? [];
+  const sampleTestCases = problem.sampleTestCases ?? [];
+  const hiddenTestCases = problem.hiddenTestCases ?? [];
 
   return (
     <AppLayout>
@@ -61,7 +65,7 @@ export default function ProblemDetails() {
               Review the live statement, limits, and testcase coverage before updating the published version.
             </p>
             <div className="flex flex-wrap gap-2">
-              {problem.tags.map((tag) => (
+              {tags.map((tag) => (
                 <span key={tag} className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
                   {tag}
                 </span>
@@ -99,28 +103,29 @@ export default function ProblemDetails() {
           <Card className="space-y-6 p-6 shadow-card">
             <section>
               <h2 className="mb-2 font-display text-xl font-bold">Problem Statement</h2>
-              <p className="leading-7 text-muted-foreground">{problem.statement}</p>
+              <p className="leading-7 text-muted-foreground">{problem.statement || "No statement available."}</p>
             </section>
 
             <section className="grid gap-5 md:grid-cols-2">
               <div>
                 <h3 className="mb-2 font-display text-lg font-bold">Input Format</h3>
-                <p className="leading-7 text-muted-foreground">{problem.inputFormat}</p>
+                <p className="leading-7 text-muted-foreground">{problem.inputFormat || "-"}</p>
               </div>
               <div>
                 <h3 className="mb-2 font-display text-lg font-bold">Output Format</h3>
-                <p className="leading-7 text-muted-foreground">{problem.outputFormat}</p>
+                <p className="leading-7 text-muted-foreground">{problem.outputFormat || "-"}</p>
               </div>
             </section>
 
             <section>
               <h3 className="mb-2 font-display text-lg font-bold">Constraints</h3>
               <ul className="space-y-2 font-mono-code text-sm text-muted-foreground">
-                {problem.constraints.map((constraint) => (
+                {constraints.map((constraint) => (
                   <li key={constraint} className="rounded-md bg-secondary/65 px-3 py-2">
                     {constraint}
                   </li>
                 ))}
+                {constraints.length === 0 && <li className="rounded-md bg-secondary/65 px-3 py-2">No constraints available.</li>}
               </ul>
             </section>
 
@@ -130,7 +135,7 @@ export default function ProblemDetails() {
                 <h3 className="font-display text-lg font-bold">Sample Test Cases</h3>
               </div>
               <div className="space-y-3">
-                {problem.sampleTestCases.map((example, index) => (
+                {sampleTestCases.map((example, index) => (
                   <div key={`${example.input}-${index}`} className="hover-lift rounded-none border border-border bg-secondary/35 p-4">
                     <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Case {index + 1}</div>
                     <div className="grid gap-3 md:grid-cols-2">
@@ -146,6 +151,7 @@ export default function ProblemDetails() {
                     {example.explanation && <p className="mt-3 text-sm text-muted-foreground">{example.explanation}</p>}
                   </div>
                 ))}
+                {sampleTestCases.length === 0 && <div className="text-sm text-muted-foreground">No sample test cases available.</div>}
               </div>
             </section>
           </Card>
@@ -164,7 +170,7 @@ export default function ProblemDetails() {
                 </div>
                 <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
                   <span className="text-muted-foreground">Topic count</span>
-                  <span className="font-semibold">{problem.tags.length}</span>
+                  <span className="font-semibold">{tags.length}</span>
                 </div>
               </div>
             </Card>
@@ -172,7 +178,7 @@ export default function ProblemDetails() {
             <Card className="p-6 shadow-card">
               <h2 className="mb-4 font-display text-xl font-bold">Hidden Coverage</h2>
               <div className="space-y-3">
-                {problem.hiddenTestCases.map((example, index) => (
+                {hiddenTestCases.map((example, index) => (
                   <div key={`${example.input}-${index}`} className="rounded-lg border border-border p-4">
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Hidden Case {index + 1}</div>
                     <div className="space-y-2 font-mono-code text-xs">
@@ -181,7 +187,7 @@ export default function ProblemDetails() {
                     </div>
                   </div>
                 ))}
-                {problem.hiddenTestCases.length === 0 && <div className="text-sm text-muted-foreground">No hidden test cases yet.</div>}
+                {hiddenTestCases.length === 0 && <div className="text-sm text-muted-foreground">No hidden test cases yet.</div>}
               </div>
             </Card>
           </div>

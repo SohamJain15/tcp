@@ -192,10 +192,10 @@ export function ProblemEditorForm({
           <p className="mt-1 text-muted-foreground">{description}</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={saveDraft} disabled={disabled}>
+          <Button type="button" variant="outline" onClick={saveDraft} disabled={disabled}>
             <Save className="mr-2 h-4 w-4" /> {isSavingDraft ? "Saving..." : "Save Draft"}
           </Button>
-          <Button className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={submitProblem} disabled={disabled}>
+          <Button type="button" className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={submitProblem} disabled={disabled}>
             <Send className="mr-2 h-4 w-4" /> {isSubmitting ? "Submitting..." : submitLabel}
           </Button>
         </div>
@@ -263,10 +263,10 @@ export function ProblemEditorForm({
         <div className="flex items-center justify-between border-b border-border pb-2">
           <h2 className="font-display text-lg font-bold">Test Cases</h2>
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => addCase(false)} disabled={disabled}>
+            <Button type="button" size="sm" variant="outline" onClick={() => addCase(false)} disabled={disabled}>
               <Plus className="mr-1 h-3.5 w-3.5" /> Sample
             </Button>
-            <Button size="sm" variant="outline" onClick={() => addCase(true)} disabled={disabled}>
+            <Button type="button" size="sm" variant="outline" onClick={() => addCase(true)} disabled={disabled}>
               <Plus className="mr-1 h-3.5 w-3.5" /> Hidden
             </Button>
           </div>
@@ -280,6 +280,7 @@ export function ProblemEditorForm({
                   {testCase.hidden ? "Hidden" : "Sample"} Case {index + 1}
                 </span>
                 <Button
+                  type="button"
                   size="icon"
                   variant="ghost"
                   className="h-7 w-7 text-destructive"
