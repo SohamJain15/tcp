@@ -1,16 +1,20 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, useParams } from "react-router-dom";
+import { ChevronDown, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppLayout } from "@/components/AppLayout";
-import { contestsApi } from "@/api/services";
+import { contestsApi, submissionsApi } from "@/api/services";
+import { toLanguageLabel } from "@/api/mappers";
+import type { CodingContestQuestionReportItem, ContestQuestionReportItem } from "@/api/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { cn } from "@/lib/utils";
 import { useContestProctoring } from "./useContestProctoring";
 
 function difficultyBadgeClass(difficulty: "Easy" | "Medium" | "Hard"): string {
@@ -29,6 +33,95 @@ function statusBadgeClass(status: "UNATTEMPTED" | "ATTEMPTED" | "SOLVED"): strin
   if (status === "SOLVED") return "bg-green-600 text-white hover:bg-green-600";
   if (status === "ATTEMPTED") return "bg-amber-500 text-white hover:bg-amber-500";
   return "bg-secondary text-secondary-foreground";
+}
+
+function formatTimeTaken(timeTakenMs: number | null): string {
+  if (timeTakenMs === null) {
+    return "-";
+  }
+
+  const totalSeconds = Math.ceil(timeTakenMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
+function formatAnswer(answer: string | string[] | null | undefined): string {
+  if (answer == null || answer.length === 0) {
+    return "-";
+  }
+
+  return Array.isArray(answer) ? answer.join(", ") : answer;
+}
+
+function getReportResult(item: ContestQuestionReportItem): { label: string; correct: boolean | null } {
+  if (item.type !== "Coding") {
+    if (item.submittedAnswer == null || item.submittedAnswer.length === 0) {
+      return { label: "Not Answered", correct: null };
+    }
+    return item.isCorrect ? { label: "Correct", correct: true } : { label: "Incorrect", correct: false };
+  }
+
+  if (!item.finalSubmissionStatus) {
+    return { label: "Not Attempted", correct: null };
+  }
+
+  return item.finalSubmissionStatus === "ACCEPTED"
+    ? { label: "Correct", correct: true }
+    : { label: "Incorrect", correct: false };
+}
+
+function ReportStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="border border-border bg-secondary/30 p-3">
+      <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{label}</div>
+      <div className="mt-1 font-display text-xl font-bold leading-none">{value}</div>
+      {sub && <div className="mt-1 text-xs text-muted-foreground">{sub}</div>}
+    </div>
+  );
+}
+
+function SubmittedCode({ item, pathname }: { item: CodingContestQuestionReportItem; pathname: string }) {
+  const [open, setOpen] = useState(false);
+  const submissionId = item.finalSubmissionId;
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["contest-report-code", submissionId],
+    queryFn: () => submissionsApi.getById(submissionId ?? "", pathname),
+    enabled: open && Boolean(submissionId),
+  });
+
+  if (!submissionId) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-accent hover:underline"
+      >
+        <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", open && "rotate-180")} />
+        {open ? "Hide Submitted Code" : "View Submitted Code"}
+        {item.finalSubmissionLanguage && (
+          <span className="font-normal normal-case text-muted-foreground">
+            ({toLanguageLabel(item.finalSubmissionLanguage)})
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="mt-2">
+          {isLoading && <div className="text-xs text-muted-foreground">Loading code…</div>}
+          {!isLoading && (
+            <pre className="max-h-80 overflow-auto border border-border bg-[hsl(220_50%_8%)] p-3 font-mono-code text-xs leading-relaxed text-[hsl(42_40%_92%)]">
+              {data?.submission.code || "// No code payload returned"}
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function attemptStatusLabel(status: "NOT_ATTEMPTED" | "NOT_STARTED" | "ACTIVE" | "SUBMITTED" | "AUTO_SUBMITTED" | "DISQUALIFIED"): string {
@@ -173,36 +266,49 @@ export default function ContestDetail() {
 
   return (
     <AppLayout hideNavbar={attemptIsActive} hideFooter={attemptIsActive}>
-      <div className="container space-y-6 py-8">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-2">
-            <Link to="/student/contests" className="text-sm text-muted-foreground hover:text-accent">
-              Back to contests
+      <div className={cn("container py-6", showReport ? "space-y-4" : "space-y-6")}>
+        {showReport ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              to="/student/contests"
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-accent"
+            >
+              <ChevronLeft className="h-4 w-4" /> Back
             </Link>
-            <h1 className="font-display text-3xl font-bold">{contest.title}</h1>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge className={contest.type === "Rated" ? "bg-blue-600 text-white hover:bg-blue-600" : ""}>{contest.type}</Badge>
-              <Badge variant="outline">{contest.studentListStatus}</Badge>
-              <Badge variant="outline">{attemptStatusLabel(contest.attemptStatus)}</Badge>
-              <Badge variant="outline">{contest.durationMinutes} mins</Badge>
+            <h1 className="min-w-0 truncate font-display text-xl font-bold">{contest.title}</h1>
+            <Badge className={contest.type === "Rated" ? "bg-blue-600 text-white hover:bg-blue-600" : ""}>{contest.type}</Badge>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-2">
+              <Link to="/student/contests" className="text-sm text-muted-foreground hover:text-accent">
+                Back to contests
+              </Link>
+              <h1 className="font-display text-3xl font-bold">{contest.title}</h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge className={contest.type === "Rated" ? "bg-blue-600 text-white hover:bg-blue-600" : ""}>{contest.type}</Badge>
+                <Badge variant="outline">{contest.studentListStatus}</Badge>
+                <Badge variant="outline">{attemptStatusLabel(contest.attemptStatus)}</Badge>
+                <Badge variant="outline">{contest.durationMinutes} mins</Badge>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {!attempt && canAttempt && (
+                <Button className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => startAttemptMutation.mutate()} disabled={startAttemptMutation.isPending}>
+                  {startAttemptMutation.isPending ? "Starting..." : "Start Contest"}
+                </Button>
+              )}
+              {attemptIsActive && allQuestionsCompleted && (
+                <Button variant="destructive" onClick={() => submitAttemptMutation.mutate()} disabled={submitAttemptMutation.isPending}>
+                  {submitAttemptMutation.isPending ? "Ending..." : "End Test"}
+                </Button>
+              )}
             </div>
           </div>
+        )}
 
-          <div className="flex flex-wrap gap-2">
-            {!attempt && canAttempt && (
-              <Button className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => startAttemptMutation.mutate()} disabled={startAttemptMutation.isPending}>
-                {startAttemptMutation.isPending ? "Starting..." : "Start Contest"}
-              </Button>
-            )}
-            {attemptIsActive && allQuestionsCompleted && (
-              <Button variant="destructive" onClick={() => submitAttemptMutation.mutate()} disabled={submitAttemptMutation.isPending}>
-                {submitAttemptMutation.isPending ? "Ending..." : "End Test"}
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {attemptIsActive ? (
+        {!showReport && (attemptIsActive ? (
           <Alert variant="destructive">
             <AlertTitle>Proctoring Alert</AlertTitle>
             <AlertDescription>
@@ -217,23 +323,23 @@ export default function ContestDetail() {
               This contest has ended. Objective solutions are now visible, and coding questions can be explored in practice mode without affecting rankings or your scored attempt.
             </AlertDescription>
           </Alert>
-        ) : null}
+        ) : null)}
 
-        {attemptIsLocked && (
+        {!showReport && attemptIsLocked && (
           <Card className="border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-200 shadow-none">
             This attempt is {attempt?.status.toLowerCase().replace(/_/g, " ")}. Scored contest actions are locked.
             {contestEnded ? " You can still review the questions below and open coding questions in practice mode." : ""}
           </Card>
         )}
 
-        {contestEnded && !contest.resultsPublished && (
+        {!showReport && contestEnded && !contest.resultsPublished && (
           <Card className="border border-border bg-background p-4 text-sm text-muted-foreground shadow-none">
             The contest is over, so questions and solutions are visible now. Leaderboard ranks stay hidden until faculty publishes results.
           </Card>
         )}
 
         {showReport && report && (
-          <Card className="border border-border bg-background p-6 shadow-none">
+          <Card className="border border-border bg-background p-4 shadow-none sm:p-5">
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <h2 className="font-display text-xl font-semibold">
                 {contest.resultsPublished ? "Published Report Card" : "Report Card"}
@@ -241,56 +347,96 @@ export default function ContestDetail() {
               <Badge variant="outline">{attemptStatusLabel(report.status)}</Badge>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-              <div className="rounded border border-border p-4">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">Rank</div>
-                <div className="mt-2 text-lg font-semibold">{report.rank ? `#${report.rank}` : "-"}</div>
-              </div>
-              <div className="rounded border border-border p-4">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">Score</div>
-                <div className="mt-2 text-lg font-semibold">{report.score}</div>
-              </div>
-              <div className="rounded border border-border p-4">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">Solved</div>
-                <div className="mt-2 text-lg font-semibold">{report.solvedCount}</div>
-              </div>
-              <div className="rounded border border-border p-4">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">Time Taken</div>
-                <div className="mt-2 text-lg font-semibold">{report.timeTakenMs !== null ? `${Math.ceil(report.timeTakenMs / 1000)} sec` : "-"}</div>
-              </div>
-              <div className="rounded border border-border p-4">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">Violation Penalty</div>
-                <div className="mt-2 text-lg font-semibold">{report.violationPenaltyPoints} pts</div>
-              </div>
+            <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+              <ReportStat label="Rank" value={report.rank ? `#${report.rank}` : "-"} />
+              <ReportStat label="Score" value={String(report.score)} sub={`${report.solvedCount} solved`} />
+              <ReportStat label="Time Taken" value={formatTimeTaken(report.timeTakenMs)} />
+              <ReportStat label="Violation Penalty" value={`${report.violationPenaltyPoints} pts`} />
             </div>
 
-            <div className="mt-6 space-y-3">
-              {report.questionReports.length === 0 && <div className="text-sm text-muted-foreground">You did not attempt this contest.</div>}
-              {report.questionReports.map((item) => (
-                <div key={item.questionId} className="rounded border border-border p-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline">Q{item.questionNumber}</Badge>
-                    <Badge className={statusBadgeClass(item.status)}>{questionStatusLabel(item.status)}</Badge>
-                    <Badge variant="outline">{item.awardedPoints}/{item.points} pts</Badge>
-                    <Badge variant="outline">{item.type}</Badge>
+            <div className="mt-5 space-y-3">
+              {report.questionReports.length === 0 && (
+                <div className="text-sm text-muted-foreground">You did not attempt this contest.</div>
+              )}
+              {report.questionReports.map((item) => {
+                const result = getReportResult(item);
+                return (
+                  <div key={item.questionId} className="border border-border p-3.5 sm:p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">Q{item.questionNumber}</Badge>
+                      <Badge variant="outline">{item.type}</Badge>
+                      <Badge variant="outline">{item.awardedPoints}/{item.points} pts</Badge>
+                      <Badge className={statusBadgeClass(item.status)}>{questionStatusLabel(item.status)}</Badge>
+                      <Badge
+                        className={cn(
+                          "ml-auto",
+                          result.correct === true && "bg-green-600 text-white hover:bg-green-600",
+                          result.correct === false && "bg-destructive text-destructive-foreground hover:bg-destructive",
+                          result.correct === null && "bg-secondary text-secondary-foreground hover:bg-secondary",
+                        )}
+                      >
+                        {result.label}
+                      </Badge>
+                    </div>
+
+                    <h3 className="mt-2.5 text-base font-semibold leading-snug">{item.title}</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {item.type !== "Coding" ? item.statement : item.problemStatement}
+                    </p>
+
+                    {item.type !== "Coding" ? (
+                      <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+                        <div className="border border-border bg-secondary/30 p-2.5">
+                          <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                            Your Answer
+                          </div>
+                          <div className="mt-1 text-sm font-medium">{formatAnswer(item.submittedAnswer)}</div>
+                        </div>
+                        <div className="border border-border bg-secondary/30 p-2.5">
+                          <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                            Correct Answer
+                          </div>
+                          <div className="mt-1 text-sm font-medium">{formatAnswer(item.correctAnswer)}</div>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="mt-3 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+                          <div className="border border-border bg-secondary/30 p-2.5">
+                            <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                              Test Cases
+                            </div>
+                            <div className="mt-1 font-mono-code text-sm font-medium">
+                              {item.passedCount}/{item.totalCount} passed
+                            </div>
+                          </div>
+                          <div className="border border-border bg-secondary/30 p-2.5">
+                            <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                              Verdict
+                            </div>
+                            <div className="mt-1 text-sm font-medium">{item.finalSubmissionStatus ?? "-"}</div>
+                          </div>
+                          <div className="border border-border bg-secondary/30 p-2.5">
+                            <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                              Runtime
+                            </div>
+                            <div className="mt-1 font-mono-code text-sm font-medium">{item.finalRuntimeMs} ms</div>
+                          </div>
+                          <div className="border border-border bg-secondary/30 p-2.5">
+                            <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                              Memory
+                            </div>
+                            <div className="mt-1 font-mono-code text-sm font-medium">
+                              {(item.finalMemoryKb / 1024).toFixed(1)} MB
+                            </div>
+                          </div>
+                        </div>
+                        <SubmittedCode item={item} pathname={pathname} />
+                      </>
+                    )}
                   </div>
-                  <h3 className="mt-3 text-base font-semibold">{item.title}</h3>
-                  {item.type !== "Coding" ? (
-                    <div className="mt-3 space-y-2 text-sm text-muted-foreground">
-                      <div>{item.statement}</div>
-                      <div>Submitted: <span className="font-medium text-foreground">{Array.isArray(item.submittedAnswer) ? item.submittedAnswer.join(", ") : item.submittedAnswer ?? "-"}</span></div>
-                      <div>Correct: <span className="font-medium text-foreground">{Array.isArray(item.correctAnswer) ? item.correctAnswer.join(", ") : item.correctAnswer}</span></div>
-                    </div>
-                  ) : (
-                    <div className="mt-3 space-y-2 text-sm text-muted-foreground">
-                      <div>{item.problemStatement}</div>
-                      <div>Passed testcases: <span className="font-medium text-foreground">{item.passedCount}/{item.totalCount}</span></div>
-                      <div>Final verdict: <span className="font-medium text-foreground">{item.finalSubmissionStatus ?? "-"}</span></div>
-                      <div>Runtime / Memory: <span className="font-medium text-foreground">{item.finalRuntimeMs} ms / {(item.finalMemoryKb / 1024).toFixed(1)} MB</span></div>
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </Card>
         )}

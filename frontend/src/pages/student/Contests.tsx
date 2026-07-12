@@ -1,11 +1,12 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { CalendarClock, Clock, History, Radio, Users } from "lucide-react";
 
 import { AppLayout } from "@/components/AppLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 import { contestsApi } from "@/api/services";
 import type { ContestListItem } from "@/api/types";
 
@@ -34,47 +35,85 @@ function getAttemptStatusLabel(status: ContestListItem["attemptStatus"]): string
   }
 }
 
-function renderContestCards(
-  contests: Awaited<ReturnType<typeof contestsApi.list>>["items"],
-  pathname: string,
-) {
-  if (contests.length === 0) {
-    return (
-      <Card className="border border-border bg-background p-5 text-sm text-muted-foreground">
-        No contests in this section.
-      </Card>
-    );
+function ContestCard({ contest }: { contest: ContestListItem }) {
+  return (
+    <Card className="card-interactive flex h-full flex-col border border-border bg-background p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="min-w-0 font-semibold leading-snug">{contest.title}</h3>
+        <Badge className={contest.type === "Rated" ? "bg-blue-600 text-white hover:bg-blue-600" : ""}>
+          {contest.type}
+        </Badge>
+      </div>
+      <div className="mt-2">
+        <Badge variant="outline">{getAttemptStatusLabel(contest.attemptStatus)}</Badge>
+      </div>
+
+      <div className="mt-3 space-y-1.5 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5">
+          <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+          {new Date(contest.startAt).toLocaleString()}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Clock className="h-3.5 w-3.5 shrink-0" />
+          {contest.durationMinutes} mins
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Users className="h-3.5 w-3.5 shrink-0" />
+          {contest.participantsCount} participants
+        </div>
+      </div>
+
+      <div className="mt-auto pt-4">
+        <Button asChild size="sm" className="w-full bg-accent text-accent-foreground hover:bg-accent/90">
+          <Link to={`/student/contests/${contest.id}`}>
+            {getContestCta(contest.studentListStatus, contest.hasAttempted)}
+          </Link>
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function ContestSection({
+  title,
+  icon: Icon,
+  accentClass,
+  contests,
+  emptyMessage,
+  alwaysVisible = false,
+}: {
+  title: string;
+  icon: typeof Radio;
+  accentClass: string;
+  contests: ContestListItem[];
+  emptyMessage: string;
+  alwaysVisible?: boolean;
+}) {
+  if (contests.length === 0 && !alwaysVisible) {
+    return null;
   }
 
   return (
-    <div className="grid gap-4">
-      {contests.map((contest) => (
-        <Card key={contest.id} className="card-interactive border border-border bg-background p-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-lg font-semibold">{contest.title}</h3>
-                <Badge className={contest.type === "Rated" ? "bg-blue-600 text-white hover:bg-blue-600" : ""}>
-                  {contest.type}
-                </Badge>
-                <Badge variant="outline">{contest.studentListStatus}</Badge>
-                <Badge variant="outline">{getAttemptStatusLabel(contest.attemptStatus)}</Badge>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Time: {new Date(contest.startAt).toLocaleString()}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Duration: {contest.durationMinutes} mins • Participants: {contest.participantsCount}
-              </p>
-            </div>
-
-            <Button asChild className="bg-accent text-accent-foreground hover:bg-accent/90">
-              <Link to={`/student/contests/${contest.id}`}>{getContestCta(contest.studentListStatus, contest.hasAttempted)}</Link>
-            </Button>
+    <section className="border border-border bg-card/50">
+      <div className="sticky top-16 z-10 border-b border-border bg-card px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Icon className={cn("h-4 w-4", accentClass)} />
+          <h2 className="font-display text-sm font-bold uppercase tracking-widest">{title}</h2>
+          <span className="text-xs text-muted-foreground">({contests.length})</span>
+        </div>
+      </div>
+      <div className="p-4">
+        {contests.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">{emptyMessage}</p>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {contests.map((contest) => (
+              <ContestCard key={contest.id} contest={contest} />
+            ))}
           </div>
-        </Card>
-      ))}
-    </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -92,32 +131,48 @@ export default function Contests() {
 
   return (
     <AppLayout>
-      <div className="container mx-auto space-y-6 p-6 md:p-8">
-          <div>
-            <h1 className="font-display text-3xl font-bold">Contests</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Official T&P Assessments and Practice Rounds.</p>
+      <div className="container space-y-6 py-6">
+        <div>
+          <h1 className="font-display text-3xl font-bold">Contests</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Compete, climb the leaderboard, and sharpen your competitive coding skills.
+          </p>
+        </div>
+
+        {isLoading && <Card className="p-6 text-center text-muted-foreground">Loading contests...</Card>}
+        {isError && (
+          <Card className="p-6 text-center text-destructive">
+            {(error as Error)?.message || "Failed to load contests"}
+          </Card>
+        )}
+
+        {!isLoading && !isError && (
+          <div className="space-y-6">
+            <ContestSection
+              title="Live Contests"
+              icon={Radio}
+              accentClass="text-success"
+              contests={liveContests}
+              emptyMessage="No live contests right now."
+              alwaysVisible
+            />
+            <ContestSection
+              title="Upcoming Contests"
+              icon={CalendarClock}
+              accentClass="text-accent"
+              contests={upcomingContests}
+              emptyMessage="No upcoming contests scheduled."
+              alwaysVisible
+            />
+            <ContestSection
+              title="Past Contests"
+              icon={History}
+              accentClass="text-muted-foreground"
+              contests={pastContests}
+              emptyMessage="No past contests."
+            />
           </div>
-
-          {isLoading && <Card className="p-6 text-center text-muted-foreground">Loading contests...</Card>}
-          {isError && (
-            <Card className="p-6 text-center text-destructive">
-              {(error as Error)?.message || "Failed to load contests"}
-            </Card>
-          )}
-
-          {!isLoading && !isError && (
-            <Tabs defaultValue="live" className="space-y-4">
-              <TabsList>
-                <TabsTrigger value="live">Live</TabsTrigger>
-                <TabsTrigger value="upcoming">Upcoming</TabsTrigger>
-                <TabsTrigger value="past">Past</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="live">{renderContestCards(liveContests, pathname)}</TabsContent>
-              <TabsContent value="upcoming">{renderContestCards(upcomingContests, pathname)}</TabsContent>
-              <TabsContent value="past">{renderContestCards(pastContests, pathname)}</TabsContent>
-            </Tabs>
-          )}
+        )}
       </div>
     </AppLayout>
   );

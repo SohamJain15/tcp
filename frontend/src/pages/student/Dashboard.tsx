@@ -1,13 +1,13 @@
 import { Link } from "react-router-dom";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Trophy, Target, CheckCircle2, Activity, ArrowRight } from "lucide-react";
+import { Trophy, Target, CheckCircle2, Activity, ArrowRight, CalendarClock, Radio } from "lucide-react";
 
 import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge, DifficultyBadge } from "@/components/Badges";
-import { problemsApi, submissionsApi, userApi } from "@/api/services";
+import { contestsApi, problemsApi, submissionsApi, userApi } from "@/api/services";
 import { toLanguageLabel, toStatusLabel } from "@/api/mappers";
 
 function formatRelativeTime(isoDate: string): string {
@@ -48,6 +48,11 @@ export default function StudentDashboard() {
     queryFn: () => problemsApi.listStudent({ pageSize: 30 }, "/student/dashboard"),
   });
 
+  const contestsQuery = useQuery({
+    queryKey: ["student-dashboard", "contests"],
+    queryFn: () => contestsApi.list({ pageSize: 100 }, "/student/dashboard"),
+  });
+
   const user = userQuery.data?.user;
   const recentSubmissions = useMemo(
     () =>
@@ -59,6 +64,14 @@ export default function StudentDashboard() {
   const recommendedProblems = useMemo(
     () => (problemsQuery.data?.items ?? []).filter((problem) => problem.userStatus !== "solved").slice(0, 3),
     [problemsQuery.data?.items],
+  );
+  const liveContests = useMemo(
+    () => (contestsQuery.data?.items ?? []).filter((contest) => contest.studentListStatus === "Live").slice(0, 3),
+    [contestsQuery.data?.items],
+  );
+  const upcomingContests = useMemo(
+    () => (contestsQuery.data?.items ?? []).filter((contest) => contest.studentListStatus === "Upcoming").slice(0, 3),
+    [contestsQuery.data?.items],
   );
 
   const stats = user
@@ -147,6 +160,67 @@ export default function StudentDashboard() {
                         </div>
                       </div>
                     ))}
+                </div>
+              </Card>
+
+              <Card className="p-6 shadow-card">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="font-display text-xl font-bold">Contests</h2>
+                  <Link to="/student/contests" className="text-sm text-accent hover:underline">
+                    View all
+                  </Link>
+                </div>
+
+                <div className="space-y-5">
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      <Radio className="h-3.5 w-3.5 text-success" /> Live
+                    </div>
+                    {contestsQuery.isLoading ? (
+                      <div className="mt-2 text-sm text-muted-foreground">Loading contests...</div>
+                    ) : liveContests.length === 0 ? (
+                      <div className="mt-2 text-sm text-muted-foreground">No live contests right now.</div>
+                    ) : (
+                      <div className="mt-1 divide-y divide-border">
+                        {liveContests.map((contest) => (
+                          <Link
+                            key={contest.id}
+                            to={`/student/contests/${contest.id}`}
+                            className="block py-2.5 transition-colors hover:text-accent"
+                          >
+                            <div className="truncate text-sm font-medium">{contest.title}</div>
+                            <div className="text-xs text-muted-foreground">{contest.durationMinutes} mins</div>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      <CalendarClock className="h-3.5 w-3.5 text-accent" /> Upcoming
+                    </div>
+                    {contestsQuery.isLoading ? (
+                      <div className="mt-2 text-sm text-muted-foreground">Loading contests...</div>
+                    ) : upcomingContests.length === 0 ? (
+                      <div className="mt-2 text-sm text-muted-foreground">No upcoming contests scheduled.</div>
+                    ) : (
+                      <div className="mt-1 divide-y divide-border">
+                        {upcomingContests.map((contest) => (
+                          <Link
+                            key={contest.id}
+                            to={`/student/contests/${contest.id}`}
+                            className="block py-2.5 transition-colors hover:text-accent"
+                          >
+                            <div className="truncate text-sm font-medium">{contest.title}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {new Date(contest.startAt).toLocaleString()}
+                            </div>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </Card>
             </div>

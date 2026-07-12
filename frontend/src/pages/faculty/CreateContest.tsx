@@ -352,7 +352,7 @@ export default function CreateContest() {
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2 md:col-span-2">
               <label className="text-sm font-medium">Title</label>
-              <Input value={metadata.title} onChange={(event) => setMetadata((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. T&P Assessment Round 3" />
+              <Input value={metadata.title} onChange={(event) => setMetadata((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. Weekly Coding Contest - Round 3" />
             </div>
 
             <div className="space-y-2">
