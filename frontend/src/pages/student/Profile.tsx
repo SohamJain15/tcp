@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/Badges";
 import { toLanguageLabel, toStatusLabel } from "@/api/mappers";
+import { chartTooltipItemStyle, chartTooltipLabelStyle, chartTooltipStyle } from "@/lib/chart-theme";
 
 const DIFFICULTY_COLORS: Record<string, string> = {
   Easy: "#22c55e",
@@ -53,18 +54,6 @@ function formatWhen(isoDate: string): string {
   return new Date(isoDate).toLocaleString();
 }
 
-// Sharp-cornered, token-driven tooltip so it stays readable in light AND dark mode.
-const chartTooltipStyle = {
-  backgroundColor: "hsl(var(--card))",
-  border: "1px solid hsl(var(--border))",
-  borderRadius: "0px",
-  color: "hsl(var(--foreground))",
-  fontSize: "12px",
-  boxShadow: "var(--shadow-card)",
-};
-
-const chartTooltipLabelStyle = { color: "hsl(var(--foreground))", fontWeight: 600 };
-const chartTooltipItemStyle = { color: "hsl(var(--foreground))" };
 
 type DifficultyDatum = { name: string; value: number; color?: string };
 type LanguageDatum = { name: string; count: number };

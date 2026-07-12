@@ -1,7 +1,8 @@
 import { Link } from "react-router-dom";
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FilePlus2, ListChecks, FileCode2, Trophy, BookOpen, Users, Activity, Target } from "lucide-react";
+import { FilePlus2, Trophy, BookOpen, Users, Activity, Target } from "lucide-react";
+import { Area, AreaChart, Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
@@ -9,7 +10,9 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/Badges";
 import { problemsApi, submissionsApi, userApi } from "@/api/services";
 import { toFacultyStudentProfilePath } from "@/lib/student-profile";
-import { toStatusLabel } from "@/api/mappers";
+import { toLanguageLabel, toStatusLabel } from "@/api/mappers";
+import { chartAxisTick, chartTooltipItemStyle, chartTooltipLabelStyle, chartTooltipStyle } from "@/lib/chart-theme";
+import type { SubmissionStatus } from "@/api/types";
 
 function safeAverage(values: number[]): number {
   if (values.length === 0) {
@@ -23,14 +26,172 @@ function formatTime(isoDate: string): string {
   return new Date(isoDate).toLocaleTimeString();
 }
 
-const actions = [
-  { to: "/faculty/create-problem", label: "Create Problem", icon: FilePlus2, primary: true },
-  { to: "/faculty/create-contest", label: "Create Contest", icon: Trophy },
-  { to: "/faculty/contests", label: "View Contests", icon: Trophy },
-  { to: "/faculty/problems", label: "Manage Problems", icon: ListChecks },
-  { to: "/faculty/submissions", label: "View Submissions", icon: FileCode2 },
-  { to: "/faculty/leaderboard", label: "View Leaderboard", icon: Trophy },
-];
+const STATUS_COLORS: Partial<Record<SubmissionStatus, string>> = {
+  ACCEPTED: "hsl(var(--success))",
+  WRONG_ANSWER: "hsl(var(--destructive))",
+  TIME_LIMIT_EXCEEDED: "hsl(var(--warning))",
+  RUNTIME_ERROR: "hsl(var(--accent))",
+  COMPILATION_ERROR: "hsl(var(--muted-foreground))",
+};
+
+const DIFFICULTY_COLORS: Record<string, string> = {
+  Easy: "#22c55e",
+  Medium: "#eab308",
+  Hard: "#ef4444",
+};
+
+type TrendDatum = { day: string; count: number };
+type VerdictDatum = { name: string; value: number; color: string };
+type LanguageDatum = { name: string; count: number };
+type DifficultyDatum = { name: string; count: number };
+
+function ChartEmptyState({ message }: { message: string }) {
+  return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{message}</div>;
+}
+
+// Memoized so query refreshes elsewhere on the page don't re-trigger chart animations.
+const SubmissionTrendChart = memo(function SubmissionTrendChart({ data }: { data: TrendDatum[] }) {
+  if (data.every((entry) => entry.count === 0)) {
+    return <ChartEmptyState message="No submissions yet." />;
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+        <defs>
+          <linearGradient id="facultyTrendFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="hsl(var(--accent))" stopOpacity={0.35} />
+            <stop offset="100%" stopColor="hsl(var(--accent))" stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <XAxis dataKey="day" tickLine={false} axisLine={false} tick={chartAxisTick} interval="preserveStartEnd" />
+        <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={chartAxisTick} />
+        <Tooltip
+          contentStyle={chartTooltipStyle}
+          labelStyle={chartTooltipLabelStyle}
+          itemStyle={chartTooltipItemStyle}
+          cursor={{ stroke: "hsl(var(--accent))", strokeWidth: 1, strokeDasharray: "3 3" }}
+        />
+        <Area
+          type="monotone"
+          dataKey="count"
+          name="Submissions"
+          stroke="hsl(var(--accent))"
+          strokeWidth={2}
+          fill="url(#facultyTrendFill)"
+          animationDuration={500}
+          animationEasing="ease-out"
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+});
+
+const VerdictDonutChart = memo(function VerdictDonutChart({ data }: { data: VerdictDatum[] }) {
+  const total = data.reduce((sum, entry) => sum + entry.value, 0);
+
+  if (total === 0) {
+    return <ChartEmptyState message="No submissions yet." />;
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="relative min-h-[170px] flex-1">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="50%"
+              outerRadius={74}
+              innerRadius={50}
+              paddingAngle={data.length > 1 ? 3 : 0}
+              dataKey="value"
+              stroke="hsl(var(--card))"
+              strokeWidth={2}
+              animationDuration={500}
+              animationEasing="ease-out"
+            >
+              {data.map((entry) => (
+                <Cell key={entry.name} fill={entry.color} />
+              ))}
+            </Pie>
+            <Tooltip contentStyle={chartTooltipStyle} labelStyle={chartTooltipLabelStyle} itemStyle={chartTooltipItemStyle} />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <span className="font-display text-2xl font-bold leading-none">{total}</span>
+          <span className="mt-1 text-[10px] uppercase tracking-widest text-muted-foreground">Total</span>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1.5">
+        {data.map((entry) => (
+          <span key={entry.name} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="h-2.5 w-2.5" style={{ backgroundColor: entry.color }} aria-hidden />
+            {entry.name}
+            <span className="font-mono-code font-semibold text-foreground">{entry.value}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+});
+
+const LanguageUsageChart = memo(function LanguageUsageChart({ data }: { data: LanguageDatum[] }) {
+  if (data.length === 0) {
+    return <ChartEmptyState message="No submissions yet." />;
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+        <XAxis dataKey="name" tickLine={false} axisLine={false} tick={chartAxisTick} />
+        <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={chartAxisTick} />
+        <Tooltip
+          contentStyle={chartTooltipStyle}
+          labelStyle={chartTooltipLabelStyle}
+          itemStyle={chartTooltipItemStyle}
+          cursor={{ fill: "hsl(var(--muted) / 0.35)" }}
+        />
+        <Bar
+          dataKey="count"
+          name="Submissions"
+          radius={0}
+          fill="hsl(var(--primary))"
+          maxBarSize={44}
+          animationDuration={500}
+          animationEasing="ease-out"
+        />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+});
+
+const DifficultyMixChart = memo(function DifficultyMixChart({ data }: { data: DifficultyDatum[] }) {
+  if (data.every((entry) => entry.count === 0)) {
+    return <ChartEmptyState message="No problems created yet." />;
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+        <XAxis dataKey="name" tickLine={false} axisLine={false} tick={chartAxisTick} />
+        <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={chartAxisTick} />
+        <Tooltip
+          contentStyle={chartTooltipStyle}
+          labelStyle={chartTooltipLabelStyle}
+          itemStyle={chartTooltipItemStyle}
+          cursor={{ fill: "hsl(var(--muted) / 0.35)" }}
+        />
+        <Bar dataKey="count" name="Problems" radius={0} maxBarSize={44} animationDuration={500} animationEasing="ease-out">
+          {data.map((entry) => (
+            <Cell key={entry.name} fill={DIFFICULTY_COLORS[entry.name] ?? "hsl(var(--primary))"} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+});
 
 export default function FacultyDashboard() {
   const userQuery = useQuery({
@@ -133,6 +294,63 @@ export default function FacultyDashboard() {
         ).map(([, value]) => (value.total === 0 ? 0 : Math.round((value.accepted / value.total) * 10000) / 100)),
   );
 
+  // Chart datasets — aggregated client-side from the queries this page already makes.
+  const submissionTrend = useMemo<TrendDatum[]>(() => {
+    const now = new Date();
+    const days = Array.from({ length: 14 }, (_, index) => {
+      const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (13 - index));
+      return date;
+    });
+
+    return days.map((date) => ({
+      day: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      count: submissionList.filter((submission) => {
+        const created = new Date(submission.createdAt);
+        return (
+          created.getFullYear() === date.getFullYear() &&
+          created.getMonth() === date.getMonth() &&
+          created.getDate() === date.getDate()
+        );
+      }).length,
+    }));
+  }, [submissionList]);
+
+  const verdictBreakdown = useMemo<VerdictDatum[]>(() => {
+    const counts = new Map<SubmissionStatus, number>();
+    submissionList.forEach((submission) => {
+      counts.set(submission.status, (counts.get(submission.status) ?? 0) + 1);
+    });
+
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([status, value]) => ({
+        name: toStatusLabel(status),
+        value,
+        color: STATUS_COLORS[status] ?? "hsl(var(--muted-foreground))",
+      }));
+  }, [submissionList]);
+
+  const languageUsage = useMemo<LanguageDatum[]>(() => {
+    const counts = new Map<string, number>();
+    submissionList.forEach((submission) => {
+      const label = toLanguageLabel(submission.language);
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    });
+
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => ({ name, count }));
+  }, [submissionList]);
+
+  const difficultyMix = useMemo<DifficultyDatum[]>(
+    () =>
+      (["Easy", "Medium", "Hard"] as const).map((difficulty) => ({
+        name: difficulty,
+        count: problemList.filter((problem) => problem.difficulty === difficulty).length,
+      })),
+    [problemList],
+  );
+
   const stats = [
     { label: "Problems Created", value: String(problemsQuery.data?.pageInfo.totalCount ?? problemList.length), icon: BookOpen },
     { label: "Total Submissions", value: submissionList.length.toLocaleString(), icon: Activity },
@@ -152,11 +370,18 @@ export default function FacultyDashboard() {
             <h1 className="mt-1 font-display text-3xl font-bold md:text-4xl">Welcome, {facultyName}</h1>
             <p className="mt-1 text-muted-foreground">Curate problems, monitor progress, recognize excellence.</p>
           </div>
-          <Link to="/faculty/create-problem">
-            <Button size="lg" className="bg-accent text-accent-foreground hover:bg-accent/90">
-              <FilePlus2 className="mr-2 h-4 w-4" /> New Problem
-            </Button>
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <Link to="/faculty/create-problem">
+              <Button size="lg" className="bg-accent text-accent-foreground hover:bg-accent/90">
+                <FilePlus2 className="mr-2 h-4 w-4" /> New Problem
+              </Button>
+            </Link>
+            <Link to="/faculty/create-contest">
+              <Button size="lg" variant="outline">
+                <Trophy className="mr-2 h-4 w-4" /> New Contest
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {loading && <Card className="p-6 text-center text-muted-foreground">Loading dashboard...</Card>}
@@ -176,15 +401,38 @@ export default function FacultyDashboard() {
               ))}
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              {actions.map((action) => (
-                <Link key={action.to} to={action.to}>
-                  <Card className={`card-interactive h-full p-5 shadow-card ${action.primary ? "border-primary bg-primary/5" : ""}`}>
-                    <action.icon className="h-7 w-7 text-accent" />
-                    <div className="mt-3 font-display text-lg font-bold">{action.label}</div>
-                  </Card>
-                </Link>
-              ))}
+            <div className="grid gap-4 lg:grid-cols-3">
+              <Card className="profile-card flex h-full flex-col p-5 lg:col-span-2">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                  Submission Activity (14 Days)
+                </h2>
+                <div className="mt-4 h-[220px] flex-1">
+                  <SubmissionTrendChart data={submissionTrend} />
+                </div>
+              </Card>
+
+              <Card className="profile-card flex h-full flex-col p-5">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Verdict Breakdown</h2>
+                <div className="mt-4 min-h-[220px] flex-1">
+                  <VerdictDonutChart data={verdictBreakdown} />
+                </div>
+              </Card>
+
+              <Card className="profile-card flex h-full flex-col p-5 lg:col-span-2">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Language Usage</h2>
+                <div className="mt-4 h-[220px] flex-1">
+                  <LanguageUsageChart data={languageUsage} />
+                </div>
+              </Card>
+
+              <Card className="profile-card flex h-full flex-col p-5">
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                  Problem Difficulty Mix
+                </h2>
+                <div className="mt-4 h-[220px] flex-1">
+                  <DifficultyMixChart data={difficultyMix} />
+                </div>
+              </Card>
             </div>
 
             <div className="grid gap-6 lg:grid-cols-3">
