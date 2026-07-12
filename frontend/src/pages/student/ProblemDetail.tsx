@@ -6,15 +6,18 @@ import type * as MonacoEditor from "monaco-editor";
 import {
   Play,
   Send,
+  ChevronDown,
   ChevronLeft,
   FileCode2,
+  Maximize2,
+  Minimize2,
   RotateCcw,
   CheckCircle2,
   LoaderCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import type { ImperativePanelHandle } from "react-resizable-panels";
 
-import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -176,6 +179,9 @@ export default function ProblemDetail() {
   const [pendingSubmissionId, setPendingSubmissionId] = useState<string | null>(null);
   const [pendingSubmissionStatus, setPendingSubmissionStatus] = useState<SubmissionStatus | null>(null);
   const [cursorPosition, setCursorPosition] = useState({ lineNumber: 1, column: 1 });
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isConsoleCollapsed, setIsConsoleCollapsed] = useState(false);
+  const consolePanelRef = useRef<ImperativePanelHandle | null>(null);
   const pollingAbortRef = useRef<AbortController | null>(null);
   const editorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(null);
   const draftSaveTimeoutRef = useRef<number | null>(null);
@@ -257,6 +263,44 @@ export default function ProblemDetail() {
       }
     };
   }, [id, language, code]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => setIsFullscreen(false));
+      return;
+    }
+
+    if (document.documentElement.requestFullscreen) {
+      void document.documentElement
+        .requestFullscreen()
+        .catch(() => setIsFullscreen(true)); // CSS-only fallback if the API is blocked
+      return;
+    }
+
+    setIsFullscreen(true); // Fullscreen API unavailable — fall back to hiding chrome only
+  };
+
+  const toggleConsoleCollapsed = () => {
+    const panel = consolePanelRef.current;
+    if (!panel) {
+      return;
+    }
+
+    if (panel.isCollapsed()) {
+      panel.expand();
+    } else {
+      panel.collapse();
+    }
+  };
 
   const handleFormatCode = async () => {
     if (!editorRef.current) {
@@ -425,24 +469,50 @@ export default function ProblemDetail() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background">
-      <Navbar />
-      <div className="border-b border-border bg-card">
-        <div className="container flex h-12 items-center justify-between">
+      {!isFullscreen && (
+        <div className="flex h-11 shrink-0 items-center justify-between border-b border-border bg-card px-3">
           <Link to="/student/problems" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-accent">
-            <ChevronLeft className="h-4 w-4" /> Back to problems
+            <ChevronLeft className="h-4 w-4" /> Back to Problems
           </Link>
-          <div className="hidden text-xs text-muted-foreground md:block">
-            Time limit: {problem.timeLimitSeconds}s {"\u2022"} Memory: {problem.memoryLimitMb} MB
+          <div className="flex items-center gap-3">
+            <div className="hidden text-xs text-muted-foreground md:block">
+              Time limit: {problem.timeLimitSeconds}s {"\u2022"} Memory: {problem.memoryLimitMb} MB
+            </div>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={toggleFullscreen}
+              aria-label="Enter fullscreen coding"
+            >
+              <Maximize2 className="h-4 w-4" />
+            </Button>
           </div>
         </div>
-      </div>
+      )}
+      {isFullscreen && (
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={toggleFullscreen}
+          aria-label="Exit fullscreen coding"
+          className="fixed right-2 top-2 z-50 h-7 w-7 bg-card/80 text-muted-foreground backdrop-blur hover:text-foreground"
+        >
+          <Minimize2 className="h-4 w-4" />
+        </Button>
+      )}
 
-      <div className="h-[calc(100vh-4.5rem)] w-full overflow-hidden flex flex-col">
-        <ResizablePanelGroup direction="horizontal" className="flex-1 overflow-hidden">
+      <div className="min-h-0 w-full flex-1 overflow-hidden">
+        <ResizablePanelGroup
+          direction="horizontal"
+          className="h-full overflow-hidden"
+          autoSaveId="problem-workspace-h"
+          storage={typeof window === "undefined" ? undefined : window.sessionStorage}
+        >
           <ResizablePanel defaultSize={40} minSize={25} className="h-full">
             <div className="relative h-full w-full">
-              <div className="absolute inset-0 overflow-y-auto p-6">
-                <Card className="p-6 shadow-card">
+              <div className="absolute inset-0 overflow-y-auto p-3">
+                <Card className="p-4 shadow-card">
               <div className="flex items-start justify-between gap-2">
                 <h1 className="font-display text-2xl font-bold">{problem.title}</h1>
                 <DifficultyBadge d={problem.difficulty} />
@@ -517,10 +587,15 @@ export default function ProblemDetail() {
           <ResizableHandle withHandle className="bg-border" />
 
           <ResizablePanel defaultSize={60} minSize={30} className="h-full flex flex-col overflow-hidden">
-            <div className="h-full min-h-0 pl-2">
-              <ResizablePanelGroup direction="vertical" className="gap-2">
+            <div className="h-full min-h-0 pl-1">
+              <ResizablePanelGroup
+                direction="vertical"
+                className="gap-1.5"
+                autoSaveId="problem-workspace-v"
+                storage={typeof window === "undefined" ? undefined : window.sessionStorage}
+              >
                 <ResizablePanel defaultSize={68} minSize={35}>
-                  <div className="flex h-full min-h-0 flex-col gap-2">
+                  <div className="flex h-full min-h-0 flex-col gap-1.5">
                     <Card className="flex min-h-0 flex-1 flex-col overflow-hidden shadow-card">
                       <div className="flex items-center justify-between border-b border-border bg-secondary/50 px-3 py-2">
                         <div className="flex items-center gap-2">
@@ -637,7 +712,7 @@ export default function ProblemDetail() {
                       </div>
                     </Card>
 
-                    <Card className="flex items-center justify-between gap-2 p-3 shadow-card">
+                    <Card className="flex items-center justify-between gap-2 p-2.5 shadow-card">
                       <div className="text-xs text-muted-foreground">
                         {isSubmissionProcessing ? (
                           <span className="flex items-center gap-1.5">
@@ -671,13 +746,26 @@ export default function ProblemDetail() {
 
                 <ResizableHandle withHandle className="bg-border" />
 
-                <ResizablePanel defaultSize={32} minSize={20}>
-                  <Card className="flex h-full min-h-[220px] flex-col overflow-hidden shadow-card">
-                    <div className="flex border-b border-border bg-secondary/50">
+                <ResizablePanel
+                  ref={consolePanelRef}
+                  defaultSize={32}
+                  minSize={15}
+                  collapsible
+                  collapsedSize={6}
+                  onCollapse={() => setIsConsoleCollapsed(true)}
+                  onExpand={() => setIsConsoleCollapsed(false)}
+                >
+                  <Card className="flex h-full flex-col overflow-hidden shadow-card">
+                    <div className="flex shrink-0 items-stretch border-b border-border bg-secondary/50">
                       {(["console", "subs"] as const).map((section) => (
                         <button
                           key={section}
-                          onClick={() => setTab(section)}
+                          onClick={() => {
+                            setTab(section);
+                            if (consolePanelRef.current?.isCollapsed()) {
+                              consolePanelRef.current.expand();
+                            }
+                          }}
                           className={cn(
                             "flex-1 px-3 py-2 text-xs font-semibold uppercase tracking-wider transition-colors",
                             tab === section ? "border-b-2 border-accent bg-background text-accent" : "text-muted-foreground hover:text-foreground",
@@ -686,8 +774,18 @@ export default function ProblemDetail() {
                           {section === "console" ? "Console" : "Submissions"}
                         </button>
                       ))}
+                      <button
+                        type="button"
+                        onClick={toggleConsoleCollapsed}
+                        aria-label={isConsoleCollapsed ? "Expand console" : "Collapse console"}
+                        className="px-3 text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        <ChevronDown
+                          className={cn("h-4 w-4 transition-transform duration-200", isConsoleCollapsed && "rotate-180")}
+                        />
+                      </button>
                     </div>
-                    <div className="flex-1 space-y-3 overflow-y-auto p-3 text-sm">
+                    <div className="flex-1 space-y-2.5 overflow-y-auto p-2.5 text-sm">
                       {activeResult && (
                         <div
                           className={cn(
