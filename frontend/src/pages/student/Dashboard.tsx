@@ -161,7 +161,7 @@ export default function StudentDashboard() {
               <div className="grid gap-4 md:grid-cols-3">
                 {recommendedProblems.map((problem) => (
                   <Link to={`/student/problems/${problem.id}`} key={problem.id}>
-                    <Card className="h-full p-4 transition-all duration-200 hover:border-accent hover:shadow-md">
+                    <Card className="card-interactive h-full p-4">
                       <div className="flex items-start justify-between gap-2">
                         <h3 className="font-semibold">{problem.title}</h3>
                         <DifficultyBadge d={problem.difficulty} />

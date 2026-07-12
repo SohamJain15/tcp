@@ -95,9 +95,9 @@ export function Navbar() {
               key={l.to}
               to={l.to}
               className={({ isActive }) => cn(
-                "px-3 py-2 rounded-none text-sm font-medium transition-colors",
+                "nav-tab px-3 py-2 rounded-none text-sm font-medium",
                 isActive
-                  ? "bg-accent text-accent-foreground shadow-sm"
+                  ? "nav-tab-active bg-accent text-accent-foreground shadow-sm"
                   : "text-primary-foreground/80 hover:text-primary-foreground hover:bg-white/10"
               )}
             >

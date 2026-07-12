@@ -137,7 +137,7 @@ export default function ProblemDetails() {
               </div>
               <div className="space-y-3">
                 {problem.sampleTestCases.map((example, index) => (
-                  <div key={`${example.input}-${index}`} className="rounded-xl border border-border bg-secondary/35 p-4">
+                  <div key={`${example.input}-${index}`} className="hover-lift rounded-none border border-border bg-secondary/35 p-4">
                     <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Case {index + 1}</div>
                     <div className="grid gap-3 md:grid-cols-2">
                       <div>

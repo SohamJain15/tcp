@@ -179,7 +179,7 @@ export default function FacultyDashboard() {
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               {actions.map((action) => (
                 <Link key={action.to} to={action.to}>
-                  <Card className={`h-full p-5 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-elevated ${action.primary ? "border-primary bg-primary/5" : ""}`}>
+                  <Card className={`card-interactive h-full p-5 shadow-card ${action.primary ? "border-primary bg-primary/5" : ""}`}>
                     <action.icon className="h-7 w-7 text-accent" />
                     <div className="mt-3 font-display text-lg font-bold">{action.label}</div>
                   </Card>

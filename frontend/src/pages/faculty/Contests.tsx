@@ -41,7 +41,7 @@ export default function FacultyContests() {
             )}
 
             {contests.map((contest) => (
-              <Card key={contest.id} className="border border-border bg-background p-5 shadow-none">
+              <Card key={contest.id} className="card-interactive border border-border bg-background p-5 shadow-none">
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">

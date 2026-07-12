@@ -49,7 +49,7 @@ function renderContestCards(
   return (
     <div className="grid gap-4">
       {contests.map((contest) => (
-        <Card key={contest.id} className="border border-border bg-background p-5 transition-all duration-200 hover:shadow-md">
+        <Card key={contest.id} className="card-interactive border border-border bg-background p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
