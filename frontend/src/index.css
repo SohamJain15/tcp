@@ -135,6 +135,12 @@
     border: 1px solid hsl(var(--border) / 0.85);
     box-shadow: var(--shadow-card);
   }
+  .dark .profile-card {
+    background:
+      linear-gradient(160deg, hsl(var(--card) / 0.98), hsl(var(--card) / 0.88)),
+      radial-gradient(circle at top right, hsl(var(--accent) / 0.12), transparent 36%);
+    border: 1px solid hsl(var(--border) / 0.95);
+  }
   .profile-table-header {
     background: linear-gradient(90deg, hsl(var(--primary) / 0.14), hsl(var(--accent) / 0.12));
   }

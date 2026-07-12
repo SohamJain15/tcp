@@ -508,7 +508,7 @@ export default function ContestCodingWorkspace() {
                 <Editor
                   height="520px"
                   language={getMonacoLanguage(language)}
-                  theme="vs"
+                  theme="vs-dark"
                   value={code}
                   onMount={(editor, monaco) => {
                     editorRef.current = editor;
