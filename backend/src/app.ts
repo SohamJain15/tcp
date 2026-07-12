@@ -12,7 +12,6 @@ import { createContestRouter } from "./modules/contest/contest.routes";
 import { createAuthRouter, createLegacyUserRouter, createUserRouter } from "./modules/user/user.routes";
 import { errorHandler, notFoundHandler } from "./shared/middleware/error-handler";
 
-const DEFAULT_FRONTEND_HOME = "http://localhost:5173";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 function normalizeOrigin(origin: string): string {
@@ -22,23 +21,23 @@ function normalizeOrigin(origin: string): string {
 function resolveAllowedOrigins(): Set<string> {
   const configuredOrigins = env.corsOrigins.map(normalizeOrigin);
   return new Set<string>([
-    normalizeOrigin(DEFAULT_FRONTEND_HOME),
+    normalizeOrigin(env.FRONTEND_BASE_URL),
     ...configuredOrigins,
     // Helpful local aliases for development when the browser uses 127.0.0.1.
     ...configuredOrigins
       .filter((origin) => origin.includes("localhost"))
       .map((origin) => origin.replace("localhost", "127.0.0.1")),
-    normalizeOrigin(DEFAULT_FRONTEND_HOME.replace("localhost", "127.0.0.1")),
+    normalizeOrigin(env.FRONTEND_BASE_URL.replace("localhost", "127.0.0.1")),
   ]);
 }
 
 function resolveSafeFrontendOrigin(candidateOrigin: unknown, allowedOrigins: Set<string>): string {
   if (typeof candidateOrigin !== "string" || candidateOrigin.trim() === "") {
-    return DEFAULT_FRONTEND_HOME;
+    return normalizeOrigin(env.FRONTEND_BASE_URL);
   }
 
   const normalizedOrigin = normalizeOrigin(candidateOrigin);
-  return allowedOrigins.has(normalizedOrigin) ? normalizedOrigin : DEFAULT_FRONTEND_HOME;
+  return allowedOrigins.has(normalizedOrigin) ? normalizedOrigin : normalizeOrigin(env.FRONTEND_BASE_URL);
 }
 
 function resolveCorsOptions(): CorsOptions {

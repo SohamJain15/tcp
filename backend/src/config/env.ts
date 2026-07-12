@@ -24,6 +24,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
   COE_AUTH_BASE_URL: z.string().min(1).default("http://127.0.0.1:4000"),
+  FRONTEND_BASE_URL: z.string().min(1).default("http://localhost:5173"),
   COE_JWT_SECRET: z.string().trim().min(32),
   COE_REQUIRE_TRUSTED_PROXY: z.unknown().transform((value) => parseBoolean(value, true)),
   COE_TRUSTED_PROXY_IPS: z
