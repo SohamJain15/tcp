@@ -100,6 +100,8 @@
     @apply bg-background text-foreground;
     font-family: 'Inter', system-ui, sans-serif;
     font-feature-settings: "ss01", "cv11";
+    scrollbar-color: transparent transparent;
+    scrollbar-width: thin;
   }
   /* Fixed decorative background on its own composited layer — visually identical to
      background-attachment: fixed, but scrolling no longer repaints the viewport. */
@@ -123,6 +125,57 @@
       repeating-linear-gradient(135deg, hsl(var(--muted-foreground) / 0.08) 0 1px, transparent 1px 22px);
   }
   h1,h2,h3,h4 { font-family: 'Fraunces', 'Playfair Display', Georgia, serif; letter-spacing: -0.01em; }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-button:single-button,
+  *::-webkit-scrollbar-button:double-button,
+  *::-webkit-scrollbar-button:horizontal:decrement,
+  *::-webkit-scrollbar-button:horizontal:increment,
+  *::-webkit-scrollbar-button:vertical:decrement,
+  *::-webkit-scrollbar-button:vertical:increment {
+    display: none;
+    width: 0;
+    height: 0;
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 0 !important;
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: transparent;
+  }
+
+  .scrollbars-visible {
+    scrollbar-color: hsl(222 84% 26%) hsl(220 14% 8%);
+  }
+
+  .scrollbars-visible *::-webkit-scrollbar-track {
+    background: hsl(220 14% 8%);
+    border-radius: 0;
+  }
+
+  .scrollbars-visible *::-webkit-scrollbar-thumb {
+    border-color: hsl(220 14% 8%);
+    border-radius: 0 !important;
+    background: linear-gradient(180deg, hsl(221 81% 28%), hsl(224 77% 20%));
+    box-shadow: none;
+  }
+
+  .scrollbars-visible *::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, hsl(221 84% 32%), hsl(224 80% 24%));
+  }
 }
 
 @layer utilities {

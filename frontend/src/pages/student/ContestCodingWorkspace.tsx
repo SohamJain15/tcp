@@ -6,7 +6,6 @@ import type * as MonacoEditor from "monaco-editor";
 import { ChevronLeft, Play, Send } from "lucide-react";
 import { toast } from "sonner";
 
-import { AppLayout } from "@/components/AppLayout";
 import { contestsApi } from "@/api/services";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -333,17 +332,17 @@ export default function ContestCodingWorkspace() {
 
   if (isLoading) {
     return (
-      <AppLayout>
+      <div className="flex min-h-screen flex-col bg-background">
         <div className="container py-8 text-muted-foreground">Loading workspace...</div>
-      </AppLayout>
+      </div>
     );
   }
 
   if (isError || !payload || !contest || !question) {
     return (
-      <AppLayout>
+      <div className="flex min-h-screen flex-col bg-background">
         <div className="container py-8 text-destructive">{(error as Error)?.message || "Failed to load question"}</div>
-      </AppLayout>
+      </div>
     );
   }
 
@@ -357,7 +356,7 @@ export default function ContestCodingWorkspace() {
   const finalSubmissionUsed = Boolean(currentQuestionState?.hasFinalCodingSubmission) && !practiceMode;
 
   return (
-    <AppLayout hideNavbar={attemptIsActive} hideFooter={attemptIsActive}>
+    <div className="flex min-h-screen flex-col bg-background">
       <div className="border-b border-border bg-card">
         <div className="container flex h-12 items-center justify-between">
           <Link
@@ -592,6 +591,6 @@ export default function ContestCodingWorkspace() {
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
-    </AppLayout>
+    </div>
   );
 }

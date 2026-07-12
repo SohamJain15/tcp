@@ -4,6 +4,7 @@ import { Trophy, Medal, Award } from "lucide-react";
 
 import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { leaderboardApi } from "@/api/services";
 import { DEPARTMENTS, type Department } from "@/api/types";
 import { cn } from "@/lib/utils";
@@ -33,19 +34,20 @@ export default function StudentLeaderboard() {
           <p className="mt-1 text-muted-foreground">The top minds at TCET this semester.</p>
         </div>
 
-        <div>
-          <select
-            value={department}
-            onChange={(event) => setDepartment(event.target.value as Department | "All")}
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option value="All">All Departments</option>
-            {DEPARTMENTS.map((entry) => (
-              <option key={entry} value={entry}>
-                {entry}
-              </option>
-            ))}
-          </select>
+        <div className="max-w-xl">
+          <Select value={department} onValueChange={(value) => setDepartment(value as Department | "All")}>
+            <SelectTrigger className="h-11 w-full rounded-none border-border bg-background px-4 text-sm font-medium text-foreground shadow-none ring-0 transition-colors data-[placeholder]:text-muted-foreground focus:ring-2 focus:ring-accent/30">
+              <SelectValue placeholder="All Departments" />
+            </SelectTrigger>
+            <SelectContent className="w-[var(--radix-select-trigger-width)] rounded-none border-border bg-card p-0 text-card-foreground shadow-elevated">
+              <SelectItem value="All">All Departments</SelectItem>
+              {DEPARTMENTS.map((entry) => (
+                <SelectItem key={entry} value={entry}>
+                  {entry}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {isLoading && <Card className="p-6 text-center text-muted-foreground">Loading leaderboard...</Card>}
