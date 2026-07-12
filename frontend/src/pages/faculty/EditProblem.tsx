@@ -1,12 +1,13 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, CalendarClock, Eye, FileText, Layers3 } from "lucide-react";
+import { ArrowLeft, CalendarClock, Eye, Layers3 } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppLayout } from "@/components/AppLayout";
 import { DifficultyBadge, StatusBadge } from "@/components/Badges";
 import { ProblemEditorForm } from "@/components/ProblemEditorForm";
 import { Card } from "@/components/ui/card";
+import { formatDateTime } from "@/lib/datetime";
 import { problemsApi } from "@/api/services";
 import { toEditorDataFromManageProblem, toLifecycleLabel, toProblemUpdatePayload } from "@/api/mappers";
 import type { ProblemEditorData } from "@/api/types";
@@ -76,15 +77,16 @@ export default function EditProblem() {
         onSaveDraft={async (editorData) => updateMutation.mutateAsync({ editorData, asDraft: true })}
         isSubmitting={updateMutation.isPending}
         isSavingDraft={updateMutation.isPending}
+        backSlot={
+          <Link
+            to={`/faculty/problems/${problem.id}`}
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-accent"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back to problem overview
+          </Link>
+        }
         topSlot={
           <div className="space-y-3">
-            <Link
-              to={`/faculty/problems/${problem.id}`}
-              className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-accent"
-            >
-              <ArrowLeft className="h-4 w-4" /> Back to problem overview
-            </Link>
-
             <Card className="grid gap-4 p-5 shadow-card md:grid-cols-4">
               <div className="space-y-1">
                 <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Current State</div>
@@ -112,13 +114,7 @@ export default function EditProblem() {
                   <CalendarClock className="h-3.5 w-3.5 text-accent" />
                   Last Updated
                 </div>
-                <div className="font-mono-code text-sm font-semibold">{new Date(problem.updatedAt).toLocaleString()}</div>
-              </div>
-              <div className="rounded-lg border border-border bg-secondary/35 px-4 py-3 text-sm text-muted-foreground md:col-span-4">
-                <span className="mr-2 inline-flex items-center gap-1 font-semibold text-foreground">
-                  <FileText className="h-4 w-4 text-accent" /> Editing notes
-                </span>
-                Keep the description, constraints, and testcase coverage aligned with the student-facing preview before publishing updates.
+                <div className="font-mono-code text-sm font-semibold">{formatDateTime(problem.updatedAt)}</div>
               </div>
             </Card>
           </div>

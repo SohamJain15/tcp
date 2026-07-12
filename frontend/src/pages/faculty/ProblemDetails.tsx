@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   BookOpenText,
   Clock3,
-  ExternalLink,
   HardDrive,
   Pencil,
   ShieldCheck,
@@ -71,11 +70,6 @@ export default function ProblemDetails() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline">
-              <Link to={`/student/problems/${problem.id}`}>
-                <ExternalLink className="mr-2 h-4 w-4" /> Preview as student
-              </Link>
-            </Button>
             <Button asChild className="bg-accent text-accent-foreground hover:bg-accent/90">
               <Link to={`/faculty/problems/${problem.id}/edit`}>
                 <Pencil className="mr-2 h-4 w-4" /> Edit Problem
@@ -166,7 +160,7 @@ export default function ProblemDetails() {
                 </div>
                 <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
                   <span className="text-muted-foreground">Last updated</span>
-                  <span className="font-mono-code text-xs">{new Date(problem.updatedAt).toLocaleString()}</span>
+                  <span className="font-mono-code text-xs">{formatDateTime(problem.updatedAt)}</span>
                 </div>
                 <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
                   <span className="text-muted-foreground">Topic count</span>

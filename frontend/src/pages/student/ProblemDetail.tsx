@@ -20,6 +20,7 @@ import type { ImperativePanelHandle } from "react-resizable-panels";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ThemedSelect } from "@/components/ThemedSelect";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -599,10 +600,10 @@ export default function ProblemDetail() {
                     <Card className="flex min-h-0 flex-1 flex-col overflow-hidden shadow-card">
                       <div className="flex items-center justify-between border-b border-border bg-secondary/50 px-3 py-2">
                         <div className="flex items-center gap-2">
-                          <select
+                          <ThemedSelect
                             value={language}
-                            onChange={(event) => {
-                              const nextLanguage = event.target.value as ExecutableLanguage;
+                            onValueChange={(value) => {
+                              const nextLanguage = value as ExecutableLanguage;
                               setDraftsByLanguage((currentDrafts) =>
                                 currentDrafts[nextLanguage]
                                   ? currentDrafts
@@ -613,14 +614,9 @@ export default function ProblemDetail() {
                               );
                               setLanguage(nextLanguage);
                             }}
-                            className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium"
-                          >
-                            {EXECUTABLE_LANGUAGES.map((lang) => (
-                              <option key={lang} value={lang}>
-                                {toLanguageLabel(lang)}
-                              </option>
-                            ))}
-                          </select>
+                            triggerClassName="h-8 w-auto min-w-[110px] px-2 text-xs"
+                            options={EXECUTABLE_LANGUAGES.map((lang) => ({ value: lang, label: toLanguageLabel(lang) }))}
+                          />
                           <div className="flex items-center gap-1.5 rounded border border-border bg-background px-2 py-1 text-xs">
                             <FileCode2 className="h-3 w-3 text-accent" />
                             <span className="font-mono-code">{getSolutionFilename(language)}</span>

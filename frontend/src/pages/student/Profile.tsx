@@ -21,6 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/Badges";
 import { toLanguageLabel, toStatusLabel } from "@/api/mappers";
 import { chartTooltipItemStyle, chartTooltipLabelStyle, chartTooltipStyle } from "@/lib/chart-theme";
+import { formatDateTime } from "@/lib/datetime";
 
 const DIFFICULTY_COLORS: Record<string, string> = {
   Easy: "#22c55e",
@@ -51,7 +52,7 @@ function statCard(label: string, value: string | number) {
 }
 
 function formatWhen(isoDate: string): string {
-  return new Date(isoDate).toLocaleString();
+  return formatDateTime(isoDate);
 }
 
 

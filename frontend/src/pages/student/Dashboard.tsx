@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge, DifficultyBadge } from "@/components/Badges";
 import { contestsApi, problemsApi, submissionsApi, userApi } from "@/api/services";
+import { formatDateTime } from "@/lib/datetime";
 import { toLanguageLabel, toStatusLabel } from "@/api/mappers";
 
 function formatRelativeTime(isoDate: string): string {
@@ -215,7 +216,7 @@ export default function StudentDashboard() {
                           >
                             <div className="truncate text-sm font-medium">{contest.title}</div>
                             <div className="text-xs text-muted-foreground">
-                              {new Date(contest.startAt).toLocaleString()}
+                              {formatDateTime(contest.startAt)}
                             </div>
                           </Link>
                         ))}

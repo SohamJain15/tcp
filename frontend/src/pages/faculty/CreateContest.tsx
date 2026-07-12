@@ -1,4 +1,4 @@
-import { Trash2 } from "lucide-react";
+import { ArrowLeft, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -338,16 +338,19 @@ export default function CreateContest() {
       <div className="container space-y-6 py-8">
         <div>
           {isEditMode && (
-            <Link to={`/faculty/contests/${id}`} className="text-sm text-muted-foreground hover:text-accent">
-              Back to contest
+            <Link
+              to={`/faculty/contests/${id}`}
+              className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-accent"
+            >
+              <ArrowLeft className="h-4 w-4" /> Back to contest
             </Link>
           )}
           <h1 className="font-display text-3xl font-bold">{isEditMode ? "Edit Contest" : "Create Contest"}</h1>
           <p className="mt-1 text-sm text-muted-foreground">Configure contest metadata and build mixed question sets.</p>
         </div>
 
-        <Card className="space-y-4 border border-border bg-background p-6 shadow-none">
-          <h2 className="text-lg font-semibold">Contest Metadata</h2>
+        <Card className="space-y-4 p-6 shadow-card">
+          <h2 className="border-b border-border pb-2 font-display text-lg font-bold">Contest Metadata</h2>
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2 md:col-span-2">
@@ -401,9 +404,9 @@ export default function CreateContest() {
           </div>
         </Card>
 
-        <Card className="space-y-5 border border-border bg-background p-6 shadow-none">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold">Question Builder</h2>
+        <Card className="space-y-5 p-6 shadow-card">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-2">
+            <h2 className="font-display text-lg font-bold">Question Builder</h2>
             <p className="text-sm text-muted-foreground">
               {questions.length} question{questions.length === 1 ? "" : "s"} • {totalPoints} pts total
             </p>

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { AppLayout } from "@/components/AppLayout";
 import { contestsApi } from "@/api/services";
+import { formatDateTime } from "@/lib/datetime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -53,7 +54,7 @@ export default function FacultyContests() {
                       </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Start: {new Date(contest.startAt).toLocaleString()}
+                      Start: {formatDateTime(contest.startAt)}
                     </p>
                     <p className="text-sm text-muted-foreground">
                       Duration: {contest.durationMinutes} mins • Participants: {contest.participantsCount}

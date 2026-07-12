@@ -10,30 +10,42 @@ import { StatusBadge } from "@/components/Badges";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ThemedSelect } from "@/components/ThemedSelect";
 import { submissionsApi } from "@/api/services";
 import { toFacultyStudentProfilePath } from "@/lib/student-profile";
-import { toLanguageLabel, toStatusLabel } from "@/api/mappers";
+import { formatDateTime } from "@/lib/datetime";
+import { EXECUTABLE_LANGUAGES, toLanguageLabel, toStatusLabel } from "@/api/mappers";
 
-type FacultyStatusFilter = "All" | "ACCEPTED" | "WRONG_ANSWER";
+type FacultyStatusFilter =
+  | "All"
+  | "ACCEPTED"
+  | "WRONG_ANSWER"
+  | "TIME_LIMIT_EXCEEDED"
+  | "RUNTIME_ERROR"
+  | "COMPILATION_ERROR";
 
-function formatDate(isoDate: string): string {
-  return new Date(isoDate).toLocaleString();
-}
+const STATUS_FILTER_OPTIONS: Exclude<FacultyStatusFilter, "All">[] = [
+  "ACCEPTED",
+  "WRONG_ANSWER",
+  "TIME_LIMIT_EXCEEDED",
+  "RUNTIME_ERROR",
+  "COMPILATION_ERROR",
+];
 
 export default function FacultySubmissions() {
   const [problemNameFilter, setProblemNameFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<FacultyStatusFilter>("All");
+  const [languageFilter, setLanguageFilter] = useState<string>("All");
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
 
+  // Single fetch; status, language, and problem-name filters compose client-side.
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["faculty-submissions", statusFilter],
+    queryKey: ["faculty-submissions"],
     queryFn: () =>
       submissionsApi.list(
         {
           pageSize: 100,
           sourceType: "problem",
-          status: statusFilter === "All" ? undefined : statusFilter,
         },
         "/faculty/submissions",
       ),
@@ -45,11 +57,18 @@ export default function FacultySubmissions() {
     enabled: Boolean(selectedSubmissionId),
   });
 
-  const submissions = (data?.items ?? []).filter((submission) =>
-    problemNameFilter.trim().length === 0
-      ? true
-      : submission.problemTitle.toLowerCase().includes(problemNameFilter.trim().toLowerCase()),
-  );
+  const submissions = (data?.items ?? []).filter((submission) => {
+    if (statusFilter !== "All" && submission.status !== statusFilter) {
+      return false;
+    }
+
+    if (languageFilter !== "All" && submission.language !== languageFilter) {
+      return false;
+    }
+
+    const query = problemNameFilter.trim().toLowerCase();
+    return query.length === 0 || submission.problemTitle.toLowerCase().includes(query);
+  });
   return (
     <AppLayout>
       <div className="container space-y-6 py-8">
@@ -58,22 +77,32 @@ export default function FacultySubmissions() {
           <p className="mt-1 text-muted-foreground">Track and filter student code submissions for analysis.</p>
         </div>
 
-        <Card className="grid gap-4 p-4 shadow-card md:grid-cols-2">
+        <Card className="grid gap-4 p-4 shadow-card md:grid-cols-3">
           <div className="space-y-2">
             <Label htmlFor="submission-status-filter">Status</Label>
-            <Select
+            <ThemedSelect
+              id="submission-status-filter"
               value={statusFilter}
               onValueChange={(value) => setStatusFilter(value as FacultyStatusFilter)}
-            >
-              <SelectTrigger id="submission-status-filter">
-                <SelectValue placeholder="All statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All">All</SelectItem>
-                <SelectItem value="ACCEPTED">Accepted</SelectItem>
-                <SelectItem value="WRONG_ANSWER">Wrong Answer</SelectItem>
-              </SelectContent>
-            </Select>
+              placeholder="All statuses"
+              options={[
+                { value: "All", label: "All" },
+                ...STATUS_FILTER_OPTIONS.map((status) => ({ value: status, label: toStatusLabel(status) })),
+              ]}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="submission-language-filter">Language</Label>
+            <ThemedSelect
+              id="submission-language-filter"
+              value={languageFilter}
+              onValueChange={setLanguageFilter}
+              placeholder="All languages"
+              options={[
+                { value: "All", label: "All" },
+                ...EXECUTABLE_LANGUAGES.map((language) => ({ value: language, label: toLanguageLabel(language) })),
+              ]}
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="submission-problem-name-filter">Problem Name</Label>
@@ -138,7 +167,7 @@ export default function FacultySubmissions() {
                         {(submission.memoryKb / 1024).toFixed(1)} MB
                       </td>
                       <td className="px-4 py-3 font-mono-code text-xs text-muted-foreground">
-                        {formatDate(submission.createdAt)}
+                        {formatDateTime(submission.createdAt)}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <Button size="sm" variant="outline" onClick={() => setSelectedSubmissionId(submission.id)}>

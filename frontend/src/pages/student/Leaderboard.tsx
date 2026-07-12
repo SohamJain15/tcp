@@ -73,7 +73,7 @@ export default function StudentLeaderboard() {
                         <span className="font-display text-4xl font-bold text-muted-foreground/30">#{student.rank}</span>
                       </div>
                       <h3 className="mt-3 font-display text-xl font-bold">{student.name ?? student.email}</h3>
-                      <p className="font-mono-code text-xs text-muted-foreground">{student.email}</p>
+                      <p className="font-mono-code text-xs text-muted-foreground">{student.uid ?? student.email}</p>
                       <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                         <div>
                           <div className="text-lg font-bold">{student.problemsSolved}</div>
@@ -112,7 +112,7 @@ export default function StudentLeaderboard() {
                         <td className="px-4 py-3 font-display font-bold">#{student.rank}</td>
                         <td className="px-4 py-3">
                           <div className="font-medium">{student.name ?? student.email}</div>
-                          <div className="font-mono-code text-xs text-muted-foreground">{student.email}</div>
+                          <div className="font-mono-code text-xs text-muted-foreground">{student.uid ?? student.email}</div>
                         </td>
                         <td className="px-4 py-3 text-right font-mono-code">{student.problemsSolved}</td>
                         <td className="px-4 py-3 text-right font-mono-code font-semibold">{student.score}</td>

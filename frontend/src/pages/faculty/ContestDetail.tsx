@@ -1,4 +1,4 @@
-import { Download, Eye } from "lucide-react";
+import { ArrowLeft, Download, Eye } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useState } from "react";
@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { AppLayout } from "@/components/AppLayout";
 import { contestsApi } from "@/api/services";
+import { formatDateTime } from "@/lib/datetime";
 import { toFacultyStudentProfilePath } from "@/lib/student-profile";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -106,8 +107,11 @@ export default function FacultyContestDetail() {
       <div className="container space-y-6 py-8">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="space-y-2">
-            <Link to="/faculty/contests" className="text-sm text-muted-foreground hover:text-accent">
-              Back to contests
+            <Link
+              to="/faculty/contests"
+              className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-accent"
+            >
+              <ArrowLeft className="h-4 w-4" /> Back to contests
             </Link>
             <h1 className="font-display text-3xl font-bold">{contest.title}</h1>
             <div className="flex flex-wrap items-center gap-2">
@@ -146,11 +150,11 @@ export default function FacultyContestDetail() {
         <Card className="grid gap-4 border border-border bg-background p-5 shadow-none md:grid-cols-4">
           <div>
             <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Start</div>
-            <div className="mt-1 text-sm">{new Date(contest.startAt).toLocaleString()}</div>
+            <div className="mt-1 text-sm">{formatDateTime(contest.startAt)}</div>
           </div>
           <div>
             <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Deadline</div>
-            <div className="mt-1 text-sm">{contestDeadline.toLocaleString()}</div>
+            <div className="mt-1 text-sm">{formatDateTime(contestDeadline)}</div>
           </div>
           <div>
             <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Duration</div>

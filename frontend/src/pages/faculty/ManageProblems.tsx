@@ -7,6 +7,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { DifficultyBadge, StatusBadge } from "@/components/Badges";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ThemedSelect } from "@/components/ThemedSelect";
 import { problemsApi } from "@/api/services";
 import { toLifecycleLabel } from "@/api/mappers";
 import type { ProblemLifecycleState } from "@/api/types";
@@ -112,22 +113,22 @@ export default function ManageProblems() {
                               <Pencil className="h-4 w-4" />
                             </Link>
                           </Button>
-                          <select
-                            aria-label={`Set lifecycle state for ${problem.title}`}
-                            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                          <ThemedSelect
                             value={problem.lifecycleState}
-                            onChange={(event) =>
+                            onValueChange={(value) =>
                               stateMutation.mutate({
                                 problemId: problem.id,
-                                state: event.target.value as ProblemLifecycleState,
+                                state: value as ProblemLifecycleState,
                               })
                             }
                             disabled={stateMutation.isPending}
-                          >
-                            <option value="Draft">Draft</option>
-                            <option value="Published">Published</option>
-                            <option value="Archived">Archived</option>
-                          </select>
+                            triggerClassName="h-8 w-auto min-w-[110px] px-2 text-xs"
+                            options={[
+                              { value: "Draft", label: "Draft" },
+                              { value: "Published", label: "Published" },
+                              { value: "Archived", label: "Archived" },
+                            ]}
+                          />
                         </div>
                       </td>
                     </tr>

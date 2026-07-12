@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import type { Difficulty, ProblemEditorData } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ThemedSelect } from "@/components/ThemedSelect";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,6 +23,7 @@ type ProblemEditorFormProps = {
   submitMessage: string;
   draftMessage: string;
   initialProblem?: ProblemEditorData;
+  backSlot?: ReactNode;
   topSlot?: ReactNode;
   onSaveDraft?: (data: ProblemEditorData) => Promise<void> | void;
   onSubmit?: (data: ProblemEditorData) => Promise<void> | void;
@@ -57,6 +59,7 @@ export function ProblemEditorForm({
   submitMessage,
   draftMessage,
   initialProblem,
+  backSlot,
   topSlot,
   onSaveDraft,
   onSubmit,
@@ -182,6 +185,7 @@ export function ProblemEditorForm({
 
   return (
     <div className="container max-w-5xl space-y-6 py-8">
+      {backSlot}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl font-bold">{heading}</h1>
@@ -208,15 +212,17 @@ export function ProblemEditorForm({
           </div>
           <div>
             <Label>Difficulty</Label>
-            <select
-              value={difficulty}
-              onChange={(event) => setDifficulty(event.target.value as Difficulty)}
-              className="mt-1.5 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option>Easy</option>
-              <option>Medium</option>
-              <option>Hard</option>
-            </select>
+            <div className="mt-1.5">
+              <ThemedSelect
+                value={difficulty}
+                onValueChange={(value) => setDifficulty(value as Difficulty)}
+                options={[
+                  { value: "Easy", label: "Easy" },
+                  { value: "Medium", label: "Medium" },
+                  { value: "Hard", label: "Hard" },
+                ]}
+              />
+            </div>
           </div>
           <div>
             <Label>Tags / Topics (comma-separated)</Label>

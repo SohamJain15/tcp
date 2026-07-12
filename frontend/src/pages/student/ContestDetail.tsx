@@ -282,8 +282,11 @@ export default function ContestDetail() {
         ) : (
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="space-y-2">
-              <Link to="/student/contests" className="text-sm text-muted-foreground hover:text-accent">
-                Back to contests
+              <Link
+                to="/student/contests"
+                className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-accent"
+              >
+                <ChevronLeft className="h-4 w-4" /> Back to contests
               </Link>
               <h1 className="font-display text-3xl font-bold">{contest.title}</h1>
               <div className="flex flex-wrap items-center gap-2">

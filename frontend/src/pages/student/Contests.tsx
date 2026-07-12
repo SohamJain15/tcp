@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { contestsApi } from "@/api/services";
+import { formatDateTime } from "@/lib/datetime";
 import type { ContestListItem } from "@/api/types";
 
 function getContestCta(status: "Live" | "Upcoming" | "Past", hasAttempted: boolean): string {
@@ -51,7 +52,7 @@ function ContestCard({ contest }: { contest: ContestListItem }) {
       <div className="mt-3 space-y-1.5 text-xs text-muted-foreground">
         <div className="flex items-center gap-1.5">
           <CalendarClock className="h-3.5 w-3.5 shrink-0" />
-          {new Date(contest.startAt).toLocaleString()}
+          {formatDateTime(contest.startAt)}
         </div>
         <div className="flex items-center gap-1.5">
           <Clock className="h-3.5 w-3.5 shrink-0" />

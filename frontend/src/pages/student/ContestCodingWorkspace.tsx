@@ -10,6 +10,7 @@ import { contestsApi } from "@/api/services";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ThemedSelect } from "@/components/ThemedSelect";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { configureCodeEditor, formatCodeInEditor, getMonacoLanguage } from "@/lib/code-editor";
 import { EXECUTABLE_LANGUAGES, toLanguageLabel, toStatusLabel } from "@/api/mappers";
@@ -474,18 +475,16 @@ export default function ContestCodingWorkspace() {
               <Card ref={editorContainerRef} className="overflow-hidden shadow-card">
                 <div className="flex items-center justify-between border-b border-border px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <select
+                    <ThemedSelect
                       value={language}
-                      onChange={(event) => setLanguage(event.target.value as ExecutableLanguage)}
-                      className="rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+                      onValueChange={(value) => setLanguage(value as ExecutableLanguage)}
                       disabled={!interactiveMode}
-                    >
-                      {availableLanguages.map((supportedLanguage) => (
-                        <option key={supportedLanguage} value={supportedLanguage}>
-                          {toLanguageLabel(supportedLanguage)}
-                        </option>
-                      ))}
-                    </select>
+                      triggerClassName="h-9 w-auto min-w-[130px] text-sm"
+                      options={availableLanguages.map((supportedLanguage) => ({
+                        value: supportedLanguage,
+                        label: toLanguageLabel(supportedLanguage),
+                      }))}
+                    />
                     <div className="rounded-md bg-secondary px-3 py-1.5 text-sm text-secondary-foreground">
                       Main.{getFileExtension(language)}
                     </div>
