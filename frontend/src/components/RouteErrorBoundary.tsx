@@ -6,16 +6,22 @@ type RouteErrorBoundaryProps = {
 
 type RouteErrorBoundaryState = {
   hasError: boolean;
+  errorMessage: string;
 };
 
 export class RouteErrorBoundary extends React.Component<RouteErrorBoundaryProps, RouteErrorBoundaryState> {
   constructor(props: RouteErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, errorMessage: "" };
   }
 
   static getDerivedStateFromError(): RouteErrorBoundaryState {
-    return { hasError: true };
+    return { hasError: true, errorMessage: "" };
+  }
+
+  override componentDidCatch(error: Error): void {
+    console.error("Faculty problem route crashed:", error);
+    this.setState({ errorMessage: error.message || "Unknown runtime error" });
   }
 
   override render() {
@@ -23,7 +29,10 @@ export class RouteErrorBoundary extends React.Component<RouteErrorBoundaryProps,
       return (
         <div className="container py-8">
           <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-sm text-destructive">
-            Something went wrong while loading this faculty problem page. Please refresh the page. If it keeps happening, the page data or a UI component is still throwing at runtime.
+            <div className="font-semibold">Faculty problem page crashed</div>
+            <div className="mt-2">
+              {this.state.errorMessage || "Something went wrong while loading this faculty problem page."}
+            </div>
           </div>
         </div>
       );
