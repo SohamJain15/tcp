@@ -4,6 +4,7 @@ import express, { type Express } from "express";
 import helmet from "helmet";
 import type { ApplicationDependencies } from "./bootstrap/dependencies";
 import { env } from "./config/env";
+import { COE_TOKEN_COOKIE_NAMES } from "./middleware/auth";
 import { createGlobalApiRateLimiter } from "./middleware/rate-limit";
 import { createLeaderboardRouter } from "./modules/leaderboard/leaderboard.routes";
 import { createProblemRouter } from "./modules/problem/problem.routes";
@@ -189,10 +190,30 @@ export function createApp(dependencies: ApplicationDependencies): Express {
   }
 
   app.get("/api/logout", (req, res) => {
-    const ssoLogoutUrl = new URL("/logout", env.COE_AUTH_BASE_URL).toString();
     const frontendOrigin = resolveSafeFrontendOrigin(req.get("origin"), allowedOrigins);
-    const callbackUrl = encodeURIComponent(frontendOrigin);
-    res.redirect(302, `${ssoLogoutUrl}?callbackUrl=${callbackUrl}`);
+    const secure = req.secure || env.NODE_ENV === "production";
+
+    // Clear the SSO auth cookie ourselves instead of bouncing through the SSO's
+    // /logout page (which does not exist on the production SSO host). A cookie is
+    // only deleted when name + Domain + Path match how it was set, so clear the
+    // host-only variant plus the SSO-domain-wide variants shared across subdomains.
+    const domains: (string | undefined)[] = [undefined];
+    try {
+      const ssoHost = new URL(env.COE_AUTH_BASE_URL).hostname;
+      if (ssoHost.includes(".") && !/^\d+(\.\d+){3}$/.test(ssoHost)) {
+        domains.push(ssoHost, `.${ssoHost}`);
+      }
+    } catch {
+      // Unparsable SSO base URL — fall back to host-only clearing.
+    }
+
+    for (const cookieName of COE_TOKEN_COOKIE_NAMES) {
+      for (const domain of domains) {
+        res.clearCookie(cookieName, { path: "/", domain, httpOnly: true, secure, sameSite: "lax" });
+      }
+    }
+
+    res.redirect(302, frontendOrigin);
   });
 
   app.use("/api/auth", createAuthRouter(dependencies));

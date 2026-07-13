@@ -6,7 +6,7 @@ import type { UserService } from "../modules/user/user.service";
 import type { UserRole } from "../shared/types/auth";
 
 const REQUIRED_COE_HEADERS = ["x-coe-email", "x-coe-name", "x-coe-role", "x-coe-status"] as const;
-const COE_TOKEN_COOKIE_NAMES = ["coe_shared_token", "coe_token", "coe_jwt", "coe_auth_token"] as const;
+export const COE_TOKEN_COOKIE_NAMES = ["coe_shared_token", "coe_token", "coe_jwt", "coe_auth_token"] as const;
 const ACTIVE_STATUS = "ACTIVE";
 
 type CoeHeaderRole = "ADMIN" | "FACULTY" | "INDUSTRY" | "STUDENT";

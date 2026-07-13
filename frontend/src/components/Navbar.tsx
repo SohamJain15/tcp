@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { LogOut, Moon, Sun, User } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -89,22 +89,9 @@ export function Navbar() {
   const showLinks = pathname.startsWith("/student") || pathname.startsWith("/faculty");
   const avatarText = getAvatarFallback(userQuery.data?.user.name, role);
 
-  useEffect(() => {
-    if (!showLinks || typeof window === "undefined") {
-      return;
-    }
-
-    const closeSession = () => {
-      void fetch(getSessionCloseUrl(), {
-        method: "GET",
-        credentials: "include",
-        keepalive: true,
-      }).catch(() => undefined);
-    };
-
-    window.addEventListener("pagehide", closeSession);
-    return () => window.removeEventListener("pagehide", closeSession);
-  }, [showLinks]);
+  // NOTE: logout is explicit-only (avatar menu). A previous pagehide listener
+  // auto-called /api/logout on every unload; now that the endpoint actually
+  // clears auth cookies, that would log users out on refresh.
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border bg-gradient-hero text-primary-foreground">
