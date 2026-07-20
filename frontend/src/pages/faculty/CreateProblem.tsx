@@ -25,43 +25,36 @@ import {
 
 const exampleJson = `[
   {
-    "title": "Maximum Subarray Sum",
-    "slug": "maximum-subarray-sum",
-    "statement": "Given an array of integers, find the maximum possible sum of a contiguous subarray.",
-    "difficulty": "Medium",
-    "topic": "Dynamic Programming",
-    "constraints": ["1 <= n <= 100000", "-1000000000 <= a[i] <= 1000000000"],
-    "inputFormat": "The first line contains n. The second line contains n integers.",
-    "outputFormat": "Print the maximum subarray sum.",
-    "explanation": "Use Kadane's algorithm to keep the best suffix sum at each index.",
-    "timeLimit": 1,
-    "memoryLimit": 256,
-    "tags": ["Array", "Dynamic Programming"],
-    "sampleTestCases": [
-      { "input": "5\\n-2 1 -3 4 5", "output": "9", "explanation": "The best subarray is 4 5." }
-    ],
-    "hiddenTestCases": [
-      { "input": "3\\n-5 -2 -8", "output": "-2" }
-    ]
-  },
-  {
-    "title": "Sum of Two Numbers",
-    "slug": "sum-of-two-numbers",
-    "statement": "Read two integers and print their sum.",
+    "title": "Replace with the problem title",
+    "slug": "replace-with-url-friendly-problem-slug",
+    "statement": "Replace with the full problem statement.",
     "difficulty": "Easy",
-    "topic": "Basics",
-    "constraints": ["-1000000000 <= a, b <= 1000000000"],
-    "inputFormat": "Two integers separated by whitespace.",
-    "outputFormat": "Print one integer representing the sum.",
-    "explanation": "Add both integers directly.",
+    "topic": "Replace with the main topic",
+    "constraints": [
+      "Replace with constraint 1",
+      "Replace with constraint 2"
+    ],
+    "inputFormat": "Replace with the input format.",
+    "outputFormat": "Replace with the output format.",
+    "explanation": "Replace with the solution explanation or leave empty.",
     "timeLimit": 1,
     "memoryLimit": 256,
-    "tags": ["Math", "Basics"],
+    "tags": [
+      "Replace with tag 1",
+      "Replace with tag 2"
+    ],
     "sampleTestCases": [
-      { "input": "2 5", "output": "7" }
+      {
+        "input": "Replace with sample input",
+        "output": "Replace with sample output",
+        "explanation": "Replace with sample explanation or leave empty."
+      }
     ],
     "hiddenTestCases": [
-      { "input": "-3 7", "output": "4" }
+      {
+        "input": "Replace with hidden input",
+        "output": "Replace with hidden output"
+      }
     ]
   }
 ]`;
