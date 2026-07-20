@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Eye, FileJson, Info, Save, Upload } from "lucide-react";
+import { CheckCircle2, ClipboardCopy, Eye, FileJson, Info, Save, Upload } from "lucide-react";
 
 import { ApiError } from "@/api/client";
 import { toProblemWritePayload } from "@/api/mappers";
@@ -17,7 +17,6 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import {
   toProblemEditorDataFromJsonDraft,
@@ -199,7 +198,7 @@ export default function CreateProblem() {
   const [importErrors, setImportErrors] = useState<JsonImportFieldError[]>([]);
   const [importedDrafts, setImportedDrafts] = useState<ImportedProblemDraft[]>([]);
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
-  const [exampleOpen, setExampleOpen] = useState(false);
+  const [jsonStructureCopied, setJsonStructureCopied] = useState(false);
 
   const selectedDraft = importedDrafts.find((item) => item.id === selectedDraftId)?.draft ?? null;
   const approvedCount = importedDrafts.filter((item) => item.approved).length;
@@ -296,6 +295,28 @@ export default function CreateProblem() {
     }
   };
 
+  const copyJsonStructure = async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(exampleJson);
+      } else {
+        const clipboardArea = document.createElement("textarea");
+        clipboardArea.value = exampleJson;
+        clipboardArea.style.position = "fixed";
+        clipboardArea.style.opacity = "0";
+        document.body.appendChild(clipboardArea);
+        clipboardArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(clipboardArea);
+      }
+      setJsonStructureCopied(true);
+      toast.success("Ideal JSON structure copied");
+      window.setTimeout(() => setJsonStructureCopied(false), 1600);
+    } catch {
+      toast.error("Could not copy JSON structure");
+    }
+  };
+
   const toggleApproved = (id: string, checked: boolean) => {
     setImportedDrafts((current) =>
       current.map((item) => (item.id === id ? { ...item, approved: checked } : item)),
@@ -314,9 +335,9 @@ export default function CreateProblem() {
 
   return (
     <AppLayout>
-      <div className="container max-w-7xl space-y-8 py-8">
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <Card className="space-y-5 p-5 shadow-card">
+      <div className="container flex min-h-[calc(100vh-5rem)] max-w-[1680px] flex-col gap-6 py-6">
+        <section className="grid flex-1 gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <Card className="flex min-h-[640px] flex-col gap-5 p-5 shadow-card">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h1 className="flex items-center gap-2 font-display text-2xl font-bold">
@@ -324,49 +345,42 @@ export default function CreateProblem() {
                 </h1>
                 <p className="mt-1 text-sm text-muted-foreground">Paste one problem object or an array of problems.</p>
               </div>
-              <Popover open={exampleOpen} onOpenChange={setExampleOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setJsonSource(exampleJson)}
-                    onMouseEnter={() => setExampleOpen(true)}
-                    onMouseLeave={() => setExampleOpen(false)}
-                    onFocus={() => setExampleOpen(true)}
-                    onBlur={() => setExampleOpen(false)}
-                  >
-                    Load Example
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  align="end"
-                  className="w-[min(560px,calc(100vw-2rem))] p-0"
-                  onMouseEnter={() => setExampleOpen(true)}
-                  onMouseLeave={() => setExampleOpen(false)}
-                >
-                  <pre className="max-h-96 overflow-auto p-4 font-mono-code text-xs">{exampleJson}</pre>
-                </PopoverContent>
-              </Popover>
+              <Button type="button" variant="outline" onClick={copyJsonStructure}>
+                {jsonStructureCopied ? <CheckCircle2 className="h-4 w-4" /> : <ClipboardCopy className="h-4 w-4" />}
+                {jsonStructureCopied ? "Copied Structure" : "Copy JSON Structure"}
+              </Button>
             </div>
 
-            <Textarea
-              value={jsonSource}
-              onChange={(event) => setJsonSource(event.target.value)}
-              rows={18}
-              placeholder=""
-              className="min-h-[420px] resize-y font-mono-code text-xs leading-5"
-            />
+            <div className="relative min-h-[420px] flex-1">
+              <div className="pointer-events-none absolute left-4 top-3 z-10 flex items-center gap-2 rounded-none border border-border bg-card/95 px-2.5 py-1 text-xs font-medium text-muted-foreground shadow-card">
+                <FileJson className="h-3.5 w-3.5 text-accent" />
+                Insert JSON here
+              </div>
+              <Textarea
+                value={jsonSource}
+                onChange={(event) => setJsonSource(event.target.value)}
+                placeholder="Paste the copied JSON structure here and replace the values with your problem data."
+                className="h-full min-h-[420px] resize-none overflow-auto pt-12 font-mono-code text-xs leading-5 transition-shadow focus-visible:shadow-elevated"
+              />
+            </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <FieldErrors errors={importErrors} />
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+              <div className="min-w-0">
+                <FieldErrors errors={importErrors} />
+                {importErrors.length === 0 && (
+                  <p className="rounded-md border border-border bg-muted/60 p-3 text-sm text-muted-foreground">
+                    Use the copied structure as a template, then validate before approving imported problems.
+                  </p>
+                )}
+              </div>
               <Button type="button" onClick={importJsonDraft} disabled={importDraftMutation.isPending || !jsonSource.trim()}>
                 <Upload className="mr-2 h-4 w-4" /> {importDraftMutation.isPending ? "Validating..." : "Validate JSON"}
               </Button>
             </div>
           </Card>
 
-          <aside className="space-y-4">
-            <Card className="space-y-4 p-5">
+          <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
+            <Card className="space-y-4 p-5 shadow-card">
               <div className="flex items-center gap-2">
                 <Info className="h-4 w-4 text-muted-foreground" />
                 <h2 className="font-display text-lg font-bold">Import Status</h2>
@@ -385,14 +399,19 @@ export default function CreateProblem() {
                   <p className="text-xs text-muted-foreground">Test cases</p>
                 </div>
               </div>
-              <Button
-                type="button"
-                className="w-full bg-accent text-accent-foreground hover:bg-accent/90"
-                onClick={saveApprovedProblems}
-                disabled={saveApprovedMutation.isPending || approvedCount === 0}
-              >
-                <Save className="mr-2 h-4 w-4" /> {saveApprovedMutation.isPending ? "Saving..." : "Save Approved Problems"}
-              </Button>
+              <div className="space-y-3">
+                <Button
+                  type="button"
+                  className="w-full bg-accent text-accent-foreground hover:bg-accent/90"
+                  onClick={saveApprovedProblems}
+                  disabled={saveApprovedMutation.isPending || approvedCount === 0}
+                >
+                  <Save className="mr-2 h-4 w-4" /> {saveApprovedMutation.isPending ? "Saving..." : "Save Approved Problems"}
+                </Button>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Approved imports are saved as published problems. Leave items unchecked until their details are reviewed.
+                </p>
+              </div>
             </Card>
           </aside>
         </section>
@@ -403,9 +422,9 @@ export default function CreateProblem() {
               <h2 className="font-display text-xl font-bold">Review Imported Problems</h2>
               <Badge variant="outline">{approvedCount} of {importedDrafts.length} approved</Badge>
             </div>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {importedDrafts.map((item, index) => (
-                <Card key={item.id} className="space-y-4 p-5 shadow-card">
+                <Card key={item.id} className="card-interactive space-y-4 p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-xs uppercase tracking-wide text-muted-foreground">Problem {index + 1}</p>
