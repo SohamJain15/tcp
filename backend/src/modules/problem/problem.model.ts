@@ -16,10 +16,13 @@ export interface ProblemTestCase {
 export interface ProblemRecord {
   id: string;
   title: string;
+  slug?: string;
   statement: string;
+  topic?: string;
   inputFormat: string;
   outputFormat: string;
   constraints: string[];
+  explanation?: string;
   difficulty: Difficulty;
   tags: string[];
   timeLimitSeconds: number;
@@ -75,10 +78,13 @@ export interface ManageProblemSummaryResponse {
 }
 
 export interface ManageProblemDetailResponse extends ManageProblemSummaryResponse {
+  slug: string;
   statement: string;
+  topic: string;
   inputFormat: string;
   outputFormat: string;
   constraints: string[];
+  explanation: string;
   timeLimitSeconds: number;
   memoryLimitMb: number;
   targetDepartment: Department | null;
@@ -145,10 +151,13 @@ export function toManageProblemSummary(problem: ProblemRecord): ManageProblemSum
 export function toManageProblemDetail(problem: ProblemRecord): ManageProblemDetailResponse {
   return {
     ...toManageProblemSummary(problem),
+    slug: problem.slug ?? problem.id,
     statement: problem.statement,
+    topic: problem.topic ?? "",
     inputFormat: problem.inputFormat,
     outputFormat: problem.outputFormat,
     constraints: problem.constraints,
+    explanation: problem.explanation ?? "",
     timeLimitSeconds: problem.timeLimitSeconds,
     memoryLimitMb: problem.memoryLimitMb,
     targetDepartment: problem.targetDepartment,

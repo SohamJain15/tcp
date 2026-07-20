@@ -162,10 +162,13 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
       const problem: ProblemRecord = {
         id: `problem_${randomUUID()}`,
         title: payload.title,
+        slug: payload.slug,
         statement: payload.statement,
+        topic: payload.topic,
         inputFormat: payload.inputFormat,
         outputFormat: payload.outputFormat,
         constraints: payload.constraints,
+        explanation: payload.explanation,
         difficulty: payload.difficulty,
         tags: payload.tags,
         timeLimitSeconds: payload.timeLimitSeconds,

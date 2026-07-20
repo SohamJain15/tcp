@@ -10,7 +10,13 @@ export function errorHandler(error: unknown, _req: Request, res: Response, _next
   if (error instanceof ZodError) {
     res.status(400).json({
       message: "Validation failed",
-      details: error.flatten(),
+      details: {
+        ...error.flatten(),
+        fieldIssues: error.issues.map((issue) => ({
+          path: issue.path.length > 0 ? issue.path.join(".") : "json",
+          message: issue.message,
+        })),
+      },
     });
     return;
   }

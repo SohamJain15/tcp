@@ -20,6 +20,7 @@ import type {
   ManageProblemSummary,
   PaginatedResponse,
   ProblemEnvelope,
+  ProblemDraftImportEnvelope,
   ProblemLifecycleState,
   ProblemUpdatePayload,
   ProblemWritePayload,
@@ -95,6 +96,12 @@ export const problemsApi = {
     apiRequest<PaginatedResponse<ManageProblemSummary>>("/api/problems/manage", { query, pathname }),
   getManageDetail: (problemId: string, pathname?: string) =>
     apiRequest<ProblemEnvelope<ManageProblemDetail>>(`/api/problems/manage/${problemId}`, { pathname }),
+  importDraft: (payload: unknown, pathname?: string) =>
+    apiRequest<ProblemDraftImportEnvelope>("/api/problems/import-draft", {
+      method: "POST",
+      body: payload,
+      pathname,
+    }),
   create: (payload: ProblemWritePayload, pathname?: string) =>
     apiRequest<ProblemEnvelope<ManageProblemDetail>>("/api/problems", {
       method: "POST",

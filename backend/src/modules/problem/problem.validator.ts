@@ -19,7 +19,7 @@ const testCaseSchema = z.object({
   input: z.string().min(1),
   output: z.string(),
   explanation: z.string().optional(),
-});
+}).strict();
 
 const exampleSchema = testCaseSchema.extend({
   hidden: z.boolean().default(false),
@@ -52,10 +52,13 @@ const departmentSchema = z.enum(DEPARTMENTS);
 
 const problemWriteBaseSchema = z.object({
   title: z.string().min(3).max(150),
+  slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Slug must use lowercase letters, numbers, and hyphens").optional(),
   statement: z.string().min(10),
+  topic: z.string().min(1).optional(),
   inputFormat: z.string().min(1),
   outputFormat: z.string().min(1),
   constraints: constraintsSchema,
+  explanation: z.string().optional(),
   difficulty: z.enum(["Easy", "Medium", "Hard"]),
   tags: tagsSchema,
   timeLimitSeconds: numberSchema.optional(),
@@ -68,6 +71,28 @@ const problemWriteBaseSchema = z.object({
   hiddenTestCases: z.array(testCaseSchema).optional(),
   examples: z.array(exampleSchema).optional(),
 });
+
+const problemDraftSchema = z.object({
+  title: z.string().min(3).max(150),
+  slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Slug must use lowercase letters, numbers, and hyphens"),
+  statement: z.string().min(10),
+  difficulty: z.enum(["Easy", "Medium", "Hard"]),
+  topic: z.string().min(1),
+  constraints: z.array(z.string().min(1)).min(1),
+  inputFormat: z.string().min(1),
+  outputFormat: z.string().min(1),
+  explanation: z.string(),
+  timeLimit: z.number().positive(),
+  memoryLimit: z.number().positive(),
+  tags: z.array(z.string().min(1)).min(1),
+  sampleTestCases: z.array(testCaseSchema).min(1),
+  hiddenTestCases: z.array(testCaseSchema).min(1),
+}).strict();
+
+export const problemDraftImportSchema = z.preprocess(
+  (value) => (Array.isArray(value) ? value : [value]),
+  z.array(problemDraftSchema).min(1),
+);
 
 export const createProblemSchema = problemWriteBaseSchema.superRefine((value, ctx) => {
   const sampleTestCases = value.sampleTestCases ?? value.examples?.filter((example) => !example.hidden) ?? [];
@@ -128,10 +153,13 @@ export const manageProblemQuerySchema = studentProblemQuerySchema.extend({
 
 export interface CanonicalProblemPayload {
   title: string;
+  slug: string;
   statement: string;
+  topic: string;
   inputFormat: string;
   outputFormat: string;
   constraints: string[];
+  explanation: string;
   difficulty: Difficulty;
   tags: string[];
   timeLimitSeconds: number;
@@ -159,10 +187,13 @@ export function toCanonicalProblemPayload(raw: z.infer<typeof createProblemSchem
 
   return {
     title: raw.title.trim(),
+    slug: raw.slug?.trim() ?? raw.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
     statement: raw.statement.trim(),
+    topic: raw.topic?.trim() ?? "",
     inputFormat: raw.inputFormat.trim(),
     outputFormat: raw.outputFormat.trim(),
     constraints: raw.constraints,
+    explanation: raw.explanation?.trim() ?? "",
     difficulty: normalizeDifficulty(raw.difficulty),
     tags: raw.tags,
     timeLimitSeconds: normalizeNumber(raw.timeLimitSeconds ?? raw.timeLimit, DEFAULT_PROBLEM_TIME_LIMIT_SECONDS),
@@ -181,10 +212,13 @@ export function toCanonicalProblemUpdatePayload(
   const exampleSplit = splitExamplesIntoTestCases(raw.examples);
 
   if (raw.title !== undefined) payload.title = raw.title.trim();
+  if (raw.slug !== undefined) payload.slug = raw.slug.trim();
   if (raw.statement !== undefined) payload.statement = raw.statement.trim();
+  if (raw.topic !== undefined) payload.topic = raw.topic.trim();
   if (raw.inputFormat !== undefined) payload.inputFormat = raw.inputFormat.trim();
   if (raw.outputFormat !== undefined) payload.outputFormat = raw.outputFormat.trim();
   if (raw.constraints !== undefined) payload.constraints = raw.constraints;
+  if (raw.explanation !== undefined) payload.explanation = raw.explanation.trim();
   if (raw.difficulty !== undefined) payload.difficulty = normalizeDifficulty(raw.difficulty);
   if (raw.tags !== undefined) payload.tags = raw.tags;
   if (raw.timeLimitSeconds !== undefined || raw.timeLimit !== undefined) {

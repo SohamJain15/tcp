@@ -173,12 +173,15 @@ function safeTestCaseArray(value: unknown): ProblemTestCase[] {
 export function toEditorDataFromStudentProblem(problem: StudentProblemDetail): ProblemEditorData {
   return {
     title: problem.title ?? "",
+    slug: "",
     difficulty: problem.difficulty,
+    topic: "",
     tags: safeStringArray(problem.tags),
     statement: problem.statement ?? "",
     inputFormat: problem.inputFormat ?? "",
     outputFormat: problem.outputFormat ?? "",
     constraints: safeStringArray(problem.constraints),
+    explanation: "",
     timeLimitSeconds: Number(problem.timeLimitSeconds) || 1,
     memoryLimitMb: Number(problem.memoryLimitMb) || 256,
     sampleTestCases: safeTestCaseArray(problem.sampleTestCases),
@@ -190,12 +193,15 @@ export function toEditorDataFromStudentProblem(problem: StudentProblemDetail): P
 export function toEditorDataFromManageProblem(problem: ManageProblemDetail): ProblemEditorData {
   return {
     title: problem.title ?? "",
+    slug: problem.slug ?? "",
     difficulty: problem.difficulty,
+    topic: problem.topic ?? "",
     tags: safeStringArray(problem.tags),
     statement: problem.statement ?? "",
     inputFormat: problem.inputFormat ?? "",
     outputFormat: problem.outputFormat ?? "",
     constraints: safeStringArray(problem.constraints),
+    explanation: problem.explanation ?? "",
     timeLimitSeconds: Number(problem.timeLimitSeconds) || 1,
     memoryLimitMb: Number(problem.memoryLimitMb) || 256,
     sampleTestCases: safeTestCaseArray(problem.sampleTestCases),
@@ -221,10 +227,13 @@ export function toProblemWritePayload(
 ): ProblemWritePayload {
   return {
     title: data.title.trim(),
+    slug: data.slug.trim() || data.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
     statement: data.statement.trim(),
+    topic: data.topic.trim(),
     inputFormat: data.inputFormat.trim(),
     outputFormat: data.outputFormat.trim(),
     constraints: data.constraints.map((constraint) => constraint.trim()).filter(Boolean),
+    explanation: data.explanation.trim(),
     difficulty: data.difficulty as Difficulty,
     tags: data.tags.map((tag) => tag.trim()).filter(Boolean),
     timeLimitSeconds: Number(data.timeLimitSeconds),
@@ -239,10 +248,13 @@ export function toProblemWritePayload(
 export function toProblemUpdatePayload(data: ProblemEditorData): ProblemUpdatePayload {
   return {
     title: data.title.trim(),
+    slug: data.slug.trim() || data.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
     statement: data.statement.trim(),
+    topic: data.topic.trim(),
     inputFormat: data.inputFormat.trim(),
     outputFormat: data.outputFormat.trim(),
     constraints: data.constraints.map((constraint) => constraint.trim()).filter(Boolean),
+    explanation: data.explanation.trim(),
     difficulty: data.difficulty,
     tags: data.tags.map((tag) => tag.trim()).filter(Boolean),
     timeLimitSeconds: Number(data.timeLimitSeconds),

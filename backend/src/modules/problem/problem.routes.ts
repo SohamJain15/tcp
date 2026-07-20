@@ -13,6 +13,7 @@ export function createProblemRouter(dependencies: ApplicationDependencies): Rout
 
   router.get("/manage", requireRole("FACULTY"), asyncHandler(controller.listManageProblems));
   router.get("/manage/:problemId", requireRole("FACULTY"), asyncHandler(controller.getManageProblemDetail));
+  router.post("/import-draft", requireRole("FACULTY"), asyncHandler(controller.importProblemDraft));
   router.post("/", requireRole("FACULTY"), asyncHandler(controller.createProblem));
   router.patch("/:problemId/state", requireRole("FACULTY"), asyncHandler(controller.updateProblemState));
   router.patch("/:problemId", requireRole("FACULTY"), asyncHandler(controller.updateProblem));

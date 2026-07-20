@@ -4,6 +4,7 @@ import type { ProblemService } from "./problem.service";
 import {
   createProblemSchema,
   manageProblemQuerySchema,
+  problemDraftImportSchema,
   problemStateSchema,
   studentProblemQuerySchema,
   toCanonicalProblemPayload,
@@ -43,6 +44,18 @@ export function createProblemController(problemService: ProblemService) {
       const payload = toCanonicalProblemPayload(createProblemSchema.parse(req.body));
       const problem = await problemService.createProblem(req.user!, payload);
       res.status(201).json({ problem });
+    },
+
+    async importProblemDraft(req: Request, res: Response): Promise<void> {
+      const drafts = problemDraftImportSchema.parse(req.body);
+      res.json({
+        drafts: drafts.map((draft) => ({
+          ...draft,
+          timeLimitSeconds: draft.timeLimit,
+          memoryLimitMb: draft.memoryLimit,
+          lifecycleState: "Draft",
+        })),
+      });
     },
 
     async updateProblem(req: Request, res: Response): Promise<void> {

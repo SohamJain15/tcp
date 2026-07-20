@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 type EditableCase = {
   input: string;
   output: string;
+  explanation: string;
   hidden: boolean;
 };
 
@@ -32,19 +33,21 @@ type ProblemEditorFormProps = {
 };
 
 const defaultCases: EditableCase[] = [
-  { input: "", output: "", hidden: false },
-  { input: "", output: "", hidden: true },
+  { input: "", output: "", explanation: "", hidden: false },
+  { input: "", output: "", explanation: "", hidden: true },
 ];
 
 function normalizeCases(sampleTestCases: ProblemEditorData["sampleTestCases"] = [], hiddenTestCases: ProblemEditorData["hiddenTestCases"] = []): EditableCase[] {
   const sample = sampleTestCases.map((testCase) => ({
     input: testCase.input,
     output: testCase.output,
+    explanation: testCase.explanation ?? "",
     hidden: false,
   }));
   const hidden = hiddenTestCases.map((testCase) => ({
     input: testCase.input,
     output: testCase.output,
+    explanation: testCase.explanation ?? "",
     hidden: true,
   }));
 
@@ -67,12 +70,15 @@ export function ProblemEditorForm({
   isSubmitting = false,
 }: ProblemEditorFormProps) {
   const [title, setTitle] = useState(initialProblem?.title ?? "");
+  const [slug, setSlug] = useState(initialProblem?.slug ?? "");
   const [difficulty, setDifficulty] = useState<Difficulty>(initialProblem?.difficulty ?? "Easy");
+  const [topic, setTopic] = useState(initialProblem?.topic ?? "");
   const [tags, setTags] = useState(initialProblem ? initialProblem.tags.join(", ") : "");
   const [statement, setStatement] = useState(initialProblem?.statement ?? "");
   const [inputFormat, setInputFormat] = useState(initialProblem?.inputFormat ?? "");
   const [outputFormat, setOutputFormat] = useState(initialProblem?.outputFormat ?? "");
   const [constraints, setConstraints] = useState(initialProblem ? initialProblem.constraints.join("\n") : "");
+  const [explanation, setExplanation] = useState(initialProblem?.explanation ?? "");
   const [timeLimit, setTimeLimit] = useState(String(initialProblem?.timeLimitSeconds ?? 1));
   const [memoryLimit, setMemoryLimit] = useState(String(initialProblem?.memoryLimitMb ?? 256));
   const [testCases, setTestCases] = useState<EditableCase[]>(
@@ -87,6 +93,7 @@ export function ProblemEditorForm({
       .map((testCase) => ({
         input: testCase.input,
         output: testCase.output,
+        ...(testCase.explanation.trim() ? { explanation: testCase.explanation } : {}),
       }));
 
     const hiddenTestCases = testCases
@@ -94,11 +101,14 @@ export function ProblemEditorForm({
       .map((testCase) => ({
         input: testCase.input,
         output: testCase.output,
+        ...(testCase.explanation.trim() ? { explanation: testCase.explanation } : {}),
       }));
 
     return {
       title,
+      slug,
       difficulty,
+      topic,
       tags: tags
         .split(",")
         .map((tag) => tag.trim())
@@ -110,6 +120,7 @@ export function ProblemEditorForm({
         .split(/\r?\n/)
         .map((constraint) => constraint.trim())
         .filter(Boolean),
+      explanation,
       timeLimitSeconds: Number(timeLimit) || 1,
       memoryLimitMb: Number(memoryLimit) || 256,
       sampleTestCases,
@@ -118,12 +129,15 @@ export function ProblemEditorForm({
     };
   }, [
     title,
+    slug,
     difficulty,
+    topic,
     tags,
     statement,
     inputFormat,
     outputFormat,
     constraints,
+    explanation,
     timeLimit,
     memoryLimit,
     testCases,
@@ -131,14 +145,14 @@ export function ProblemEditorForm({
   ]);
 
   const addCase = (hidden: boolean) => {
-    setTestCases((current) => [...current, { input: "", output: "", hidden }]);
+    setTestCases((current) => [...current, { input: "", output: "", explanation: "", hidden }]);
   };
 
   const removeCase = (index: number) => {
     setTestCases((current) => (current.length > 1 ? current.filter((_, caseIndex) => caseIndex !== index) : current));
   };
 
-  const updateCase = (index: number, field: "input" | "output", value: string) => {
+  const updateCase = (index: number, field: "input" | "output" | "explanation", value: string) => {
     setTestCases((current) => current.map((testCase, caseIndex) => (caseIndex === index ? { ...testCase, [field]: value } : testCase)));
   };
 
@@ -225,6 +239,14 @@ export function ProblemEditorForm({
             </div>
           </div>
           <div>
+            <Label>Slug</Label>
+            <Input value={slug} onChange={(event) => setSlug(event.target.value)} placeholder="maximum-subarray-sum" className="mt-1.5" />
+          </div>
+          <div>
+            <Label>Topic</Label>
+            <Input value={topic} onChange={(event) => setTopic(event.target.value)} placeholder="Dynamic Programming" className="mt-1.5" />
+          </div>
+          <div>
             <Label>Tags / Topics (comma-separated)</Label>
             <Input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="Array, DP, Greedy" className="mt-1.5" />
           </div>
@@ -256,6 +278,10 @@ export function ProblemEditorForm({
             placeholder={"1 <= N <= 10^5\n1 <= A[i] <= 10^9"}
             className="mt-1.5 font-mono-code text-sm"
           />
+        </div>
+        <div>
+          <Label>Explanation</Label>
+          <Textarea value={explanation} onChange={(event) => setExplanation(event.target.value)} rows={4} className="mt-1.5" />
         </div>
       </Card>
 
@@ -309,6 +335,15 @@ export function ProblemEditorForm({
                     className="mt-1 font-mono-code text-xs"
                   />
                 </div>
+              </div>
+              <div className="mt-3">
+                <Label className="text-xs">Explanation (optional)</Label>
+                <Textarea
+                  value={testCase.explanation}
+                  onChange={(event) => updateCase(index, "explanation", event.target.value)}
+                  rows={2}
+                  className="mt-1 text-xs"
+                />
               </div>
             </div>
           ))}

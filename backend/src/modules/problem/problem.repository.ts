@@ -85,10 +85,13 @@ function mapProblemRecord(problemId: string, data: Record<string, unknown>): Pro
   return {
     id: String(data.id ?? problemId),
     title: typeof data.title === "string" ? data.title : problemId,
+    slug: typeof data.slug === "string" ? data.slug : String(data.id ?? problemId),
     statement,
+    topic: typeof data.topic === "string" ? data.topic : "",
     inputFormat: typeof data.inputFormat === "string" ? data.inputFormat : "Input format not provided.",
     outputFormat: typeof data.outputFormat === "string" ? data.outputFormat : "Output format not provided.",
     constraints: normalizeConstraints(data.constraints),
+    explanation: typeof data.explanation === "string" ? data.explanation : "",
     difficulty: normalizeDifficulty(data.difficulty),
     tags: Array.isArray(data.tags) ? data.tags.map((tag) => String(tag).trim()).filter(Boolean) : [],
     timeLimitSeconds: normalizeNumber(data.timeLimitSeconds ?? data.timeLimit, DEFAULT_PROBLEM_TIME_LIMIT_SECONDS),

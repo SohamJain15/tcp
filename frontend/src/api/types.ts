@@ -174,10 +174,13 @@ export interface ManageProblemSummary {
 }
 
 export interface ManageProblemDetail extends ManageProblemSummary {
+  slug: string;
   statement: string;
+  topic: string;
   inputFormat: string;
   outputFormat: string;
   constraints: string[];
+  explanation: string;
   timeLimitSeconds: number;
   memoryLimitMb: number;
   createdBy: string;
@@ -747,10 +750,13 @@ export interface SubmissionWritePayload {
 
 export interface ProblemWritePayload {
   title: string;
+  slug: string;
   statement: string;
+  topic: string;
   inputFormat: string;
   outputFormat: string;
   constraints: string[];
+  explanation: string;
   difficulty: Difficulty;
   tags: string[];
   timeLimitSeconds: number;
@@ -765,18 +771,28 @@ export type ProblemUpdatePayload = Partial<ProblemWritePayload>;
 
 export interface ProblemEditorData {
   title: string;
+  slug: string;
   difficulty: Difficulty;
+  topic: string;
   tags: string[];
   statement: string;
   inputFormat: string;
   outputFormat: string;
   constraints: string[];
+  explanation: string;
   timeLimitSeconds: number;
   memoryLimitMb: number;
   sampleTestCases: ProblemTestCase[];
   hiddenTestCases: ProblemTestCase[];
   targetDepartment?: Department | null;
   lifecycleState?: ProblemLifecycleState;
+}
+
+export interface ProblemDraftImportEnvelope {
+  drafts: Array<ProblemEditorData & {
+    timeLimit: number;
+    memoryLimit: number;
+  }>;
 }
 
 export interface ApiErrorPayload {
