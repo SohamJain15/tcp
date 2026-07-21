@@ -112,6 +112,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
 
   const leaderboardService = createLeaderboardService({
     leaderboardRepository: repositories.leaderboardRepository,
+    userRepository: repositories.userRepository,
   });
 
   const contestService = createContestService({

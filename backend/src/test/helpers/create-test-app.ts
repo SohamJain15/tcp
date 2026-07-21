@@ -160,6 +160,7 @@ export function createTestApp() {
     }),
     leaderboardService: createLeaderboardService({
       leaderboardRepository,
+      userRepository,
     }),
     contestService: createContestService({
       contestRepository,

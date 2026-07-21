@@ -5,6 +5,7 @@ import { Trophy, Medal, Award } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { contestsApi, leaderboardApi } from "@/api/services";
 import { DEPARTMENTS, type Department } from "@/api/types";
 import { cn } from "@/lib/utils";
@@ -84,15 +85,28 @@ export default function StudentLeaderboard() {
         </div>
 
         <div className="grid gap-3 md:grid-cols-3">
-          <Select value={viewMode} onValueChange={(value) => setViewMode(value as ViewMode)}>
-            <SelectTrigger className="h-11 w-full rounded-none border-border bg-background px-4 text-sm font-medium text-foreground shadow-none ring-0 transition-colors data-[placeholder]:text-muted-foreground focus:ring-2 focus:ring-accent/30">
-              <SelectValue placeholder="Leaderboard type" />
-            </SelectTrigger>
-            <SelectContent className="w-[var(--radix-select-trigger-width)] rounded-none border-border bg-card p-0 text-card-foreground shadow-elevated">
-              <SelectItem value="problem">Problem leaderboard</SelectItem>
-              <SelectItem value="contest">Contest leaderboard</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="rounded-none border border-border bg-background p-1">
+            <ToggleGroup
+              type="single"
+              value={viewMode}
+              onValueChange={(value) => {
+                if (value) {
+                  setViewMode(value as ViewMode);
+                  if (value === "problem") {
+                    setContestId("All");
+                  }
+                }
+              }}
+              className="w-full justify-stretch"
+            >
+              <ToggleGroupItem value="problem" className="flex-1 rounded-none data-[state=on]:bg-accent data-[state=on]:text-accent-foreground">
+                Problem leaderboard
+              </ToggleGroupItem>
+              <ToggleGroupItem value="contest" className="flex-1 rounded-none data-[state=on]:bg-accent data-[state=on]:text-accent-foreground">
+                Contest leaderboard
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </div>
 
           <Select value={department} onValueChange={(value) => setDepartment(value as Department | "All")}>
             <SelectTrigger className="h-11 w-full rounded-none border-border bg-background px-4 text-sm font-medium text-foreground shadow-none ring-0 transition-colors data-[placeholder]:text-muted-foreground focus:ring-2 focus:ring-accent/30">
