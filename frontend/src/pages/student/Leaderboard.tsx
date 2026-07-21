@@ -57,7 +57,7 @@ export default function StudentLeaderboard() {
 
   const contests = contestsQuery.data?.items ?? [];
   const availableContests = useMemo(
-    () => contests.filter((contest) => contest.resultsPublished || contest.studentListStatus === "Past"),
+    () => contests.filter((contest) => contest.resultsPublished && contest.hasAttempted),
     [contests],
   );
   const selectedContestId = contestId === "All" ? availableContests[0]?.id ?? "All" : contestId;
@@ -139,12 +139,11 @@ export default function StudentLeaderboard() {
 
         {viewMode === "contest" && (
           <div className="max-w-xl">
-            <Select value={selectedContestId} onValueChange={setContestId}>
+            <Select value={selectedContestId} onValueChange={setContestId} disabled={availableContests.length === 0}>
               <SelectTrigger className="h-11 w-full rounded-none border-border bg-background px-4 text-sm font-medium text-foreground shadow-none ring-0 transition-colors data-[placeholder]:text-muted-foreground focus:ring-2 focus:ring-accent/30">
                 <SelectValue placeholder="Select contest" />
               </SelectTrigger>
               <SelectContent className="w-[var(--radix-select-trigger-width)] rounded-none border-border bg-card p-0 text-card-foreground shadow-elevated">
-                <SelectItem value="All">Select contest</SelectItem>
                 {availableContests.map((contest) => (
                   <SelectItem key={contest.id} value={contest.id}>
                     {contest.title}
@@ -160,8 +159,10 @@ export default function StudentLeaderboard() {
           <Card className="p-6 text-center text-destructive">{((viewMode === "problem" ? error : contestStandingsQuery.error) as Error)?.message || "Failed to load leaderboard"}</Card>
         )}
 
-        {viewMode === "contest" && selectedContestId === "All" ? (
-          <Card className="p-6 text-center text-muted-foreground">Select a contest to view standings.</Card>
+        {viewMode === "contest" && availableContests.length === 0 ? (
+          <Card className="p-6 text-center text-muted-foreground">No published contests are available in your results yet.</Card>
+        ) : viewMode === "contest" && selectedContestId === "All" ? (
+          <Card className="p-6 text-center text-muted-foreground">Select one of your contests to view standings.</Card>
         ) : !((viewMode === "problem" ? isLoading : contestStandingsQuery.isLoading)) && !((viewMode === "problem" ? isError : contestStandingsQuery.isError)) && (
           <>
             <div className="grid gap-4 md:grid-cols-3">
