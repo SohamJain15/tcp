@@ -1,6 +1,7 @@
 import type { UserRole } from "../../shared/types/auth";
 import type { Department, Difficulty, ExecutableLanguage } from "../../shared/types/domain";
 import { toIsoString } from "../../shared/utils/date";
+import type { StudentYear } from "../../shared/utils/student-year";
 
 export type ContestType = "Rated" | "Practice";
 export type ContestLifecycleState = "Published";
@@ -260,10 +261,15 @@ export interface FacultyContestDetailResponse {
 export interface ContestStandingItem {
   rank: number;
   attemptId: string;
+  email: string;
+  name: string | null;
+  uid: string | null;
+  department: Department | null;
   userName: string | null;
   userUid: string | null;
   userEmail: string;
   userDepartment: Department | null;
+  year: StudentYear | null;
   score: number;
   solvedCount: number;
   status: ContestAttemptStatus;
@@ -282,6 +288,7 @@ export interface ContestAttemptSummary {
   userName: string | null;
   userUid: string | null;
   userDepartment: Department | null;
+  year: StudentYear | null;
   status: ContestAttemptStatus;
   score: number;
   violationCount: number;
@@ -593,6 +600,7 @@ export function toContestAttemptSummary(attempt: ContestAttemptRecord): ContestA
     userName: attempt.userName,
     userUid: attempt.userUid,
     userDepartment: attempt.userDepartment,
+    year: null,
     status: attempt.status,
     score: attempt.score,
     violationCount: attempt.violationCount,
@@ -682,14 +690,20 @@ export function toStudentContestQuestionEnvelope(
 export function toContestStandingItem(
   attempt: ContestAttemptRecord,
   rank: number,
+  year: StudentYear | null = null,
 ): ContestStandingItem {
   return {
     rank,
     attemptId: attempt.id,
+    email: attempt.userEmail,
+    name: attempt.userName,
+    uid: attempt.userUid,
+    department: attempt.userDepartment,
     userName: attempt.userName,
     userUid: attempt.userUid,
     userEmail: attempt.userEmail,
     userDepartment: attempt.userDepartment,
+    year,
     score: attempt.score,
     solvedCount: attempt.questionStates.filter((state) => state.status === "SOLVED").length,
     status: attempt.status,

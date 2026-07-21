@@ -1,6 +1,7 @@
 import { toCsv } from "../../shared/utils/csv";
 import { paginateArray, type PaginationInput, type PaginatedResult } from "../../shared/utils/pagination";
 import type { Department } from "../../shared/types/domain";
+import { deriveStudentYearFromSemester, type StudentYear } from "../../shared/utils/student-year";
 import {
   compareLeaderboardEntries,
   isRankedLeaderboardEntry,
@@ -11,9 +12,9 @@ import type { LeaderboardRepository } from "./leaderboard.repository";
 
 export interface LeaderboardService {
   listLeaderboard(
-    pagination: PaginationInput & { department?: Department },
+    pagination: PaginationInput & { department?: Department; year?: StudentYear },
   ): Promise<PaginatedResult<LeaderboardListItem>>;
-  exportLeaderboardCsv(department?: Department): Promise<string>;
+  exportLeaderboardCsv(filters?: { department?: Department; year?: StudentYear }): Promise<string>;
 }
 
 interface LeaderboardServiceDependencies {
@@ -26,16 +27,18 @@ export function createLeaderboardService(dependencies: LeaderboardServiceDepende
       const sortedEntries = (await dependencies.leaderboardRepository.list())
         .filter(isRankedLeaderboardEntry)
         .filter((entry) => (pagination.department ? entry.department === pagination.department : true))
+        .filter((entry) => (pagination.year ? deriveStudentYearFromSemester(entry.semester) === pagination.year : true))
         .sort(compareLeaderboardEntries)
         .map((entry, index) => toLeaderboardListItem(entry, index + 1));
 
       return paginateArray(sortedEntries, pagination);
     },
 
-    async exportLeaderboardCsv(department) {
+    async exportLeaderboardCsv(filters = {}) {
       const rows = (await dependencies.leaderboardRepository.list())
         .filter(isRankedLeaderboardEntry)
-        .filter((entry) => (department ? entry.department === department : true))
+        .filter((entry) => (filters.department ? entry.department === filters.department : true))
+        .filter((entry) => (filters.year ? deriveStudentYearFromSemester(entry.semester) === filters.year : true))
         .sort(compareLeaderboardEntries)
         .map((entry, index) => ({
           rank: index + 1,

@@ -258,6 +258,8 @@ export interface LeaderboardItem {
   name: string | null;
   uid: string | null;
   department: Department | null;
+  semester: number | null;
+  year: 1 | 2 | 3 | 4 | null;
   rating: number;
   score: number;
   problemsSolved: number;
@@ -532,6 +534,7 @@ export interface ContestStandingItem {
   userName: string | null;
   userUid: string | null;
   userDepartment: Department | null;
+  year: 1 | 2 | 3 | 4 | null;
   score: number;
   solvedCount: number;
   status: ContestAttemptStatus;

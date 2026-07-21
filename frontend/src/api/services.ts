@@ -147,12 +147,12 @@ export const submissionsApi = {
 };
 
 export const leaderboardApi = {
-  list: (query: PaginationQuery & { department?: Department } = {}, pathname?: string) =>
+  list: (query: PaginationQuery & { department?: Department; year?: 1 | 2 | 3 | 4 } = {}, pathname?: string) =>
     apiRequest<PaginatedResponse<LeaderboardItem>>("/api/leaderboard", {
       query,
       pathname,
     }),
-  exportCsv: (pathname?: string, query?: { department?: Department }) =>
+  exportCsv: (pathname?: string, query?: { department?: Department; year?: 1 | 2 | 3 | 4 }) =>
     apiRequest<string>("/api/leaderboard/export", {
       query,
       pathname,
@@ -226,10 +226,11 @@ export const contestsApi = {
     }),
   listAttempts: (contestId: string, pathname?: string) =>
     apiRequest<ContestAttemptsEnvelope>(`/api/contests/${contestId}/attempts`, { pathname }),
-  getStandings: (contestId: string, pathname?: string) =>
-    apiRequest<ContestStandingsEnvelope>(`/api/contests/${contestId}/standings`, { pathname }),
-  exportStandingsCsv: (contestId: string, pathname?: string) =>
+  getStandings: (contestId: string, pathname?: string, query?: { department?: Department; year?: 1 | 2 | 3 | 4 }) =>
+    apiRequest<ContestStandingsEnvelope>(`/api/contests/${contestId}/standings`, { pathname, query }),
+  exportStandingsCsv: (contestId: string, pathname?: string, query?: { department?: Department; year?: 1 | 2 | 3 | 4 }) =>
     apiRequest<string>(`/api/contests/${contestId}/standings/export`, {
+      query,
       pathname,
       responseType: "text",
     }),

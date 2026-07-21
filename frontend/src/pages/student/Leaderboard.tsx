@@ -5,36 +5,91 @@ import { Trophy, Medal, Award } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { leaderboardApi } from "@/api/services";
+import { contestsApi, leaderboardApi } from "@/api/services";
 import { DEPARTMENTS, type Department } from "@/api/types";
 import { cn } from "@/lib/utils";
 
 const podiumIcons = [Trophy, Medal, Award];
+const YEAR_OPTIONS = [1, 2, 3, 4] as const;
+type ViewMode = "problem" | "contest";
 
 export default function StudentLeaderboard() {
   const [department, setDepartment] = useState<Department | "All">("All");
+  const [year, setYear] = useState<1 | 2 | 3 | 4 | "All">("All");
+  const [viewMode, setViewMode] = useState<ViewMode>("problem");
+  const [contestId, setContestId] = useState<string>("All");
+
+  const contestsQuery = useQuery({
+    queryKey: ["student-leaderboard-contests"],
+    queryFn: () => contestsApi.list({ pageSize: 100 }, "/student/leaderboard"),
+    enabled: viewMode === "contest",
+  });
+
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["student-leaderboard", department],
+    queryKey: ["student-leaderboard", department, year],
     queryFn: () =>
       leaderboardApi.list({
         pageSize: 100,
         department: department === "All" ? undefined : department,
+        year: year === "All" ? undefined : year,
       }),
+    enabled: viewMode === "problem",
   });
 
-  const leaderboard = data?.items ?? [];
+  const contestStandingsQuery = useQuery({
+    queryKey: ["student-contest-leaderboard", contestId, department, year],
+    queryFn: () =>
+      contestsApi.getStandings(
+        contestId,
+        "/student/leaderboard",
+        {
+          department: department === "All" ? undefined : department,
+          year: year === "All" ? undefined : year,
+        },
+      ),
+    enabled: viewMode === "contest" && contestId !== "All",
+  });
+
+  const contests = contestsQuery.data?.items ?? [];
+  const availableContests = useMemo(
+    () => contests.filter((contest) => contest.resultsPublished || contest.studentListStatus === "Past"),
+    [contests],
+  );
+  const selectedContestId = contestId === "All" ? availableContests[0]?.id ?? "All" : contestId;
+  const leaderboard = viewMode === "problem" ? data?.items ?? [] : contestStandingsQuery.data?.items ?? [];
   const top3 = useMemo(() => leaderboard.slice(0, 3), [leaderboard]);
   const rest = useMemo(() => leaderboard.slice(3), [leaderboard]);
+  const yearTopRanks = useMemo(() => {
+    const ranks = new Map<number, number>();
+    for (const entry of leaderboard) {
+      if (entry.year == null) continue;
+      const count = ranks.get(entry.year) ?? 0;
+      if (count < 2) {
+        ranks.set(entry.year, count + 1);
+      }
+    }
+    return ranks;
+  }, [leaderboard]);
 
   return (
     <AppLayout>
       <div className="container space-y-8 py-8">
         <div>
           <h1 className="font-display text-3xl font-bold">Leaderboard</h1>
-          <p className="mt-1 text-muted-foreground">The top minds at TCET this semester.</p>
+          <p className="mt-1 text-muted-foreground">Switch between problem rating and contest standings.</p>
         </div>
 
-        <div className="max-w-xl">
+        <div className="grid gap-3 md:grid-cols-3">
+          <Select value={viewMode} onValueChange={(value) => setViewMode(value as ViewMode)}>
+            <SelectTrigger className="h-11 w-full rounded-none border-border bg-background px-4 text-sm font-medium text-foreground shadow-none ring-0 transition-colors data-[placeholder]:text-muted-foreground focus:ring-2 focus:ring-accent/30">
+              <SelectValue placeholder="Leaderboard type" />
+            </SelectTrigger>
+            <SelectContent className="w-[var(--radix-select-trigger-width)] rounded-none border-border bg-card p-0 text-card-foreground shadow-elevated">
+              <SelectItem value="problem">Problem leaderboard</SelectItem>
+              <SelectItem value="contest">Contest leaderboard</SelectItem>
+            </SelectContent>
+          </Select>
+
           <Select value={department} onValueChange={(value) => setDepartment(value as Department | "All")}>
             <SelectTrigger className="h-11 w-full rounded-none border-border bg-background px-4 text-sm font-medium text-foreground shadow-none ring-0 transition-colors data-[placeholder]:text-muted-foreground focus:ring-2 focus:ring-accent/30">
               <SelectValue placeholder="All Departments" />
@@ -48,12 +103,48 @@ export default function StudentLeaderboard() {
               ))}
             </SelectContent>
           </Select>
+
+          <Select value={String(year)} onValueChange={(value) => setYear(value === "All" ? "All" : (Number(value) as 1 | 2 | 3 | 4))}>
+            <SelectTrigger className="h-11 w-full rounded-none border-border bg-background px-4 text-sm font-medium text-foreground shadow-none ring-0 transition-colors data-[placeholder]:text-muted-foreground focus:ring-2 focus:ring-accent/30">
+              <SelectValue placeholder="All Years" />
+            </SelectTrigger>
+            <SelectContent className="w-[var(--radix-select-trigger-width)] rounded-none border-border bg-card p-0 text-card-foreground shadow-elevated">
+              <SelectItem value="All">All Years</SelectItem>
+              {YEAR_OPTIONS.map((entry) => (
+                <SelectItem key={entry} value={String(entry)}>
+                  {entry === 1 ? "1st Year" : entry === 2 ? "2nd Year" : entry === 3 ? "3rd Year" : "4th Year"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        {isLoading && <Card className="p-6 text-center text-muted-foreground">Loading leaderboard...</Card>}
-        {isError && <Card className="p-6 text-center text-destructive">{(error as Error)?.message || "Failed to load leaderboard"}</Card>}
+        {viewMode === "contest" && (
+          <div className="max-w-xl">
+            <Select value={selectedContestId} onValueChange={setContestId}>
+              <SelectTrigger className="h-11 w-full rounded-none border-border bg-background px-4 text-sm font-medium text-foreground shadow-none ring-0 transition-colors data-[placeholder]:text-muted-foreground focus:ring-2 focus:ring-accent/30">
+                <SelectValue placeholder="Select contest" />
+              </SelectTrigger>
+              <SelectContent className="w-[var(--radix-select-trigger-width)] rounded-none border-border bg-card p-0 text-card-foreground shadow-elevated">
+                <SelectItem value="All">Select contest</SelectItem>
+                {availableContests.map((contest) => (
+                  <SelectItem key={contest.id} value={contest.id}>
+                    {contest.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
-        {!isLoading && !isError && (
+        {(viewMode === "problem" ? isLoading : contestStandingsQuery.isLoading) && <Card className="p-6 text-center text-muted-foreground">Loading leaderboard...</Card>}
+        {(viewMode === "problem" ? isError : contestStandingsQuery.isError) && (
+          <Card className="p-6 text-center text-destructive">{((viewMode === "problem" ? error : contestStandingsQuery.error) as Error)?.message || "Failed to load leaderboard"}</Card>
+        )}
+
+        {viewMode === "contest" && selectedContestId === "All" ? (
+          <Card className="p-6 text-center text-muted-foreground">Select a contest to view standings.</Card>
+        ) : !((viewMode === "problem" ? isLoading : contestStandingsQuery.isLoading)) && !((viewMode === "problem" ? isError : contestStandingsQuery.isError)) && (
           <>
             <div className="grid gap-4 md:grid-cols-3">
               {top3.map((student, index) => {
@@ -74,6 +165,7 @@ export default function StudentLeaderboard() {
                       </div>
                       <h3 className="mt-3 font-display text-xl font-bold">{student.name ?? student.email}</h3>
                       <p className="font-mono-code text-xs text-muted-foreground">{student.uid ?? student.email}</p>
+                      {student.year && <p className="mt-1 text-xs uppercase tracking-wider text-muted-foreground">{student.year} year</p>}
                       <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                         <div>
                           <div className="text-lg font-bold">{student.problemsSolved}</div>
@@ -101,6 +193,7 @@ export default function StudentLeaderboard() {
                     <tr className="text-left">
                       <th className="w-16 px-4 py-3 font-semibold">Rank</th>
                       <th className="px-4 py-3 font-semibold">Student</th>
+                      {viewMode === "contest" && <th className="px-4 py-3 font-semibold">Year</th>}
                       <th className="px-4 py-3 text-right font-semibold">Solved</th>
                       <th className="px-4 py-3 text-right font-semibold">Score</th>
                       <th className="px-4 py-3 text-right font-semibold">Accuracy</th>
@@ -108,12 +201,19 @@ export default function StudentLeaderboard() {
                   </thead>
                   <tbody>
                     {rest.map((student) => (
-                      <tr key={student.rank} className="border-t border-border hover:bg-secondary/50">
+                      <tr
+                        key={student.rank}
+                        className={cn(
+                          "border-t border-border hover:bg-secondary/50",
+                          viewMode === "contest" && student.year && (yearTopRanks.get(student.year) ?? 0) >= 1 && student.rank <= 2 && "bg-accent/10",
+                        )}
+                      >
                         <td className="px-4 py-3 font-display font-bold">#{student.rank}</td>
                         <td className="px-4 py-3">
                           <div className="font-medium">{student.name ?? student.email}</div>
                           <div className="font-mono-code text-xs text-muted-foreground">{student.uid ?? student.email}</div>
                         </td>
+                        {viewMode === "contest" && <td className="px-4 py-3">{student.year ? `${student.year} Year` : "-"}</td>}
                         <td className="px-4 py-3 text-right font-mono-code">{student.problemsSolved}</td>
                         <td className="px-4 py-3 text-right font-mono-code font-semibold">{student.score}</td>
                         <td className="px-4 py-3 text-right font-mono-code">{student.accuracy}%</td>

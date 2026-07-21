@@ -1,4 +1,5 @@
 import { toIsoString } from "../../shared/utils/date";
+import { deriveStudentYearFromSemester, type StudentYear } from "../../shared/utils/student-year";
 import type { UserRole } from "../../shared/types/auth";
 import type { Department } from "../../shared/types/domain";
 import type { UserRecord } from "../user/user.model";
@@ -9,6 +10,8 @@ export interface LeaderboardEntry {
   name: string | null;
   uid: string | null;
   department: Department | null;
+  semester: number | null;
+  year: StudentYear | null;
   rating: number;
   score: number;
   problemsSolved: number;
@@ -27,6 +30,8 @@ export interface LeaderboardListItem {
   name: string | null;
   uid: string | null;
   department: Department | null;
+  semester: number | null;
+  year: StudentYear | null;
   rating: number;
   score: number;
   problemsSolved: number;
@@ -44,6 +49,8 @@ export function buildLeaderboardEntryFromUser(user: UserRecord): LeaderboardEntr
     name: user.name,
     uid: user.uid,
     department: user.department,
+    semester: user.semester,
+    year: deriveStudentYearFromSemester(user.semester),
     rating: user.rating,
     score: user.rating,
     problemsSolved: user.problemsSolved,
@@ -86,6 +93,8 @@ export function toLeaderboardListItem(entry: LeaderboardEntry, rank: number): Le
     name: entry.name,
     uid: entry.uid,
     department: entry.department,
+    semester: entry.semester,
+    year: entry.year,
     rating: entry.rating,
     score: entry.rating,
     problemsSolved: entry.problemsSolved,

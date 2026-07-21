@@ -6,6 +6,7 @@ import type { AuthenticatedUser } from "../../shared/types/auth";
 import type { Department, ExecutableLanguage } from "../../shared/types/domain";
 import { normalizeDepartment } from "../../shared/utils/normalize";
 import { paginateArray, type PaginatedResult, type PaginationInput } from "../../shared/utils/pagination";
+import { deriveStudentYearFromSemester, type StudentYear } from "../../shared/utils/student-year";
 import type { SubmissionQueue } from "../../queue/submission-queue";
 import type { SubmissionRepository } from "../submission/submission.repository";
 import type { UserRepository } from "../user/user.repository";
@@ -100,8 +101,8 @@ export interface ContestService {
     stdout?: string;
     stderr?: string;
   }>;
-  getStandings(user: AuthenticatedUser, contestId: string): Promise<ContestStandingItem[]>;
-  exportStandingsCsv(user: AuthenticatedUser, contestId: string): Promise<string>;
+  getStandings(user: AuthenticatedUser, contestId: string, query?: { department?: Department; year?: StudentYear }): Promise<ContestStandingItem[]>;
+  exportStandingsCsv(user: AuthenticatedUser, contestId: string, query?: { department?: Department; year?: StudentYear }): Promise<string>;
   listAttempts(user: AuthenticatedUser, contestId: string): Promise<ContestAttemptSummary[]>;
   getAttemptReview(user: AuthenticatedUser, contestId: string, attemptId: string): Promise<FacultyContestAttemptReview>;
 }
@@ -880,7 +881,7 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       };
     },
 
-    async getStandings(user, contestId) {
+    async getStandings(user, contestId, query = {}) {
       const contest = await dependencies.contestRepository.getById(contestId);
       if (user.role === "FACULTY") {
         ensureFacultyOwnsContest(user, contest);
@@ -890,13 +891,41 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       }
 
       const attempts = await dependencies.contestAttemptRepository.listByContest(contestId);
-      return attempts.sort(sortStandings).map((attempt, index) => toContestStandingItem(attempt, index + 1));
+      const userRecords = await Promise.all(
+        attempts.map(async (attempt) => ({
+          attempt,
+          user: await dependencies.userRepository.getByEmail(attempt.userEmail),
+        })),
+      );
+      return userRecords
+        .filter(({ attempt }) => (query.department ? attempt.userDepartment === query.department : true))
+        .filter(({ user }) => (query.year ? deriveStudentYearFromSemester(user?.semester) === query.year : true))
+        .map(({ attempt, user }) => ({
+          attempt,
+          year: deriveStudentYearFromSemester(user?.semester),
+        }))
+        .sort((left, right) => sortStandings(left.attempt, right.attempt))
+        .map(({ attempt, year }, index) => toContestStandingItem(attempt, index + 1, year));
     },
 
-    async exportStandingsCsv(user, contestId) {
+    async exportStandingsCsv(user, contestId, query = {}) {
       const contest = ensureFacultyOwnsContest(user, await dependencies.contestRepository.getById(contestId));
-      const attempts = (await dependencies.contestAttemptRepository.listByContest(contestId)).sort(sortStandings);
-      const rows = attempts.map((attempt, index) => {
+      const attempts = await dependencies.contestAttemptRepository.listByContest(contestId);
+      const userRecords = await Promise.all(
+        attempts.map(async (attempt) => ({
+          attempt,
+          user: await dependencies.userRepository.getByEmail(attempt.userEmail),
+        })),
+      );
+      const filteredAttempts = userRecords
+        .filter(({ attempt }) => (query.department ? attempt.userDepartment === query.department : true))
+        .filter(({ user }) => (query.year ? deriveStudentYearFromSemester(user?.semester) === query.year : true))
+        .map(({ attempt, user }) => ({
+          attempt,
+          year: deriveStudentYearFromSemester(user?.semester),
+        }))
+        .sort(sortStandings);
+      const rows = filteredAttempts.map(({ attempt }, index) => {
         const solvedCount = attempt.questionStates.filter((state) => state.status === "SOLVED").length;
         return [
           index + 1,

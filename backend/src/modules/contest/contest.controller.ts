@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { normalizeDepartment } from "../../shared/utils/normalize";
+import { normalizeNumber } from "../../shared/utils/normalize";
 import type { ContestService } from "./contest.service";
 import {
   contestAnswerSchema,
@@ -129,13 +130,21 @@ export function createContestController(contestService: ContestService) {
 
     async getStandings(req: Request, res: Response): Promise<void> {
       const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
-      const standings = await contestService.getStandings(req.user!, contestId);
+      const year = normalizeNumber(req.query.year, 0);
+      const standings = await contestService.getStandings(req.user!, contestId, {
+        department: normalizeDepartment(req.query.department) ?? undefined,
+        year: year >= 1 && year <= 4 ? (year as 1 | 2 | 3 | 4) : undefined,
+      });
       res.json({ items: standings });
     },
 
     async exportStandingsCsv(req: Request, res: Response): Promise<void> {
       const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
-      const csv = await contestService.exportStandingsCsv(req.user!, contestId);
+      const year = normalizeNumber(req.query.year, 0);
+      const csv = await contestService.exportStandingsCsv(req.user!, contestId, {
+        department: normalizeDepartment(req.query.department) ?? undefined,
+        year: year >= 1 && year <= 4 ? (year as 1 | 2 | 3 | 4) : undefined,
+      });
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader(
         "Content-Disposition",
