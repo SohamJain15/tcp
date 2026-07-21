@@ -2,6 +2,7 @@ import type { Collection } from "mongodb";
 import { getMongoDatabase } from "../../config/mongodb";
 import { toDate } from "../../shared/utils/date";
 import { normalizeDepartment, normalizeNumber, normalizeRole } from "../../shared/utils/normalize";
+import { deriveStudentYearFromSemester } from "../../shared/utils/student-year";
 import type { LeaderboardEntry } from "./leaderboard.model";
 
 export interface LeaderboardRepository {
@@ -22,6 +23,8 @@ function mapLeaderboardEntry(email: string, data: Record<string, unknown>): Lead
     name: typeof data.name === "string" ? data.name : null,
     uid: typeof data.uid === "string" ? data.uid : null,
     department: normalizeDepartment(data.department),
+    semester: typeof data.semester === "number" ? data.semester : null,
+    year: deriveStudentYearFromSemester(typeof data.semester === "number" ? data.semester : null),
     rating,
     score: rating,
     problemsSolved: normalizeNumber(data.problemsSolved, 0),

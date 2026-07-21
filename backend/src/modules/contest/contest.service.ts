@@ -6,7 +6,7 @@ import type { AuthenticatedUser } from "../../shared/types/auth";
 import type { Department, ExecutableLanguage } from "../../shared/types/domain";
 import { normalizeDepartment } from "../../shared/utils/normalize";
 import { paginateArray, type PaginatedResult, type PaginationInput } from "../../shared/utils/pagination";
-import { deriveStudentYearFromSemester, type StudentYear } from "../../shared/utils/student-year";
+import { matchesStudentYearSemester, type StudentYear } from "../../shared/utils/student-year";
 import type { SubmissionQueue } from "../../queue/submission-queue";
 import type { SubmissionRepository } from "../submission/submission.repository";
 import type { UserRepository } from "../user/user.repository";
@@ -899,10 +899,10 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       );
       return userRecords
         .filter(({ attempt }) => (query.department ? attempt.userDepartment === query.department : true))
-        .filter(({ user }) => (query.year ? deriveStudentYearFromSemester(user?.semester) === query.year : true))
+        .filter(({ user }) => matchesStudentYearSemester(user?.semester, query.year))
         .map(({ attempt, user }) => ({
           attempt,
-          year: deriveStudentYearFromSemester(user?.semester),
+          year: user?.semester ? (Math.ceil(user.semester / 2) as StudentYear) : null,
         }))
         .sort((left, right) => sortStandings(left.attempt, right.attempt))
         .map(({ attempt, year }, index) => toContestStandingItem(attempt, index + 1, year));
@@ -919,12 +919,12 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       );
       const filteredAttempts = userRecords
         .filter(({ attempt }) => (query.department ? attempt.userDepartment === query.department : true))
-        .filter(({ user }) => (query.year ? deriveStudentYearFromSemester(user?.semester) === query.year : true))
+        .filter(({ user }) => matchesStudentYearSemester(user?.semester, query.year))
         .map(({ attempt, user }) => ({
           attempt,
-          year: deriveStudentYearFromSemester(user?.semester),
+          year: user?.semester ? (Math.ceil(user.semester / 2) as StudentYear) : null,
         }))
-        .sort(sortStandings);
+        .sort((left, right) => sortStandings(left.attempt, right.attempt));
       const rows = filteredAttempts.map(({ attempt }, index) => {
         const solvedCount = attempt.questionStates.filter((state) => state.status === "SOLVED").length;
         return [

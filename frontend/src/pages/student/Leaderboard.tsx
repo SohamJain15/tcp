@@ -13,6 +13,10 @@ const podiumIcons = [Trophy, Medal, Award];
 const YEAR_OPTIONS = [1, 2, 3, 4] as const;
 type ViewMode = "problem" | "contest";
 
+function getYearLabel(year: 1 | 2 | 3 | 4): string {
+  return year === 1 ? "1st Year" : year === 2 ? "2nd Year" : year === 3 ? "3rd Year" : "4th Year";
+}
+
 export default function StudentLeaderboard() {
   const [department, setDepartment] = useState<Department | "All">("All");
   const [year, setYear] = useState<1 | 2 | 3 | 4 | "All">("All");
@@ -59,14 +63,14 @@ export default function StudentLeaderboard() {
   const leaderboard = viewMode === "problem" ? data?.items ?? [] : contestStandingsQuery.data?.items ?? [];
   const top3 = useMemo(() => leaderboard.slice(0, 3), [leaderboard]);
   const rest = useMemo(() => leaderboard.slice(3), [leaderboard]);
-  const yearTopRanks = useMemo(() => {
-    const ranks = new Map<number, number>();
+  const yearEntryRank = useMemo(() => {
+    const counts = new Map<number, number>();
+    const ranks = new Map<string, number>();
     for (const entry of leaderboard) {
       if (entry.year == null) continue;
-      const count = ranks.get(entry.year) ?? 0;
-      if (count < 2) {
-        ranks.set(entry.year, count + 1);
-      }
+      const nextRank = (counts.get(entry.year) ?? 0) + 1;
+      counts.set(entry.year, nextRank);
+      ranks.set(entry.email, nextRank);
     }
     return ranks;
   }, [leaderboard]);
@@ -163,9 +167,9 @@ export default function StudentLeaderboard() {
                         <Icon className={cn("h-8 w-8", index === 0 ? "text-gold" : index === 1 ? "text-muted-foreground" : "text-accent")} />
                         <span className="font-display text-4xl font-bold text-muted-foreground/30">#{student.rank}</span>
                       </div>
-                      <h3 className="mt-3 font-display text-xl font-bold">{student.name ?? student.email}</h3>
-                      <p className="font-mono-code text-xs text-muted-foreground">{student.uid ?? student.email}</p>
-                      {student.year && <p className="mt-1 text-xs uppercase tracking-wider text-muted-foreground">{student.year} year</p>}
+                        <h3 className="mt-3 font-display text-xl font-bold">{student.name ?? student.email}</h3>
+                        <p className="font-mono-code text-xs text-muted-foreground">{student.uid ?? student.email}</p>
+                      {student.year && <p className="mt-1 text-xs uppercase tracking-wider text-muted-foreground">{getYearLabel(student.year)} Leader</p>}
                       <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                         <div>
                           <div className="text-lg font-bold">{student.problemsSolved}</div>
@@ -205,7 +209,7 @@ export default function StudentLeaderboard() {
                         key={student.rank}
                         className={cn(
                           "border-t border-border hover:bg-secondary/50",
-                          viewMode === "contest" && student.year && (yearTopRanks.get(student.year) ?? 0) >= 1 && student.rank <= 2 && "bg-accent/10",
+                          viewMode === "contest" && student.year && (yearEntryRank.get(student.email) ?? 0) <= 2 && "bg-accent/10",
                         )}
                       >
                         <td className="px-4 py-3 font-display font-bold">#{student.rank}</td>
@@ -213,7 +217,7 @@ export default function StudentLeaderboard() {
                           <div className="font-medium">{student.name ?? student.email}</div>
                           <div className="font-mono-code text-xs text-muted-foreground">{student.uid ?? student.email}</div>
                         </td>
-                        {viewMode === "contest" && <td className="px-4 py-3">{student.year ? `${student.year} Year` : "-"}</td>}
+                        {viewMode === "contest" && <td className="px-4 py-3">{student.year ? getYearLabel(student.year) : "-"}</td>}
                         <td className="px-4 py-3 text-right font-mono-code">{student.problemsSolved}</td>
                         <td className="px-4 py-3 text-right font-mono-code font-semibold">{student.score}</td>
                         <td className="px-4 py-3 text-right font-mono-code">{student.accuracy}%</td>

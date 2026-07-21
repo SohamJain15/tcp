@@ -1,7 +1,7 @@
 import { toCsv } from "../../shared/utils/csv";
 import { paginateArray, type PaginationInput, type PaginatedResult } from "../../shared/utils/pagination";
 import type { Department } from "../../shared/types/domain";
-import { deriveStudentYearFromSemester, type StudentYear } from "../../shared/utils/student-year";
+import { matchesStudentYearSemester, type StudentYear } from "../../shared/utils/student-year";
 import {
   compareLeaderboardEntries,
   isRankedLeaderboardEntry,
@@ -27,7 +27,7 @@ export function createLeaderboardService(dependencies: LeaderboardServiceDepende
       const sortedEntries = (await dependencies.leaderboardRepository.list())
         .filter(isRankedLeaderboardEntry)
         .filter((entry) => (pagination.department ? entry.department === pagination.department : true))
-        .filter((entry) => (pagination.year ? deriveStudentYearFromSemester(entry.semester) === pagination.year : true))
+        .filter((entry) => matchesStudentYearSemester(entry.semester, pagination.year))
         .sort(compareLeaderboardEntries)
         .map((entry, index) => toLeaderboardListItem(entry, index + 1));
 
@@ -38,7 +38,7 @@ export function createLeaderboardService(dependencies: LeaderboardServiceDepende
       const rows = (await dependencies.leaderboardRepository.list())
         .filter(isRankedLeaderboardEntry)
         .filter((entry) => (filters.department ? entry.department === filters.department : true))
-        .filter((entry) => (filters.year ? deriveStudentYearFromSemester(entry.semester) === filters.year : true))
+        .filter((entry) => matchesStudentYearSemester(entry.semester, filters.year))
         .sort(compareLeaderboardEntries)
         .map((entry, index) => ({
           rank: index + 1,

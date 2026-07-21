@@ -18,6 +18,10 @@ const podiumIcons = [Trophy, Medal, Award];
 const YEAR_OPTIONS = [1, 2, 3, 4] as const;
 type ViewMode = "problem" | "contest";
 
+function getYearLabel(year: 1 | 2 | 3 | 4): string {
+  return year === 1 ? "1st Year" : year === 2 ? "2nd Year" : year === 3 ? "3rd Year" : "4th Year";
+}
+
 function downloadCsv(filename: string, content: string): void {
   const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -99,6 +103,17 @@ export default function FacultyLeaderboard() {
   const leaderboard = viewMode === "problem" ? data?.items ?? [] : contestStandingsQuery.data?.items ?? [];
   const top3 = useMemo(() => leaderboard.slice(0, 3), [leaderboard]);
   const rest = useMemo(() => leaderboard.slice(3), [leaderboard]);
+  const yearEntryRank = useMemo(() => {
+    const counts = new Map<number, number>();
+    const ranks = new Map<string, number>();
+    for (const entry of leaderboard) {
+      if (entry.year == null) continue;
+      const nextRank = (counts.get(entry.year) ?? 0) + 1;
+      counts.set(entry.year, nextRank);
+      ranks.set(entry.email, nextRank);
+    }
+    return ranks;
+  }, [leaderboard]);
 
   return (
     <AppLayout>
@@ -197,6 +212,7 @@ export default function FacultyLeaderboard() {
                         </div>
                         <h3 className="mt-3 font-display text-xl font-bold">{student.name ?? student.email}</h3>
                         <p className="font-mono-code text-xs text-muted-foreground">{student.uid ?? student.email}</p>
+                        {student.year && <p className="mt-1 text-xs uppercase tracking-wider text-muted-foreground">{getYearLabel(student.year)} Leader</p>}
                         <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                           <div><div className="text-lg font-bold">{student.problemsSolved}</div><div className="text-[10px] uppercase text-muted-foreground">Solved</div></div>
                           <div><div className="text-lg font-bold">{student.score}</div><div className="text-[10px] uppercase text-muted-foreground">Score</div></div>
@@ -224,7 +240,7 @@ export default function FacultyLeaderboard() {
                   </thead>
                   <tbody>
                     {rest.map((student) => (
-                      <tr key={student.rank} className={cn("border-t border-border hover:bg-secondary/50", viewMode === "contest" && student.year && student.rank <= 2 && "bg-accent/10")}>
+                      <tr key={student.rank} className={cn("border-t border-border hover:bg-secondary/50", viewMode === "contest" && student.year && (yearEntryRank.get(student.email) ?? 0) <= 2 && "bg-accent/10")}>
                         <td className="px-4 py-3 font-display font-bold">#{student.rank}</td>
                         <td className="px-4 py-3">
                           <Link to={toFacultyStudentProfilePath(student.email)} className="block hover:text-accent">
@@ -232,7 +248,7 @@ export default function FacultyLeaderboard() {
                             <div className="font-mono-code text-xs text-muted-foreground">{student.uid ?? student.email}</div>
                           </Link>
                         </td>
-                        {viewMode === "contest" && <td className="px-4 py-3">{student.year ? `${student.year} Year` : "-"}</td>}
+                        {viewMode === "contest" && <td className="px-4 py-3">{student.year ? getYearLabel(student.year) : "-"}</td>}
                         <td className="px-4 py-3 text-right font-mono-code">{student.problemsSolved}</td>
                         <td className="px-4 py-3 text-right font-mono-code font-semibold">{student.score}</td>
                         <td className="px-4 py-3 text-right font-mono-code">{student.accuracy}%</td>

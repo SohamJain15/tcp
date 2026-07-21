@@ -13,6 +13,14 @@ export function deriveStudentYearFromSemester(semester: number | null | undefine
   return Math.ceil(normalized / 2) as StudentYear;
 }
 
+export function matchesStudentYearSemester(semester: number | null | undefined, year: StudentYear | undefined): boolean {
+  if (!year) {
+    return true;
+  }
+
+  return deriveStudentYearFromSemester(semester) === year;
+}
+
 export function formatStudentYearLabel(year: StudentYear): string {
   switch (year) {
     case 1:
