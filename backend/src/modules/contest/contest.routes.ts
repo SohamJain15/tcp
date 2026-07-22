@@ -16,6 +16,8 @@ export function createContestRouter(dependencies: ApplicationDependencies): Rout
   router.get("/:contestId", asyncHandler(controller.getContestById));
   router.get("/:contestId/standings", asyncHandler(controller.getStandings));
   router.get("/:contestId/standings/export", requireRole("FACULTY"), asyncHandler(controller.exportStandingsCsv));
+  router.get("/:contestId/registrations", requireRole("FACULTY"), asyncHandler(controller.listRegistrations));
+  router.get("/:contestId/registrations/export", requireRole("FACULTY"), asyncHandler(controller.exportRegistrationsCsv));
   router.get("/:contestId/attempts", requireRole("FACULTY"), asyncHandler(controller.listAttempts));
   router.get("/:contestId/attempts/:attemptId", requireRole("FACULTY"), asyncHandler(controller.getAttemptReview));
   router.get("/:contestId/questions/:questionId", requireRole("STUDENT"), asyncHandler(controller.getQuestionById));
@@ -23,6 +25,9 @@ export function createContestRouter(dependencies: ApplicationDependencies): Rout
   router.post("/", requireRole("FACULTY"), asyncHandler(controller.createContest));
   router.patch("/:contestId", requireRole("FACULTY"), asyncHandler(controller.updateContest));
   router.patch("/:contestId/results", requireRole("FACULTY"), asyncHandler(controller.updateContestResults));
+
+  router.post("/:contestId/registration", requireRole("STUDENT"), asyncHandler(controller.registerForContest));
+  router.delete("/:contestId/registration", requireRole("STUDENT"), asyncHandler(controller.unregisterFromContest));
 
   router.post("/:contestId/attempts", requireRole("STUDENT"), asyncHandler(controller.startAttempt));
   router.post("/:contestId/attempts/submit", requireRole("STUDENT"), asyncHandler(controller.submitAttempt));

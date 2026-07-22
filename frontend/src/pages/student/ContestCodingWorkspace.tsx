@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Editor from "@monaco-editor/react";
@@ -10,11 +10,13 @@ import { contestsApi } from "@/api/services";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ContestLockOverlay } from "@/components/ContestLockOverlay";
+import { ContestTimer } from "@/components/ContestTimer";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { configureCodeEditor, formatCodeInEditor, getMonacoLanguage } from "@/lib/code-editor";
 import { EXECUTABLE_LANGUAGES, toLanguageLabel, toStatusLabel } from "@/api/mappers";
-import type { ContestCodingSubmissionReceipt, ExecutableLanguage, SubmissionResult } from "@/api/types";
+import type { ContestAttempt, ContestCodingSubmissionReceipt, ExecutableLanguage, SubmissionResult } from "@/api/types";
 import { useContestProctoring } from "./useContestProctoring";
 
 const STARTER_TEMPLATES: Partial<Record<ExecutableLanguage, string>> = {
@@ -181,8 +183,6 @@ export default function ContestCodingWorkspace() {
   const pathname = `/student/contests/${id}/questions/${questionId}`;
   const queryClient = useQueryClient();
   const editorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(null);
-  const editorContainerRef = useRef<HTMLDivElement | null>(null);
-  const blockedClipboardToastRef = useRef(0);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["contest-question-detail", id, questionId],
@@ -217,72 +217,28 @@ export default function ContestCodingWorkspace() {
 
   const code = drafts[language] ?? getStarterCode(language);
 
-  const updateAttemptInCache = (nextAttempt: NonNullable<typeof attempt>) => {
-    queryClient.setQueryData(["contest-question-detail", id, questionId], (current: typeof data) =>
-      current ? { ...current, attempt: nextAttempt } : current,
-    );
-    queryClient.setQueryData(["contest-detail", id], (current: { contest: { attempt: typeof attempt } } | undefined) =>
-      current ? { contest: { ...current.contest, attempt: nextAttempt } } : current,
-    );
-  };
+  // Stable identity: the proctoring hook keys its listener set on this callback, so a new
+  // function every render would tear down and re-attach every listener.
+  const updateAttemptInCache = useCallback(
+    (nextAttempt: ContestAttempt) => {
+      queryClient.setQueryData(["contest-question-detail", id, questionId], (current: typeof data) =>
+        current ? { ...current, attempt: nextAttempt } : current,
+      );
+      queryClient.setQueryData(["contest-detail", id], (current: { contest: { attempt: ContestAttempt | null } } | undefined) =>
+        current ? { contest: { ...current.contest, attempt: nextAttempt } } : current,
+      );
+    },
+    [id, questionId, queryClient],
+  );
 
-  useContestProctoring({
+  // Clipboard, right-click and fullscreen are all blocked document-wide by the proctoring hook,
+  // which covers the Monaco editor too.
+  const { isLocked, violationCount, requestFullscreen } = useContestProctoring({
     contestId: id,
     pathname,
     attempt,
     maxViolations: contest?.maxViolations,
     onAttemptUpdate: updateAttemptInCache,
-  });
-
-  useEffect(() => {
-    if (!attemptIsActive) {
-      return;
-    }
-
-    const container = editorContainerRef.current;
-    if (!container) {
-      return;
-    }
-
-    const blockClipboardAction = (event: ClipboardEvent | MouseEvent) => {
-      event.preventDefault();
-      const now = Date.now();
-      if (now - blockedClipboardToastRef.current > 2000) {
-        blockedClipboardToastRef.current = now;
-        toast.info("Copy, cut, paste, and right-click are disabled in the contest workspace.");
-      }
-    };
-
-    container.addEventListener("copy", blockClipboardAction);
-    container.addEventListener("cut", blockClipboardAction);
-    container.addEventListener("paste", blockClipboardAction);
-    container.addEventListener("contextmenu", blockClipboardAction);
-
-    return () => {
-      container.removeEventListener("copy", blockClipboardAction);
-      container.removeEventListener("cut", blockClipboardAction);
-      container.removeEventListener("paste", blockClipboardAction);
-      container.removeEventListener("contextmenu", blockClipboardAction);
-    };
-  }, [attemptIsActive]);
-
-  const startAttemptMutation = useMutation({
-    mutationFn: () => contestsApi.startAttempt(id, pathname),
-    onSuccess: async (response) => {
-      updateAttemptInCache(response.attempt);
-      toast.success("Contest attempt started");
-      if (document.documentElement.requestFullscreen) {
-        try {
-          await document.documentElement.requestFullscreen();
-        } catch {
-          toast.info("Enter fullscreen to avoid violations.");
-        }
-      }
-      await refetch();
-    },
-    onError: (mutationError) => {
-      toast.error((mutationError as Error)?.message || "Failed to start contest");
-    },
   });
 
   const runMutation = useMutation({
@@ -351,7 +307,11 @@ export default function ContestCodingWorkspace() {
     return <Navigate to={`/student/contests/${id}`} replace />;
   }
 
-  const isLocked = Boolean(attempt && attempt.status !== "ACTIVE" && !practiceMode);
+  if (isLocked) {
+    return <ContestLockOverlay onReturnToFullscreen={requestFullscreen} violationCount={violationCount} />;
+  }
+
+  const attemptIsFinalised = Boolean(attempt && attempt.status !== "ACTIVE" && !practiceMode);
   const activeResult = runResult;
   const currentQuestionState = attempt?.questionStates.find((state) => state.questionId === questionId) ?? null;
   const finalSubmissionUsed = Boolean(currentQuestionState?.hasFinalCodingSubmission) && !practiceMode;
@@ -366,13 +326,16 @@ export default function ContestCodingWorkspace() {
           >
             <ChevronLeft className="h-4 w-4" /> Back to contest
           </Link>
-          <div className="text-xs text-muted-foreground">
-            Time limit: {question.timeLimitSeconds}s {"\u2022"} Memory: {question.memoryLimitMb} MB
-            {!practiceMode && (
-              <>
-                {" \u2022 "}Violations: {attempt?.violationCount ?? 0}/{contest.maxViolations}
-              </>
-            )}
+          <div className="flex items-center gap-3">
+            <div className="hidden text-xs text-muted-foreground sm:block">
+              Time limit: {question.timeLimitSeconds}s {"\u2022"} Memory: {question.memoryLimitMb} MB
+              {!practiceMode && (
+                <>
+                  {" \u2022 "}Violations: {attempt?.violationCount ?? 0}
+                </>
+              )}
+            </div>
+            {attemptIsActive && <ContestTimer deadline={attempt?.deadlineAt} className="py-1" />}
           </div>
         </div>
       </div>
@@ -436,13 +399,13 @@ export default function ContestCodingWorkspace() {
                 </div>
 
                 {!attempt && contest.computedStatus === "Live" && (
-                  <Button
-                    className="bg-accent text-accent-foreground hover:bg-accent/90"
-                    onClick={() => startAttemptMutation.mutate()}
-                    disabled={startAttemptMutation.isPending}
-                  >
-                    {startAttemptMutation.isPending ? "Starting..." : "Start Contest"}
-                  </Button>
+                  <Card className="border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-200 shadow-none">
+                    You have not started this contest yet.{" "}
+                    <Link to={`/student/contests/${id}`} className="font-semibold underline">
+                      Go to the contest page
+                    </Link>{" "}
+                    to register and start your attempt.
+                  </Card>
                 )}
 
                 {practiceMode && (
@@ -451,7 +414,7 @@ export default function ContestCodingWorkspace() {
                   </Card>
                 )}
 
-                {isLocked && (
+                {attemptIsFinalised && (
                   <Card className="border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-200 shadow-none">
                     This attempt is {attempt?.status.toLowerCase().replace(/_/g, " ")}. Code execution and submission are now locked.
                   </Card>
@@ -472,7 +435,7 @@ export default function ContestCodingWorkspace() {
 
           <ResizablePanel defaultSize={60} minSize={30} className="h-full flex flex-col overflow-hidden">
             <div className="flex h-full min-h-0 flex-col gap-3">
-              <Card ref={editorContainerRef} className="overflow-hidden shadow-card">
+              <Card className="overflow-hidden shadow-card">
                 <div className="flex items-center justify-between border-b border-border px-3 py-2">
                   <div className="flex items-center gap-2">
                     <ThemedSelect

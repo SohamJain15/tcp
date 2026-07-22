@@ -66,6 +66,35 @@ export function createContestController(contestService: ContestService) {
       res.json({ contest });
     },
 
+    async registerForContest(req: Request, res: Response): Promise<void> {
+      const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
+      const registration = await contestService.registerForContest(req.user!, contestId);
+      res.status(201).json({ registration });
+    },
+
+    async unregisterFromContest(req: Request, res: Response): Promise<void> {
+      const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
+      await contestService.unregisterFromContest(req.user!, contestId);
+      res.status(204).send();
+    },
+
+    async listRegistrations(req: Request, res: Response): Promise<void> {
+      const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
+      const registrations = await contestService.listRegistrations(req.user!, contestId);
+      res.json({ items: registrations });
+    },
+
+    async exportRegistrationsCsv(req: Request, res: Response): Promise<void> {
+      const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
+      const csv = await contestService.exportRegistrationsCsv(req.user!, contestId);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=\"contest-${contestId}-registrations.csv\"`,
+      );
+      res.send(csv);
+    },
+
     async startAttempt(req: Request, res: Response): Promise<void> {
       const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
       const attempt = await contestService.startAttempt(req.user!, contestId);

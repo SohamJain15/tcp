@@ -1,4 +1,4 @@
-import { ArrowLeft, Download, Eye } from "lucide-react";
+import { ArrowLeft, Download, Eye, Users } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useState } from "react";
@@ -47,6 +47,12 @@ export default function FacultyContestDetail() {
     enabled: Boolean(id),
   });
 
+  const registrationsQuery = useQuery({
+    queryKey: ["faculty-contest-registrations", id],
+    queryFn: () => contestsApi.listRegistrations(id, pathname),
+    enabled: Boolean(id),
+  });
+
   const reviewQuery = useQuery({
     queryKey: ["faculty-contest-attempt-review", id, selectedAttemptId],
     queryFn: () => contestsApi.getAttemptReview(id, selectedAttemptId!, pathname),
@@ -75,6 +81,17 @@ export default function FacultyContestDetail() {
     },
   });
 
+  const exportRegistrationsMutation = useMutation({
+    mutationFn: () => contestsApi.exportRegistrationsCsv(id, pathname),
+    onSuccess: (csv) => {
+      downloadCsv(`contest-${id}-registrations.csv`, csv);
+      toast.success("Registrations CSV downloaded");
+    },
+    onError: (mutationError) => {
+      toast.error((mutationError as Error)?.message || "Failed to export registrations");
+    },
+  });
+
   if (!id) {
     return <Navigate to="/faculty/contests" replace />;
   }
@@ -98,8 +115,9 @@ export default function FacultyContestDetail() {
   const contest = contestQuery.data.contest;
   const standings = standingsQuery.data?.items ?? [];
   const attempts = attemptsQuery.data?.items ?? [];
+  const registrations = registrationsQuery.data?.items ?? [];
   const review = reviewQuery.data?.review ?? null;
-  const contestDeadline = new Date(new Date(contest.startAt).getTime() + contest.durationMinutes * 60_000);
+  const contestDeadline = new Date(contest.endAt);
   const contestEnded = Date.now() >= contestDeadline.getTime();
 
   return (
@@ -147,23 +165,91 @@ export default function FacultyContestDetail() {
           </Card>
         )}
 
-        <Card className="grid gap-4 border border-border bg-background p-5 shadow-none md:grid-cols-4">
+        <Card className="grid gap-4 border border-border bg-background p-5 shadow-none md:grid-cols-3 lg:grid-cols-6">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Start</div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Window Opens</div>
             <div className="mt-1 text-sm">{formatDateTime(contest.startAt)}</div>
           </div>
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Deadline</div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Window Closes</div>
             <div className="mt-1 text-sm">{formatDateTime(contestDeadline)}</div>
           </div>
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Duration</div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Attempt Duration</div>
             <div className="mt-1 text-sm">{contest.durationMinutes} mins</div>
           </div>
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Max Violations</div>
-            <div className="mt-1 text-sm">{contest.maxViolations}</div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Registration</div>
+            <div className="mt-1 text-sm">
+              {formatDateTime(contest.registrationOpenAt)} — {formatDateTime(contest.registrationCloseAt)}
+            </div>
           </div>
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Department</div>
+            <div className="mt-1 text-sm">{contest.targetDepartment ?? "All Departments"}</div>
+          </div>
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Warning Threshold</div>
+            <div className="mt-1 text-sm">{contest.maxViolations} screenshots</div>
+          </div>
+        </Card>
+
+        <Card className="border border-border bg-background p-5 shadow-none">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-accent" />
+              <h2 className="font-display text-xl font-semibold">Registrations</h2>
+              <Badge variant="outline">{registrations.length}</Badge>
+              <Badge variant="outline">{contest.registrationStatus === "OPEN" ? "Open" : contest.registrationStatus === "NOT_OPEN" ? "Not Open Yet" : "Closed"}</Badge>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => exportRegistrationsMutation.mutate()}
+              disabled={exportRegistrationsMutation.isPending || registrations.length === 0}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              {exportRegistrationsMutation.isPending ? "Exporting..." : "Download CSV"}
+            </Button>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Student</TableHead>
+                <TableHead>Department</TableHead>
+                <TableHead>Year</TableHead>
+                <TableHead>Registered</TableHead>
+                <TableHead className="text-right">Attempt</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {registrations.map((registration) => (
+                <TableRow key={registration.id}>
+                  <TableCell>
+                    <Link to={toFacultyStudentProfilePath(registration.userEmail)} className="block hover:text-accent">
+                      <div className="font-medium">{registration.userName ?? registration.userEmail}</div>
+                      <div className="text-xs text-muted-foreground">{registration.userUid ?? registration.userEmail}</div>
+                    </Link>
+                  </TableCell>
+                  <TableCell className="text-sm">{registration.userDepartment ?? "-"}</TableCell>
+                  <TableCell className="text-sm">{registration.year ? `Year ${registration.year}` : "-"}</TableCell>
+                  <TableCell className="text-sm">{formatDateTime(registration.registeredAt)}</TableCell>
+                  <TableCell className="text-right">
+                    <Badge variant={registration.hasAttempted ? "default" : "outline"}>
+                      {registration.hasAttempted ? registration.attemptStatus.replace(/_/g, " ") : "Not Started"}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {registrations.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                    No students have registered yet.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </Card>
 
         <Card className="border border-border bg-background p-5 shadow-none">

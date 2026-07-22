@@ -1,18 +1,30 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { AppLayout } from "@/components/AppLayout";
 import { contestsApi } from "@/api/services";
+import { DEPARTMENTS, type Department } from "@/api/types";
 import { formatDateTime } from "@/lib/datetime";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { ThemedSelect } from "@/components/ThemedSelect";
+
+type DepartmentFilter = Department | "All";
 
 export default function FacultyContests() {
   const pathname = "/faculty/contests";
+  const [departmentFilter, setDepartmentFilter] = useState<DepartmentFilter>("All");
+
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["faculty-contests"],
-    queryFn: () => contestsApi.list({ pageSize: 100 }, pathname),
+    queryKey: ["faculty-contests", departmentFilter],
+    queryFn: () =>
+      contestsApi.list(
+        { pageSize: 100, ...(departmentFilter === "All" ? {} : { department: departmentFilter }) },
+        pathname,
+      ),
   });
 
   const contests = data?.items ?? [];
@@ -30,6 +42,21 @@ export default function FacultyContests() {
           </Link>
         </div>
 
+        <Card className="grid gap-4 p-4 shadow-card md:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor="contest-department-filter">Department</Label>
+            <ThemedSelect
+              id="contest-department-filter"
+              value={departmentFilter}
+              onValueChange={(value) => setDepartmentFilter(value as DepartmentFilter)}
+              options={[
+                { value: "All", label: "All Departments" },
+                ...DEPARTMENTS.map((department) => ({ value: department, label: department })),
+              ]}
+            />
+          </div>
+        </Card>
+
         {isLoading && <Card className="p-6 text-center text-muted-foreground">Loading contests...</Card>}
         {isError && <Card className="p-6 text-center text-destructive">{(error as Error)?.message || "Failed to load contests"}</Card>}
 
@@ -37,7 +64,9 @@ export default function FacultyContests() {
           <div className="grid gap-4">
             {contests.length === 0 && (
               <Card className="border border-border bg-background p-5 text-sm text-muted-foreground shadow-none">
-                No contests created yet.
+                {departmentFilter === "All"
+                  ? "No contests created yet."
+                  : `No contests targeted at ${departmentFilter}.`}
               </Card>
             )}
 
@@ -52,12 +81,15 @@ export default function FacultyContests() {
                       <Badge variant={contest.resultsPublished ? "default" : "outline"}>
                         {contest.resultsPublished ? "Results Published" : "Results Hidden"}
                       </Badge>
+                      <Badge variant="outline" className="max-w-full truncate">
+                        {contest.targetDepartment ?? "All Departments"}
+                      </Badge>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Start: {formatDateTime(contest.startAt)}
+                      Window: {formatDateTime(contest.startAt)} — {formatDateTime(contest.endAt)}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Duration: {contest.durationMinutes} mins • Participants: {contest.participantsCount}
+                      Duration: {contest.durationMinutes} mins • Registered: {contest.registeredCount} • Attempted: {contest.participantsCount}
                     </p>
                   </div>
 

@@ -14,6 +14,7 @@ interface ThemedSelectProps {
   id?: string;
   disabled?: boolean;
   triggerClassName?: string;
+  contentClassName?: string;
 }
 
 // The platform's single dropdown style (mirrors the student Leaderboard filter):
@@ -26,6 +27,7 @@ export function ThemedSelect({
   id,
   disabled,
   triggerClassName,
+  contentClassName,
 }: ThemedSelectProps) {
   return (
     <Select value={value} onValueChange={onValueChange} disabled={disabled}>
@@ -38,7 +40,14 @@ export function ThemedSelect({
       >
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
-      <SelectContent className="w-[var(--radix-select-trigger-width)] rounded-none border-border bg-card p-0 text-card-foreground shadow-elevated">
+      {/* Grow past the trigger when an option needs it (TCET department names run to 70+ chars),
+          but never past the viewport. */}
+      <SelectContent
+        className={cn(
+          "max-h-[22rem] w-auto min-w-[var(--radix-select-trigger-width)] max-w-[min(90vw,34rem)] rounded-none border-border bg-card p-0 text-card-foreground shadow-elevated",
+          contentClassName,
+        )}
+      >
         {options.map((option) => (
           <SelectItem key={option.value} value={option.value}>
             {option.label}

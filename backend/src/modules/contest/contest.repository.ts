@@ -16,6 +16,7 @@ import type {
   ContestQuestion,
   ContestQuestionAttemptState,
   ContestRecord,
+  ContestRegistrationRecord,
   ContestTestCase,
 } from "./contest.model";
 
@@ -23,6 +24,13 @@ export interface ContestRepository {
   getById(contestId: string): Promise<ContestRecord | null>;
   save(contest: ContestRecord): Promise<ContestRecord>;
   list(): Promise<ContestRecord[]>;
+}
+
+export interface ContestRegistrationRepository {
+  getByContestAndUser(contestId: string, userEmail: string): Promise<ContestRegistrationRecord | null>;
+  listByContest(contestId: string): Promise<ContestRegistrationRecord[]>;
+  save(registration: ContestRegistrationRecord): Promise<ContestRegistrationRecord>;
+  delete(contestId: string, userEmail: string): Promise<void>;
 }
 
 export interface ContestAttemptRepository {
@@ -128,11 +136,19 @@ function mapQuestionState(value: unknown): ContestQuestionAttemptState | null {
 function mapContestRecord(contestId: string, data: Record<string, unknown>): ContestRecord {
   const createdAt = toDate(data.createdAt) ?? new Date();
   const updatedAt = toDate(data.updatedAt) ?? createdAt;
+  const startAt = toDate(data.startAt) ?? createdAt;
+  const durationMinutes = normalizeNumber(data.durationMinutes ?? data.duration, 60);
+  // Contests authored before the start/end window existed only had a duration: their window is
+  // exactly one duration long and registration was implicitly open until the contest started.
+  const endAt = toDate(data.endAt) ?? new Date(startAt.getTime() + durationMinutes * 60_000);
   return {
     id: typeof data.id === "string" ? data.id : contestId,
     title: typeof data.title === "string" ? data.title : contestId,
-    startAt: toDate(data.startAt) ?? createdAt,
-    durationMinutes: normalizeNumber(data.durationMinutes ?? data.duration, 60),
+    startAt,
+    endAt,
+    durationMinutes,
+    registrationOpenAt: toDate(data.registrationOpenAt) ?? createdAt,
+    registrationCloseAt: toDate(data.registrationCloseAt) ?? startAt,
     type: data.type === "Practice" ? "Practice" : "Rated",
     lifecycleState: "Published",
     resultsPublished: Boolean(data.resultsPublished),
@@ -171,10 +187,29 @@ function mapContestAttemptRecord(attemptId: string, data: Record<string, unknown
     timeTakenMs: data.timeTakenMs === null || data.timeTakenMs === undefined ? null : normalizeNumber(data.timeTakenMs, 0),
     questionStates: Array.isArray(data.questionStates) ? data.questionStates.map(mapQuestionState).filter((value): value is ContestQuestionAttemptState => Boolean(value)) : [],
     startedAt,
+    // Attempts predating per-attempt deadlines fall back to the contest duration from their start.
+    deadlineAt:
+      toDate(data.deadlineAt) ??
+      new Date(startedAt.getTime() + normalizeNumber(data.durationMinutes, 60) * 60_000),
     updatedAt,
     submittedAt: toDate(data.submittedAt),
     autoSubmittedAt: toDate(data.autoSubmittedAt),
     lastSolvedAt: toDate(data.lastSolvedAt),
+  };
+}
+
+function mapContestRegistrationRecord(
+  registrationId: string,
+  data: Record<string, unknown>,
+): ContestRegistrationRecord {
+  return {
+    id: typeof data.id === "string" ? data.id : registrationId,
+    contestId: typeof data.contestId === "string" ? data.contestId : "",
+    userEmail: typeof data.userEmail === "string" ? data.userEmail : "",
+    userName: typeof data.userName === "string" ? data.userName : null,
+    userUid: typeof data.userUid === "string" ? data.userUid : null,
+    userDepartment: normalizeDepartment(data.userDepartment),
+    registeredAt: toDate(data.registeredAt) ?? new Date(),
   };
 }
 
@@ -207,6 +242,32 @@ export class FirestoreContestRepository implements ContestRepository {
   async list(): Promise<ContestRecord[]> {
     const documents = await (await getCollection("contests")).find({}).toArray();
     return documents.map((document) => mapContestRecord(String((document as Record<string, unknown>).id ?? ""), document as Record<string, unknown>));
+  }
+}
+
+export class FirestoreContestRegistrationRepository implements ContestRegistrationRepository {
+  async getByContestAndUser(contestId: string, userEmail: string): Promise<ContestRegistrationRecord | null> {
+    const document = await (await getCollection("contest_registrations")).findOne({ contestId, userEmail });
+    return document
+      ? mapContestRegistrationRecord(String((document as Record<string, unknown>).id ?? ""), document as Record<string, unknown>)
+      : null;
+  }
+  async listByContest(contestId: string): Promise<ContestRegistrationRecord[]> {
+    const documents = await (await getCollection("contest_registrations")).find({ contestId }).toArray();
+    return documents.map((document) =>
+      mapContestRegistrationRecord(String((document as Record<string, unknown>).id ?? ""), document as Record<string, unknown>),
+    );
+  }
+  async save(registration: ContestRegistrationRecord): Promise<ContestRegistrationRecord> {
+    await (await getCollection("contest_registrations")).updateOne(
+      { contestId: registration.contestId, userEmail: registration.userEmail },
+      { $set: registration },
+      { upsert: true },
+    );
+    return registration;
+  }
+  async delete(contestId: string, userEmail: string): Promise<void> {
+    await (await getCollection("contest_registrations")).deleteOne({ contestId, userEmail });
   }
 }
 

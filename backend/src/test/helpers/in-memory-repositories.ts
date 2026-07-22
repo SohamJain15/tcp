@@ -4,10 +4,12 @@ import type {
   ContestAttemptRecord,
   ContestProctoringEventRecord,
   ContestRecord,
+  ContestRegistrationRecord,
 } from "../../modules/contest/contest.model";
 import type {
   ContestAttemptRepository,
   ContestProctoringRepository,
+  ContestRegistrationRepository,
   ContestRepository,
 } from "../../modules/contest/contest.repository";
 import type { ProblemRecord } from "../../modules/problem/problem.model";
@@ -79,8 +81,19 @@ function cloneContest(contest: ContestRecord): ContestRecord {
         options: [...question.options],
       };
     }),
+    startAt: new Date(contest.startAt.getTime()),
+    endAt: new Date(contest.endAt.getTime()),
+    registrationOpenAt: new Date(contest.registrationOpenAt.getTime()),
+    registrationCloseAt: new Date(contest.registrationCloseAt.getTime()),
     createdAt: new Date(contest.createdAt.getTime()),
     updatedAt: new Date(contest.updatedAt.getTime()),
+  };
+}
+
+function cloneContestRegistration(registration: ContestRegistrationRecord): ContestRegistrationRecord {
+  return {
+    ...registration,
+    registeredAt: new Date(registration.registeredAt.getTime()),
   };
 }
 
@@ -92,6 +105,7 @@ function cloneContestAttempt(attempt: ContestAttemptRecord): ContestAttemptRecor
       solvedAt: cloneDate(state.solvedAt),
     })),
     startedAt: new Date(attempt.startedAt.getTime()),
+    deadlineAt: new Date(attempt.deadlineAt.getTime()),
     updatedAt: new Date(attempt.updatedAt.getTime()),
     submittedAt: cloneDate(attempt.submittedAt),
     autoSubmittedAt: cloneDate(attempt.autoSubmittedAt),
@@ -265,6 +279,42 @@ export class InMemoryContestRepository implements ContestRepository {
 
   async list(): Promise<ContestRecord[]> {
     return Array.from(this.contests.values()).map(cloneContest);
+  }
+}
+
+export class InMemoryContestRegistrationRepository implements ContestRegistrationRepository {
+  private readonly registrations = new Map<string, ContestRegistrationRecord>();
+
+  constructor(seed: ContestRegistrationRecord[] = []) {
+    seed.forEach((registration) =>
+      this.registrations.set(
+        `${registration.contestId}:${registration.userEmail}`,
+        cloneContestRegistration(registration),
+      ),
+    );
+  }
+
+  async getByContestAndUser(contestId: string, userEmail: string): Promise<ContestRegistrationRecord | null> {
+    const registration = this.registrations.get(`${contestId}:${userEmail}`);
+    return registration ? cloneContestRegistration(registration) : null;
+  }
+
+  async listByContest(contestId: string): Promise<ContestRegistrationRecord[]> {
+    return Array.from(this.registrations.values())
+      .filter((registration) => registration.contestId === contestId)
+      .map(cloneContestRegistration);
+  }
+
+  async save(registration: ContestRegistrationRecord): Promise<ContestRegistrationRecord> {
+    this.registrations.set(
+      `${registration.contestId}:${registration.userEmail}`,
+      cloneContestRegistration(registration),
+    );
+    return cloneContestRegistration(registration);
+  }
+
+  async delete(contestId: string, userEmail: string): Promise<void> {
+    this.registrations.delete(`${contestId}:${userEmail}`);
   }
 }
 

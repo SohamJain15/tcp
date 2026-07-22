@@ -319,6 +319,7 @@ export type ContestStudentListStatus = "Upcoming" | "Live" | "Past";
 export type ContestQuestionType = "MCQ" | "MSQ" | "Coding";
 export type ContestAttemptStatus = "NOT_STARTED" | "ACTIVE" | "SUBMITTED" | "AUTO_SUBMITTED" | "DISQUALIFIED";
 export type ContestStudentAttemptStatus = ContestAttemptStatus | "NOT_ATTEMPTED";
+export type ContestRegistrationStatus = "NOT_OPEN" | "OPEN" | "CLOSED";
 
 export interface ContestListItem {
   id: string;
@@ -332,9 +333,45 @@ export interface ContestListItem {
   hasAttempted: boolean;
   targetDepartment: Department | null;
   startAt: string;
+  endAt: string;
   durationMinutes: number;
+  registrationOpenAt: string;
+  registrationCloseAt: string;
+  registrationStatus: ContestRegistrationStatus;
+  isRegistered: boolean;
+  registeredCount: number;
   participantsCount: number;
   createdBy: string;
+}
+
+export interface ContestRegistration {
+  id: string;
+  contestId: string;
+  userEmail: string;
+  userName: string | null;
+  userUid: string | null;
+  userDepartment: Department | null;
+  registeredAt: string;
+}
+
+export interface ContestRegistrationItem {
+  id: string;
+  userEmail: string;
+  userName: string | null;
+  userUid: string | null;
+  userDepartment: Department | null;
+  year: 1 | 2 | 3 | 4 | null;
+  registeredAt: string;
+  hasAttempted: boolean;
+  attemptStatus: ContestStudentAttemptStatus;
+}
+
+export interface ContestRegistrationEnvelope {
+  registration: ContestRegistration;
+}
+
+export interface ContestRegistrationsEnvelope {
+  items: ContestRegistrationItem[];
 }
 
 export interface ContestQuestionBase {
@@ -408,6 +445,7 @@ export interface ContestAttempt {
   timeTakenMs: number | null;
   questionStates: ContestQuestionAttemptState[];
   startedAt: string;
+  deadlineAt: string;
   updatedAt: string;
   submittedAt: string | null;
   autoSubmittedAt: string | null;
@@ -496,7 +534,13 @@ export interface StudentContestDetail {
   computedStatus: ContestStatus;
   targetDepartment: Department | null;
   startAt: string;
+  endAt: string;
   durationMinutes: number;
+  registrationOpenAt: string;
+  registrationCloseAt: string;
+  registrationStatus: ContestRegistrationStatus;
+  isRegistered: boolean;
+  registeredCount: number;
   maxViolations: number;
   studentListStatus: ContestStudentListStatus;
   attemptStatus: ContestStudentAttemptStatus;
@@ -512,9 +556,15 @@ export interface FacultyContestDetail {
   type: ContestType;
   lifecycleState: ContestLifecycleState;
   resultsPublished: boolean;
+  computedStatus: ContestStatus;
   targetDepartment: Department | null;
   startAt: string;
+  endAt: string;
   durationMinutes: number;
+  registrationOpenAt: string;
+  registrationCloseAt: string;
+  registrationStatus: ContestRegistrationStatus;
+  registeredCount: number;
   maxViolations: number;
   questions: ContestQuestion[];
   createdBy: string;
@@ -617,6 +667,7 @@ export interface StudentContestQuestionEnvelope {
     type: ContestType;
     computedStatus: ContestStatus;
     startAt: string;
+    endAt: string;
     durationMinutes: number;
     maxViolations: number;
     resultsPublished: boolean;
@@ -695,7 +746,10 @@ export interface FacultyContestAttemptReviewEnvelope {
 export interface CreateContestPayload {
   title: string;
   startTime: string;
+  endTime: string;
   duration: number;
+  registrationOpenAt?: string;
+  registrationCloseAt?: string;
   type: ContestType;
   lifecycleState?: ContestLifecycleState;
   targetDepartment?: Department | null;

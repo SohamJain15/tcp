@@ -6,9 +6,11 @@ import { createRequireCompleteProfile } from "../middleware/require-complete-pro
 import {
   FirestoreContestAttemptRepository,
   FirestoreContestProctoringRepository,
+  FirestoreContestRegistrationRepository,
   FirestoreContestRepository,
   type ContestAttemptRepository,
   type ContestProctoringRepository,
+  type ContestRegistrationRepository,
   type ContestRepository,
 } from "../modules/contest/contest.repository";
 import { createContestService, type ContestService } from "../modules/contest/contest.service";
@@ -40,6 +42,7 @@ export interface RepositoryBundle {
   contestRepository: ContestRepository;
   contestAttemptRepository: ContestAttemptRepository;
   contestProctoringRepository: ContestProctoringRepository;
+  contestRegistrationRepository: ContestRegistrationRepository;
 }
 
 export interface ServiceBundle {
@@ -76,6 +79,8 @@ function createRepositories(overrides?: Partial<RepositoryBundle>): RepositoryBu
       overrides?.contestAttemptRepository ?? new FirestoreContestAttemptRepository(),
     contestProctoringRepository:
       overrides?.contestProctoringRepository ?? new FirestoreContestProctoringRepository(),
+    contestRegistrationRepository:
+      overrides?.contestRegistrationRepository ?? new FirestoreContestRegistrationRepository(),
   };
 }
 
@@ -119,6 +124,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     contestRepository: repositories.contestRepository,
     contestAttemptRepository: repositories.contestAttemptRepository,
     contestProctoringRepository: repositories.contestProctoringRepository,
+    contestRegistrationRepository: repositories.contestRegistrationRepository,
     submissionRepository: repositories.submissionRepository,
     submissionQueue,
     userRepository: repositories.userRepository,

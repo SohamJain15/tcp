@@ -17,7 +17,9 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import {
   toProblemEditorDataFromJsonDraft,
   type JsonImportFieldError,
@@ -290,18 +292,7 @@ export default function CreateProblem() {
 
   const copyJsonStructure = async () => {
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(exampleJson);
-      } else {
-        const clipboardArea = document.createElement("textarea");
-        clipboardArea.value = exampleJson;
-        clipboardArea.style.position = "fixed";
-        clipboardArea.style.opacity = "0";
-        document.body.appendChild(clipboardArea);
-        clipboardArea.select();
-        document.execCommand("copy");
-        document.body.removeChild(clipboardArea);
-      }
+      await copyTextToClipboard(exampleJson);
       setJsonStructureCopied(true);
       toast.success("Ideal JSON structure copied");
       window.setTimeout(() => setJsonStructureCopied(false), 1600);
@@ -329,13 +320,49 @@ export default function CreateProblem() {
   return (
     <AppLayout>
       <div className="container flex min-h-[calc(100vh-5rem)] max-w-[1680px] flex-col gap-6 py-6">
+        <div>
+          <h1 className="font-display text-3xl font-bold">Create Problems</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Import a batch from JSON, or author a single problem with the form.
+          </p>
+        </div>
+
+        <Tabs defaultValue="json" className="flex flex-1 flex-col">
+          <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsTrigger value="form">Form Builder</TabsTrigger>
+            <TabsTrigger value="json">
+              <FileJson className="mr-1.5 h-3.5 w-3.5" /> Import JSON
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="form" className="mt-5 flex-1">
+            <Card className="p-6 shadow-card">
+              <ProblemEditorForm
+                heading="Create New Problem"
+                description="Design a meaningful challenge for your students."
+                submitLabel="Publish"
+                submitMessage="Problem published!"
+                draftMessage="Draft saved"
+                onSubmit={async (data) => {
+                  await publishMutation.mutateAsync(data);
+                }}
+                onSaveDraft={async (data) => {
+                  await draftMutation.mutateAsync(data);
+                }}
+                isSubmitting={publishMutation.isPending}
+                isSavingDraft={draftMutation.isPending}
+              />
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="json" className="mt-5 flex flex-1 flex-col gap-6">
         <section className="grid flex-1 gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
           <Card className="flex min-h-[640px] flex-col gap-5 p-5 shadow-card">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h1 className="flex items-center gap-2 font-display text-2xl font-bold">
+                <h2 className="flex items-center gap-2 font-display text-2xl font-bold">
                   <FileJson className="h-5 w-5" /> Import Problems JSON
-                </h1>
+                </h2>
                 <p className="mt-1 text-sm text-muted-foreground">Paste one problem object or an array of problems.</p>
               </div>
               <Button type="button" variant="outline" onClick={copyJsonStructure}>
@@ -463,25 +490,8 @@ export default function CreateProblem() {
             </div>
           </section>
         )}
-
-        <Accordion type="single" collapsible className="rounded-md border border-border px-5">
-          <AccordionItem value="manual-create" className="border-b-0">
-            <AccordionTrigger className="font-display text-xl font-bold">Create One Problem Manually</AccordionTrigger>
-            <AccordionContent>
-              <ProblemEditorForm
-                heading="Create New Problem"
-                description="Design a meaningful challenge for your students."
-                submitLabel="Publish"
-                submitMessage="Problem published!"
-                draftMessage="Draft saved"
-                onSubmit={async (data) => publishMutation.mutateAsync(data)}
-                onSaveDraft={async (data) => draftMutation.mutateAsync(data)}
-                isSubmitting={publishMutation.isPending}
-                isSavingDraft={draftMutation.isPending}
-              />
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
+          </TabsContent>
+        </Tabs>
       </div>
 
       <ProblemDetailDialog draft={selectedDraft} open={Boolean(selectedDraft)} onOpenChange={(open) => !open && setSelectedDraftId(null)} />

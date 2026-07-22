@@ -22,6 +22,8 @@ import type {
   ContestQuestionAttemptState,
   ContestQuestionReportItem,
   ContestRecord,
+  ContestRegistrationItem,
+  ContestRegistrationRecord,
   ContestStandingItem,
   FacultyContestAttemptQuestionReview,
   FacultyContestAttemptReview,
@@ -32,11 +34,14 @@ import type {
 } from "./contest.model";
 import {
   calculateAttemptScore,
+  computeAttemptDeadline,
   computeAttemptTimeTakenMs,
   computeContestStatus,
+  computeRegistrationStatus,
   computeViolationPenaltyPoints,
   toContestAttemptSummary,
   toContestListItem,
+  toContestRegistrationItem,
   toContestStandingItem,
   toFacultyContestDetailResponse,
   toStudentContestDetailResponse,
@@ -45,6 +50,7 @@ import {
 import type {
   ContestAttemptRepository,
   ContestProctoringRepository,
+  ContestRegistrationRepository,
   ContestRepository,
 } from "./contest.repository";
 import {
@@ -73,6 +79,10 @@ export interface ContestService {
   createContest(user: AuthenticatedUser, input: ContestCreateInput): Promise<FacultyContestDetailResponse>;
   updateContest(user: AuthenticatedUser, contestId: string, input: ContestUpdateInput): Promise<FacultyContestDetailResponse>;
   updateContestResults(user: AuthenticatedUser, contestId: string, input: ContestResultsInput): Promise<FacultyContestDetailResponse>;
+  registerForContest(user: AuthenticatedUser, contestId: string): Promise<ContestRegistrationRecord>;
+  unregisterFromContest(user: AuthenticatedUser, contestId: string): Promise<void>;
+  listRegistrations(user: AuthenticatedUser, contestId: string): Promise<ContestRegistrationItem[]>;
+  exportRegistrationsCsv(user: AuthenticatedUser, contestId: string): Promise<string>;
   startAttempt(user: AuthenticatedUser, contestId: string): Promise<ContestAttemptRecord>;
   submitAttempt(user: AuthenticatedUser, contestId: string): Promise<ContestAttemptRecord>;
   recordProctorEvent(user: AuthenticatedUser, contestId: string, type: ContestProctoringEventRecord["type"], details: string | null): Promise<ContestAttemptRecord>;
@@ -111,6 +121,7 @@ interface ContestServiceDependencies {
   contestRepository: ContestRepository;
   contestAttemptRepository: ContestAttemptRepository;
   contestProctoringRepository: ContestProctoringRepository;
+  contestRegistrationRepository: ContestRegistrationRepository;
   submissionRepository: SubmissionRepository;
   submissionQueue: SubmissionQueue;
   userRepository: UserRepository;
@@ -126,12 +137,28 @@ function ensureFacultyOwnsContest(user: AuthenticatedUser, contest: ContestRecor
   return contest;
 }
 
-function ensureStudentCanAccessContest(user: AuthenticatedUser, contest: ContestRecord | null): ContestRecord {
+/**
+ * The student's department is whatever they saved during profile completion, so it has to be read
+ * from the persisted user record. The authenticated request identity carries no department, so
+ * relying on it silently hid every department-targeted contest from every student.
+ */
+async function resolveStudentDepartment(
+  user: AuthenticatedUser,
+  dependencies: ContestServiceDependencies,
+): Promise<Department | null> {
+  const userRecord = await dependencies.userRepository.getByEmail(user.email);
+  return userRecord?.department ?? normalizeDepartment(user.department) ?? null;
+}
+
+function ensureStudentCanAccessContest(
+  contest: ContestRecord | null,
+  studentDepartment: Department | null,
+): ContestRecord {
   if (!contest) {
     throw new AppError(404, "Contest not found");
   }
 
-  if (contest.targetDepartment && contest.targetDepartment !== normalizeDepartment(user.department)) {
+  if (contest.targetDepartment && contest.targetDepartment !== studentDepartment) {
     throw new AppError(403, "You are not eligible for this contest");
   }
 
@@ -211,19 +238,51 @@ function ensureContestIsLive(contest: ContestRecord, now: Date): void {
   }
 }
 
+function ensureRegistrationOpen(contest: ContestRecord, now: Date): void {
+  const status = computeRegistrationStatus(contest, now);
+  if (status === "NOT_OPEN") {
+    throw new AppError(409, "Registration for this contest has not opened yet");
+  }
+
+  if (status === "CLOSED") {
+    throw new AppError(409, "Registration for this contest is closed");
+  }
+}
+
+function ensureStudentIsRegistered(registration: ContestRegistrationRecord | null): void {
+  if (!registration) {
+    throw new AppError(403, "Register for this contest before attempting it");
+  }
+}
+
+function ensureCoherentContestWindow(contest: ContestRecord): void {
+  if (contest.endAt.getTime() <= contest.startAt.getTime()) {
+    throw new AppError(400, "End time must be after the start time");
+  }
+
+  const windowMinutes = (contest.endAt.getTime() - contest.startAt.getTime()) / 60_000;
+  if (contest.durationMinutes > windowMinutes) {
+    throw new AppError(400, `Duration cannot exceed the contest window of ${Math.floor(windowMinutes)} minutes`);
+  }
+
+  if (contest.registrationCloseAt.getTime() > contest.endAt.getTime()) {
+    throw new AppError(400, "Registration cannot close after the contest ends");
+  }
+}
+
 function ensureContestHasEnded(contest: ContestRecord, now: Date): void {
   if (computeContestStatus(contest, now) !== "Ended") {
     throw new AppError(409, "Contest has not ended yet");
   }
 }
 
+/**
+ * Fullscreen exits and tab switches are now blocked client-side rather than punished, so they are
+ * logged for faculty review without costing the student anything. A screenshot is the one action
+ * the browser cannot prevent, so it stays a scored violation.
+ */
 function isViolationEvent(type: ContestProctoringEventRecord["type"]): boolean {
-  return (
-    type === "TAB_SWITCH" ||
-    type === "VISIBILITY_LOSS" ||
-    type === "FULLSCREEN_EXIT" ||
-    type === "PRINT_SCREEN"
-  );
+  return type === "PRINT_SCREEN";
 }
 
 function ensureStudentCanViewStandings(contest: ContestRecord): void {
@@ -461,6 +520,62 @@ async function buildFacultyAttemptReview(
   };
 }
 
+/**
+ * Returns the caller's attempt only while it is both ACTIVE and inside its own deadline. An attempt
+ * whose deadline has passed is finalised in place (as of the deadline, not "now") so an abandoned
+ * tab can never keep scoring after the student's time ran out.
+ */
+async function resolveAttemptWithinDeadline(
+  contestId: string,
+  userEmail: string,
+  now: Date,
+  dependencies: ContestServiceDependencies,
+): Promise<ContestAttemptRecord> {
+  const attempt = ensureActiveAttempt(
+    await dependencies.contestAttemptRepository.getByContestAndUser(contestId, userEmail),
+  );
+
+  if (now.getTime() <= attempt.deadlineAt.getTime()) {
+    return attempt;
+  }
+
+  await dependencies.contestAttemptRepository.save(
+    withDerivedAttemptFields({
+      ...attempt,
+      status: "AUTO_SUBMITTED",
+      autoSubmittedAt: attempt.deadlineAt,
+      submittedAt: attempt.submittedAt ?? attempt.deadlineAt,
+      updatedAt: now,
+    }),
+  );
+
+  throw new AppError(409, "Your contest time is over and the attempt was submitted automatically");
+}
+
+async function buildRegistrationItems(
+  contestId: string,
+  dependencies: ContestServiceDependencies,
+): Promise<ContestRegistrationItem[]> {
+  const [registrations, attempts] = await Promise.all([
+    dependencies.contestRegistrationRepository.listByContest(contestId),
+    dependencies.contestAttemptRepository.listByContest(contestId),
+  ]);
+  const attemptsByEmail = new Map(attempts.map((attempt) => [attempt.userEmail, attempt]));
+
+  const items = await Promise.all(
+    registrations.map(async (registration) => {
+      const userRecord = await dependencies.userRepository.getByEmail(registration.userEmail);
+      return toContestRegistrationItem(
+        registration,
+        attemptsByEmail.get(registration.userEmail) ?? null,
+        userRecord?.semester ? (Math.ceil(userRecord.semester / 2) as StudentYear) : null,
+      );
+    }),
+  );
+
+  return items.sort((left, right) => left.registeredAt.localeCompare(right.registeredAt));
+}
+
 function toCsvValue(value: string | number | null): string {
   const normalized = value === null ? "" : String(value);
   if (normalized.includes(",") || normalized.includes("\"") || normalized.includes("\n")) {
@@ -474,29 +589,41 @@ export function createContestService(dependencies: ContestServiceDependencies): 
   return {
     async listContests(user, query) {
       const contests = await dependencies.contestRepository.list();
-      const attemptsByContestEntries = await Promise.all(
-        contests.map(async (contest) => [
-          contest.id,
-          await dependencies.contestAttemptRepository.listByContest(contest.id),
-        ] as const),
+      const perContestEntries = await Promise.all(
+        contests.map(async (contest) => {
+          const [attempts, registrations] = await Promise.all([
+            dependencies.contestAttemptRepository.listByContest(contest.id),
+            dependencies.contestRegistrationRepository.listByContest(contest.id),
+          ]);
+          return [contest.id, { attempts, registrations }] as const;
+        }),
       );
-      const attemptsByContest = new Map(attemptsByContestEntries);
+      const perContest = new Map(perContestEntries);
       const now = dependencies.now();
+      const userDepartment =
+        user.role === "STUDENT" ? await resolveStudentDepartment(user, dependencies) : null;
 
       const visible = contests
         .filter((contest) => (user.role === "FACULTY" ? contest.createdBy === user.email : true))
         .filter((contest) =>
-          user.role === "STUDENT"
-            ? !contest.targetDepartment || contest.targetDepartment === normalizeDepartment(user.department)
-            : true,
+          user.role === "STUDENT" ? !contest.targetDepartment || contest.targetDepartment === userDepartment : true,
         )
         .filter((contest) => (query.department ? contest.targetDepartment === query.department : true))
         .sort((left, right) => right.startAt.getTime() - left.startAt.getTime())
         .map((contest) => {
-          const attempts = attemptsByContest.get(contest.id) ?? [];
+          const { attempts, registrations } = perContest.get(contest.id) ?? { attempts: [], registrations: [] };
           const studentAttempt =
             user.role === "STUDENT" ? attempts.find((attempt) => attempt.userEmail === user.email) ?? null : null;
-          return toContestListItem(contest, deriveParticipantsCount(attempts), now, studentAttempt);
+          const isRegistered =
+            user.role === "STUDENT" && registrations.some((registration) => registration.userEmail === user.email);
+          return toContestListItem(
+            contest,
+            deriveParticipantsCount(attempts),
+            now,
+            studentAttempt,
+            isRegistered,
+            registrations.length,
+          );
         });
 
       return paginateArray(visible, query);
@@ -507,27 +634,48 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       const now = dependencies.now();
 
       if (user.role === "FACULTY") {
-        return toFacultyContestDetailResponse(ensureFacultyOwnsContest(user, contest));
+        const ownedContest = ensureFacultyOwnsContest(user, contest);
+        const registrations = await dependencies.contestRegistrationRepository.listByContest(contestId);
+        return toFacultyContestDetailResponse(ownedContest, now, registrations.length);
       }
 
-      const visibleContest = ensureStudentCanAccessContest(user, contest);
-      const attempt = await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email);
+      const visibleContest = ensureStudentCanAccessContest(
+        contest,
+        await resolveStudentDepartment(user, dependencies),
+      );
+      const [attempt, registrations] = await Promise.all([
+        dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email),
+        dependencies.contestRegistrationRepository.listByContest(contestId),
+      ]);
       const contestEnded = computeContestStatus(visibleContest, now) === "Ended";
       const standings =
         visibleContest.resultsPublished
           ? (await dependencies.contestAttemptRepository.listByContest(contestId)).sort(sortStandings).map((item, index) => toContestStandingItem(item, index + 1))
           : [];
       const report = visibleContest.resultsPublished || contestEnded ? buildStudentReport(visibleContest, attempt, standings) : null;
-      return toStudentContestDetailResponse(visibleContest, attempt, now, report);
+      return toStudentContestDetailResponse(
+        visibleContest,
+        attempt,
+        now,
+        report,
+        registrations.some((registration) => registration.userEmail === user.email),
+        registrations.length,
+      );
     },
 
     async createContest(user, input) {
       const now = dependencies.now();
+      const startAt = new Date(input.startTime);
+      const endAt = new Date(input.endTime);
       const contest: ContestRecord = {
         id: `contest_${randomUUID()}`,
         title: input.title.trim(),
-        startAt: new Date(input.startTime),
+        startAt,
+        endAt,
         durationMinutes: Number(input.duration),
+        // Default window: open immediately, close when the contest starts.
+        registrationOpenAt: input.registrationOpenAt ? new Date(input.registrationOpenAt) : now,
+        registrationCloseAt: input.registrationCloseAt ? new Date(input.registrationCloseAt) : startAt,
         type: input.type,
         lifecycleState: "Published",
         resultsPublished: false,
@@ -541,26 +689,37 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       };
 
       await dependencies.contestRepository.save(contest);
-      return toFacultyContestDetailResponse(contest);
+      return toFacultyContestDetailResponse(contest, now, 0);
     },
 
     async updateContest(user, contestId, input) {
       const contest = ensureFacultyOwnsContest(user, await dependencies.contestRepository.getById(contestId));
+      const now = dependencies.now();
       const updatedContest: ContestRecord = {
         ...contest,
         ...(input.title !== undefined ? { title: input.title.trim() } : {}),
         ...(input.startTime !== undefined ? { startAt: new Date(input.startTime) } : {}),
+        ...(input.endTime !== undefined ? { endAt: new Date(input.endTime) } : {}),
         ...(input.duration !== undefined ? { durationMinutes: Number(input.duration) } : {}),
+        ...(input.registrationOpenAt !== undefined ? { registrationOpenAt: new Date(input.registrationOpenAt) } : {}),
+        ...(input.registrationCloseAt !== undefined ? { registrationCloseAt: new Date(input.registrationCloseAt) } : {}),
         ...(input.type !== undefined ? { type: input.type } : {}),
         lifecycleState: "Published",
         ...(input.targetDepartment !== undefined ? { targetDepartment: normalizeDepartment(input.targetDepartment) ?? null } : {}),
         ...(input.maxViolations !== undefined ? { maxViolations: input.maxViolations } : {}),
         ...(input.questions !== undefined ? { questions: normalizeContestQuestions(input.questions) ?? contest.questions } : {}),
-        updatedAt: dependencies.now(),
+        updatedAt: now,
       };
 
+      // A partial update only validates the fields it carries, so re-check the merged window here.
+      ensureCoherentContestWindow(updatedContest);
+
       await dependencies.contestRepository.save(updatedContest);
-      return toFacultyContestDetailResponse(updatedContest);
+      return toFacultyContestDetailResponse(
+        updatedContest,
+        now,
+        (await dependencies.contestRegistrationRepository.listByContest(contestId)).length,
+      );
     },
 
     async updateContestResults(user, contestId, input) {
@@ -576,13 +735,104 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       };
 
       await dependencies.contestRepository.save(updatedContest);
-      return toFacultyContestDetailResponse(updatedContest);
+      return toFacultyContestDetailResponse(
+        updatedContest,
+        now,
+        (await dependencies.contestRegistrationRepository.listByContest(contestId)).length,
+      );
+    },
+
+    async registerForContest(user, contestId) {
+      const now = dependencies.now();
+      const contest = ensureStudentCanAccessContest(
+        await dependencies.contestRepository.getById(contestId),
+        await resolveStudentDepartment(user, dependencies),
+      );
+
+      const existing = await dependencies.contestRegistrationRepository.getByContestAndUser(contestId, user.email);
+      if (existing) {
+        return existing;
+      }
+
+      ensureRegistrationOpen(contest, now);
+
+      const currentUser = await dependencies.userRepository.getByEmail(user.email);
+      const registration: ContestRegistrationRecord = {
+        id: `registration_${randomUUID()}`,
+        contestId: contest.id,
+        userEmail: user.email,
+        userName: currentUser?.name ?? user.name ?? null,
+        userUid: currentUser?.uid ?? user.uid ?? null,
+        userDepartment: currentUser?.department ?? normalizeDepartment(user.department) ?? null,
+        registeredAt: now,
+      };
+
+      await dependencies.contestRegistrationRepository.save(registration);
+      return registration;
+    },
+
+    async unregisterFromContest(user, contestId) {
+      const now = dependencies.now();
+      const contest = ensureStudentCanAccessContest(
+        await dependencies.contestRepository.getById(contestId),
+        await resolveStudentDepartment(user, dependencies),
+      );
+      const registration = await dependencies.contestRegistrationRepository.getByContestAndUser(contestId, user.email);
+      if (!registration) {
+        return;
+      }
+
+      const attempt = await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email);
+      if (attempt) {
+        throw new AppError(409, "You cannot withdraw after starting the contest");
+      }
+
+      ensureRegistrationOpen(contest, now);
+      await dependencies.contestRegistrationRepository.delete(contestId, user.email);
+    },
+
+    async listRegistrations(user, contestId) {
+      ensureFacultyOwnsContest(user, await dependencies.contestRepository.getById(contestId));
+      return buildRegistrationItems(contestId, dependencies);
+    },
+
+    async exportRegistrationsCsv(user, contestId) {
+      ensureFacultyOwnsContest(user, await dependencies.contestRepository.getById(contestId));
+      const items = await buildRegistrationItems(contestId, dependencies);
+      const header = [
+        "student_name",
+        "student_uid",
+        "student_email",
+        "department",
+        "year",
+        "registered_at",
+        "attempt_status",
+      ];
+      const rows = items.map((item) => [
+        item.userName,
+        item.userUid,
+        item.userEmail,
+        item.userDepartment,
+        item.year,
+        item.registeredAt,
+        item.attemptStatus,
+      ]);
+
+      return [header, ...rows]
+        .map((row) => row.map((value) => toCsvValue(value as string | number | null)).join(","))
+        .join("\n");
     },
 
     async startAttempt(user, contestId) {
       const now = dependencies.now();
-      const contest = ensureStudentCanAccessContest(user, await dependencies.contestRepository.getById(contestId));
+      const contest = ensureStudentCanAccessContest(
+        await dependencies.contestRepository.getById(contestId),
+        await resolveStudentDepartment(user, dependencies),
+      );
       ensureContestIsLive(contest, now);
+      ensureStudentIsRegistered(
+        await dependencies.contestRegistrationRepository.getByContestAndUser(contestId, user.email),
+      );
 
       const existing = await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email);
       if (existing) {
@@ -605,6 +855,7 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         timeTakenMs: null,
         questionStates: buildAttemptQuestionStates(contest.questions),
         startedAt: now,
+        deadlineAt: computeAttemptDeadline(contest, now),
         updatedAt: now,
         submittedAt: null,
         autoSubmittedAt: null,
@@ -630,17 +881,17 @@ export function createContestService(dependencies: ContestServiceDependencies): 
 
     async recordProctorEvent(user, contestId, type, details) {
       const now = dependencies.now();
-      const contest = ensureStudentCanAccessContest(user, await dependencies.contestRepository.getById(contestId));
+      const contest = ensureStudentCanAccessContest(
+        await dependencies.contestRepository.getById(contestId),
+        await resolveStudentDepartment(user, dependencies),
+      );
       const attempt = ensureActiveAttempt(await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email));
 
-      const nextViolationCount = isViolationEvent(type) ? attempt.violationCount + 1 : attempt.violationCount;
-      const shouldAutoSubmit = isViolationEvent(type) && nextViolationCount >= contest.maxViolations;
+      // Events are always logged for faculty review, but only scored violations move the counter,
+      // and no event ends the attempt — the client blocks the behaviour instead of punishing it.
       const updatedAttempt = withDerivedAttemptFields({
         ...attempt,
-        violationCount: nextViolationCount,
-        status: shouldAutoSubmit ? "AUTO_SUBMITTED" : attempt.status,
-        autoSubmittedAt: shouldAutoSubmit ? now : attempt.autoSubmittedAt,
-        submittedAt: shouldAutoSubmit ? now : attempt.submittedAt,
+        violationCount: isViolationEvent(type) ? attempt.violationCount + 1 : attempt.violationCount,
         updatedAt: now,
       });
 
@@ -659,24 +910,32 @@ export function createContestService(dependencies: ContestServiceDependencies): 
 
     async getQuestionById(user, contestId, questionId) {
       const now = dependencies.now();
-      const contest = ensureStudentCanAccessContest(user, await dependencies.contestRepository.getById(contestId));
+      const contest = ensureStudentCanAccessContest(
+        await dependencies.contestRepository.getById(contestId),
+        await resolveStudentDepartment(user, dependencies),
+      );
       const status = computeContestStatus(contest, now);
       if (status === "Upcoming") {
         throw new AppError(409, "Contest questions are not available yet");
       }
-      const rawAttempt = await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email);
-      // Live contests require an active attempt; ended contests open in practice mode
-      // where any (or no) attempt is fine — the envelope mapper accepts a null attempt.
-      const attempt = status === "Live" ? ensureActiveAttempt(rawAttempt) : rawAttempt;
+      // Live contests require an active attempt that still has time left; ended contests open in
+      // practice mode where any (or no) attempt is fine — the envelope mapper accepts a null attempt.
+      const attempt =
+        status === "Live"
+          ? await resolveAttemptWithinDeadline(contestId, user.email, now, dependencies)
+          : await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email);
       const question = ensureContestQuestion(contest, questionId);
       return toStudentContestQuestionEnvelope(contest, question, attempt, now);
     },
 
     async answerObjectiveQuestion(user, contestId, input) {
       const now = dependencies.now();
-      const contest = ensureStudentCanAccessContest(user, await dependencies.contestRepository.getById(contestId));
+      const contest = ensureStudentCanAccessContest(
+        await dependencies.contestRepository.getById(contestId),
+        await resolveStudentDepartment(user, dependencies),
+      );
       ensureContestIsLive(contest, now);
-      const attempt = ensureActiveAttempt(await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email));
+      const attempt = await resolveAttemptWithinDeadline(contestId, user.email, now, dependencies);
       const question = ensureContestQuestion(contest, input.questionId);
 
       if (question.type === "Coding") {
@@ -716,13 +975,16 @@ export function createContestService(dependencies: ContestServiceDependencies): 
 
     async runCodingQuestion(user, contestId, input) {
       const now = dependencies.now();
-      const contest = ensureStudentCanAccessContest(user, await dependencies.contestRepository.getById(contestId));
+      const contest = ensureStudentCanAccessContest(
+        await dependencies.contestRepository.getById(contestId),
+        await resolveStudentDepartment(user, dependencies),
+      );
       const status = computeContestStatus(contest, now);
       if (status === "Upcoming") {
         throw new AppError(409, "Contest is not live yet");
       }
       if (status === "Live") {
-        ensureActiveAttempt(await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email));
+        await resolveAttemptWithinDeadline(contestId, user.email, now, dependencies);
       }
       const question = ensureContestQuestion(contest, input.questionId);
 
@@ -755,7 +1017,10 @@ export function createContestService(dependencies: ContestServiceDependencies): 
 
     async submitCodingQuestion(user, contestId, input) {
       const now = dependencies.now();
-      const contest = ensureStudentCanAccessContest(user, await dependencies.contestRepository.getById(contestId));
+      const contest = ensureStudentCanAccessContest(
+        await dependencies.contestRepository.getById(contestId),
+        await resolveStudentDepartment(user, dependencies),
+      );
       const status = computeContestStatus(contest, now);
       if (status === "Upcoming") {
         throw new AppError(409, "Contest is not live yet");
@@ -789,7 +1054,7 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         };
       }
 
-      const attempt = ensureActiveAttempt(await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email));
+      const attempt = await resolveAttemptWithinDeadline(contestId, user.email, now, dependencies);
 
       const state = attempt.questionStates.find((item) => item.questionId === question.id);
       if (!state) {
@@ -886,7 +1151,10 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       if (user.role === "FACULTY") {
         ensureFacultyOwnsContest(user, contest);
       } else {
-        const visibleContest = ensureStudentCanAccessContest(user, contest);
+        const visibleContest = ensureStudentCanAccessContest(
+          contest,
+          await resolveStudentDepartment(user, dependencies),
+        );
         ensureStudentCanViewStandings(visibleContest);
       }
 

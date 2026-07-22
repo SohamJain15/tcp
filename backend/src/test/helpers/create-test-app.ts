@@ -1,4 +1,6 @@
+import express from "express";
 import { createApp } from "../../app";
+import { env } from "../../config/env";
 import { createRequireCompleteProfile } from "../../middleware/require-complete-profile";
 import { createContestService } from "../../modules/contest/contest.service";
 import { createLeaderboardService } from "../../modules/leaderboard/leaderboard.service";
@@ -11,6 +13,7 @@ import type { ApplicationDependencies } from "../../bootstrap/dependencies";
 import {
   InMemoryContestAttemptRepository,
   InMemoryContestProctoringRepository,
+  InMemoryContestRegistrationRepository,
   InMemoryContestRepository,
   InMemoryLeaderboardRepository,
   InMemoryProblemRepository,
@@ -100,6 +103,7 @@ export function createTestApp() {
   const contestRepository = new InMemoryContestRepository();
   const contestAttemptRepository = new InMemoryContestAttemptRepository();
   const contestProctoringRepository = new InMemoryContestProctoringRepository();
+  const contestRegistrationRepository = new InMemoryContestRegistrationRepository();
   let tick = 0;
 
   const now = () => {
@@ -112,6 +116,9 @@ export function createTestApp() {
     },
   };
 
+  // Mirrors production auth (middleware/auth.ts), which resolves identity from the CoE token and
+  // populates ONLY email/role/name. Department and uid deliberately stay absent: they live on the
+  // saved profile, so any code that reads them off the request identity must be caught here.
   const mockAuthMiddleware: ApplicationDependencies["authMiddleware"] = (req, _res, next) => {
     req.user = {
       email:
@@ -123,11 +130,6 @@ export function createTestApp() {
           ? "FACULTY"
           : "STUDENT",
       name: typeof req.headers["x-coe-name"] === "string" ? req.headers["x-coe-name"] : "Student One",
-      uid: typeof req.headers["x-coe-uid"] === "string" ? req.headers["x-coe-uid"] : "TCET-REAL-001",
-      department:
-        typeof req.headers["x-coe-department"] === "string"
-          ? req.headers["x-coe-department"]
-          : "B.E. Computer Engineering",
     };
     next();
   };
@@ -166,6 +168,7 @@ export function createTestApp() {
       contestRepository,
       contestAttemptRepository,
       contestProctoringRepository,
+      contestRegistrationRepository,
       submissionRepository,
       submissionQueue,
       userRepository,
@@ -174,8 +177,18 @@ export function createTestApp() {
     }),
   };
 
+  // supertest sends no Origin header, which the app's mutation origin guard rejects outright.
+  // Front the real app with a shim that supplies the browser-like Origin a real client would,
+  // so tests exercise the guard rather than being blocked by it.
+  const app = express();
+  app.use((req, _res, next) => {
+    req.headers.origin ??= env.FRONTEND_BASE_URL;
+    next();
+  });
+  app.use(createApp(dependencies));
+
   return {
-    app: createApp(dependencies),
+    app,
     repositories: {
       userRepository,
       problemRepository,
@@ -184,6 +197,7 @@ export function createTestApp() {
       contestRepository,
       contestAttemptRepository,
       contestProctoringRepository,
+      contestRegistrationRepository,
     },
     services: {
       userService: dependencies.userService,

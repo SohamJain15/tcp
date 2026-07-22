@@ -10,6 +10,8 @@ import type {
   ContestAttemptsEnvelope,
   FacultyContestAttemptReviewEnvelope,
   ContestProctoringPayload,
+  ContestRegistrationEnvelope,
+  ContestRegistrationsEnvelope,
   ContestResultsVisibilityPayload,
   ContestStandingsEnvelope,
   CreateContestPayload,
@@ -187,6 +189,23 @@ export const contestsApi = {
       method: "PATCH",
       body: payload,
       pathname,
+    }),
+  register: (contestId: string, pathname?: string) =>
+    apiRequest<ContestRegistrationEnvelope>(`/api/contests/${contestId}/registration`, {
+      method: "POST",
+      pathname,
+    }),
+  unregister: (contestId: string, pathname?: string) =>
+    apiRequest<void>(`/api/contests/${contestId}/registration`, {
+      method: "DELETE",
+      pathname,
+    }),
+  listRegistrations: (contestId: string, pathname?: string) =>
+    apiRequest<ContestRegistrationsEnvelope>(`/api/contests/${contestId}/registrations`, { pathname }),
+  exportRegistrationsCsv: (contestId: string, pathname?: string) =>
+    apiRequest<string>(`/api/contests/${contestId}/registrations/export`, {
+      pathname,
+      responseType: "text",
     }),
   startAttempt: (contestId: string, pathname?: string) =>
     apiRequest<ContestAttemptEnvelope>(`/api/contests/${contestId}/attempts`, {

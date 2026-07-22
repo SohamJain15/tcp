@@ -1,14 +1,19 @@
 import { Link } from "react-router-dom";
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Trophy, Target, CheckCircle2, Activity, ArrowRight, CalendarClock, Radio } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Trophy, Target, CheckCircle2, Activity, ArrowRight, CalendarClock, Radio, UserPlus } from "lucide-react";
+import { toast } from "sonner";
 
 import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ContestTimer } from "@/components/ContestTimer";
 import { StatusBadge, DifficultyBadge } from "@/components/Badges";
 import { contestsApi, problemsApi, submissionsApi, userApi } from "@/api/services";
+import type { ContestListItem } from "@/api/types";
 import { formatDateTime } from "@/lib/datetime";
+import { cn } from "@/lib/utils";
 import { toLanguageLabel, toStatusLabel } from "@/api/mappers";
 
 function formatRelativeTime(isoDate: string): string {
@@ -33,7 +38,108 @@ function formatRelativeTime(isoDate: string): string {
   return `${diffDays} d ago`;
 }
 
+/**
+ * Full-width alert for the contest a student needs to act on right now. Deliberately loud —
+ * the old sidebar list was easy to scroll straight past.
+ */
+function LiveContestBanner({
+  contest,
+  onRegister,
+  isRegistering,
+}: {
+  contest: ContestListItem;
+  onRegister: () => void;
+  isRegistering: boolean;
+}) {
+  const isLive = contest.studentListStatus === "Live";
+  const hasSubmitted = contest.attemptStatus === "SUBMITTED" || contest.attemptStatus === "AUTO_SUBMITTED";
+  const canRegister = !contest.isRegistered && contest.registrationStatus === "OPEN";
+
+  return (
+    <Card
+      className={cn(
+        "overflow-hidden border-2 shadow-elevated",
+        isLive ? "border-success" : "border-accent",
+      )}
+    >
+      <div className={cn("h-1 w-full", isLive ? "bg-success" : "bg-accent")} />
+      <div className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between md:p-6">
+        <div className="min-w-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="relative flex h-2.5 w-2.5">
+              {isLive && (
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+              )}
+              <span className={cn("relative inline-flex h-2.5 w-2.5 rounded-full", isLive ? "bg-success" : "bg-accent")} />
+            </span>
+            <span
+              className={cn(
+                "text-xs font-bold uppercase tracking-widest",
+                isLive ? "text-success" : "text-accent",
+              )}
+            >
+              {isLive ? "Contest Live Now" : "Contest Starting Soon"}
+            </span>
+            <Badge className={contest.type === "Rated" ? "bg-blue-600 text-white hover:bg-blue-600" : ""}>
+              {contest.type}
+            </Badge>
+            {contest.isRegistered && !hasSubmitted && (
+              <Badge variant="outline" className="border-accent/50 text-accent">Registered</Badge>
+            )}
+            {hasSubmitted && (
+              <Badge className="bg-success text-success-foreground hover:bg-success">
+                <CheckCircle2 className="mr-1 h-3 w-3" /> Attempted
+              </Badge>
+            )}
+          </div>
+
+          <h2 className="truncate font-display text-2xl font-bold">{contest.title}</h2>
+          <p className="text-sm text-muted-foreground">
+            {contest.durationMinutes} min attempt · {contest.registeredCount} registered ·{" "}
+            {isLive ? `Closes ${formatDateTime(contest.endAt)}` : `Starts ${formatDateTime(contest.startAt)}`}
+          </p>
+        </div>
+
+        <div className="flex shrink-0 flex-col items-stretch gap-3 md:items-end">
+          <ContestTimer
+            deadline={isLive ? contest.endAt : contest.startAt}
+            label={isLive ? "Closes in" : "Starts in"}
+          />
+          {hasSubmitted ? (
+            <Button size="lg" variant="outline" disabled>
+              Attempted
+            </Button>
+          ) : canRegister ? (
+            <Button
+              size="lg"
+              className="bg-accent font-semibold text-accent-foreground hover:bg-accent/90"
+              onClick={onRegister}
+              disabled={isRegistering}
+            >
+              <UserPlus className="mr-2 h-4 w-4" />
+              {isRegistering ? "Registering..." : "Register Now"}
+            </Button>
+          ) : contest.isRegistered ? (
+            <Link to={`/student/contests/${contest.id}`}>
+              <Button size="lg" className="w-full bg-accent font-semibold text-accent-foreground hover:bg-accent/90">
+                {isLive ? "Enter Contest" : "View Contest"} <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </Link>
+          ) : (
+            <Link to={`/student/contests/${contest.id}`}>
+              <Button size="lg" variant="outline" className="w-full">
+                View Details
+              </Button>
+            </Link>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export default function StudentDashboard() {
+  const queryClient = useQueryClient();
   const userQuery = useQuery({
     queryKey: ["student-dashboard", "user"],
     queryFn: () => userApi.me("/student/dashboard"),
@@ -75,6 +181,30 @@ export default function StudentDashboard() {
     () => (contestsQuery.data?.items ?? []).filter((contest) => contest.studentListStatus === "Upcoming").slice(0, 3),
     [contestsQuery.data?.items],
   );
+  // Surface the single most urgent contest: a live one first, otherwise the next one the student
+  // can still register for.
+  const featuredContest = useMemo(() => {
+    if (liveContests.length > 0) {
+      return liveContests[0];
+    }
+
+    return (
+      [...upcomingContests]
+        .sort((left, right) => +new Date(left.startAt) - +new Date(right.startAt))
+        .find((contest) => contest.isRegistered || contest.registrationStatus === "OPEN") ?? null
+    );
+  }, [liveContests, upcomingContests]);
+
+  const registerMutation = useMutation({
+    mutationFn: (contestId: string) => contestsApi.register(contestId, "/student/dashboard"),
+    onSuccess: async () => {
+      toast.success("You are registered for this contest");
+      await queryClient.invalidateQueries({ queryKey: ["student-dashboard", "contests"] });
+    },
+    onError: (mutationError) => {
+      toast.error((mutationError as Error)?.message || "Failed to register for this contest");
+    },
+  });
 
   const stats = user
     ? [
@@ -116,6 +246,14 @@ export default function StudentDashboard() {
             </div>
           </div>
         </Card>
+
+        {featuredContest && (
+          <LiveContestBanner
+            contest={featuredContest}
+            onRegister={() => registerMutation.mutate(featuredContest.id)}
+            isRegistering={registerMutation.isPending}
+          />
+        )}
 
         {userQuery.isLoading && <Card className="p-6 text-center text-muted-foreground">Loading dashboard...</Card>}
         {userQuery.isError && <Card className="p-6 text-center text-destructive">{(userQuery.error as Error)?.message || "Failed to load dashboard"}</Card>}
@@ -191,7 +329,10 @@ export default function StudentDashboard() {
                             className="block py-2.5 transition-colors hover:text-accent"
                           >
                             <div className="truncate text-sm font-medium">{contest.title}</div>
-                            <div className="text-xs text-muted-foreground">{contest.durationMinutes} mins</div>
+                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                              {contest.durationMinutes} mins
+                              {contest.isRegistered && <span className="text-accent">· Registered</span>}
+                            </div>
                           </Link>
                         ))}
                       </div>

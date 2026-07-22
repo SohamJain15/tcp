@@ -1,19 +1,33 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, useParams } from "react-router-dom";
-import { ChevronDown, ChevronLeft, Eye } from "lucide-react";
+import {
+  CalendarClock,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  Eye,
+  ListChecks,
+  Maximize,
+  Timer,
+  Trophy,
+  UserPlus,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { AppLayout } from "@/components/AppLayout";
 import { contestsApi, submissionsApi } from "@/api/services";
 import { toLanguageLabel } from "@/api/mappers";
-import type { CodingContestQuestionReportItem, ContestQuestionReportItem } from "@/api/types";
+import type { CodingContestQuestionReportItem, ContestAttempt, ContestQuestionReportItem } from "@/api/types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ContestLockOverlay } from "@/components/ContestLockOverlay";
+import { ContestTimer } from "@/components/ContestTimer";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { useContestProctoring } from "./useContestProctoring";
 
@@ -69,6 +83,24 @@ function getReportResult(item: ContestQuestionReportItem): { label: string; corr
   return item.finalSubmissionStatus === "ACCEPTED"
     ? { label: "Correct", correct: true }
     : { label: "Incorrect", correct: false };
+}
+
+function PreflightStat({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Timer;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="border border-border bg-secondary/30 p-3">
+      <Icon className="mx-auto h-4 w-4 text-muted-foreground" />
+      <div className="mt-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{label}</div>
+      <div className="mt-1 text-sm font-bold leading-tight">{value}</div>
+    </div>
+  );
 }
 
 function ReportStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -156,13 +188,18 @@ export default function ContestDetail() {
   const attempt = contest?.attempt ?? null;
   const report = contest?.report ?? null;
 
-  const updateAttemptInCache = (nextAttempt: NonNullable<typeof attempt>) => {
-    queryClient.setQueryData(["contest-detail", id], (current: typeof data) =>
-      current ? { contest: { ...current.contest, attempt: nextAttempt } } : current,
-    );
-  };
+  // Stable identity: the proctoring hook keys its listener set on this callback, so a new
+  // function every render would tear down and re-attach every listener.
+  const updateAttemptInCache = useCallback(
+    (nextAttempt: ContestAttempt) => {
+      queryClient.setQueryData(["contest-detail", id], (current: typeof data) =>
+        current ? { contest: { ...current.contest, attempt: nextAttempt } } : current,
+      );
+    },
+    [id, queryClient],
+  );
 
-  useContestProctoring({
+  const { isLocked, violationCount, requestFullscreen } = useContestProctoring({
     contestId: id,
     pathname,
     attempt,
@@ -176,6 +213,28 @@ export default function ContestDetail() {
     queryKey: ["contest-standings", id],
     queryFn: () => contestsApi.getStandings(id, pathname),
     enabled: Boolean(id) && standingsEnabled,
+  });
+
+  const registerMutation = useMutation({
+    mutationFn: () => contestsApi.register(id, pathname),
+    onSuccess: async () => {
+      toast.success("You are registered for this contest");
+      await refetch();
+    },
+    onError: (mutationError) => {
+      toast.error((mutationError as Error)?.message || "Failed to register for this contest");
+    },
+  });
+
+  const unregisterMutation = useMutation({
+    mutationFn: () => contestsApi.unregister(id, pathname),
+    onSuccess: async () => {
+      toast.success("Registration withdrawn");
+      await refetch();
+    },
+    onError: (mutationError) => {
+      toast.error((mutationError as Error)?.message || "Failed to withdraw registration");
+    },
   });
 
   const startAttemptMutation = useMutation({
@@ -231,6 +290,17 @@ export default function ContestDetail() {
 
   const standings = useMemo(() => standingsData?.items ?? [], [standingsData?.items]);
 
+  // When the clock runs out we finalise the attempt ourselves so the student lands on their
+  // report rather than a dead page. The backend enforces the same deadline independently.
+  const handleTimeUp = useCallback(() => {
+    if (attempt?.status !== "ACTIVE" || submitAttemptMutation.isPending) {
+      return;
+    }
+
+    toast.warning("Time is up. Submitting your contest.");
+    submitAttemptMutation.mutate();
+  }, [attempt?.status, submitAttemptMutation]);
+
   if (!id) {
     return <Navigate to="/student/contests" replace />;
   }
@@ -264,6 +334,102 @@ export default function ContestDetail() {
         attempt.questionStates.some((state) => state.questionId === question.id && state.status !== "UNATTEMPTED"),
       ),
   );
+  // The pre-flight screen: contest is live, the student has not started, and there is nothing
+  // to report yet. This replaces the old scattered cards with one focused call to action.
+  const showPreflight = canAttempt && !attempt && !showReport;
+  const submittedWhileLive = canAttempt && attemptIsLocked;
+
+  if (isLocked) {
+    return <ContestLockOverlay onReturnToFullscreen={requestFullscreen} violationCount={violationCount} />;
+  }
+
+  if (showPreflight) {
+    const totalPoints = contest.questions.reduce((total, question) => total + question.points, 0);
+
+    return (
+      <AppLayout>
+        <div className="container flex min-h-[calc(100vh-9rem)] max-w-3xl flex-col justify-center py-8">
+          <Link
+            to="/student/contests"
+            className="mb-6 inline-flex items-center gap-1 self-start text-sm text-muted-foreground transition-colors hover:text-accent"
+          >
+            <ChevronLeft className="h-4 w-4" /> Back to contests
+          </Link>
+
+          <Card className="border border-border bg-background p-8 text-center shadow-card">
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Badge className={contest.type === "Rated" ? "bg-blue-600 text-white hover:bg-blue-600" : ""}>
+                {contest.type}
+              </Badge>
+              <Badge className="bg-success text-success-foreground hover:bg-success">Live</Badge>
+            </div>
+
+            <h1 className="mt-4 font-display text-3xl font-bold">{contest.title}</h1>
+
+            <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <PreflightStat icon={Timer} label="Duration" value={`${contest.durationMinutes} min`} />
+              <PreflightStat icon={ListChecks} label="Questions" value={String(contest.questions.length || "—")} />
+              <PreflightStat icon={Trophy} label="Total Points" value={String(totalPoints || "—")} />
+              <PreflightStat icon={CalendarClock} label="Closes" value={formatDateTime(contest.endAt)} />
+            </div>
+
+            <div className="mt-6 flex justify-center">
+              <ContestTimer deadline={contest.endAt} label="Contest closes in" />
+            </div>
+
+            <ul className="mx-auto mt-6 max-w-md space-y-2 text-left text-sm text-muted-foreground">
+              <li className="flex gap-2">
+                <Maximize className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                The contest opens in fullscreen and stays there until you submit.
+              </li>
+              <li className="flex gap-2">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                Tab switching, copy/paste and right-click are disabled. Screenshot attempts are
+                recorded and cost {5} points each.
+              </li>
+              <li className="flex gap-2">
+                <Timer className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                Your {contest.durationMinutes}-minute timer starts the moment you begin and never runs
+                past the contest close time.
+              </li>
+            </ul>
+
+            {contest.isRegistered ? (
+              <Button
+                size="lg"
+                className="mt-8 h-12 w-full max-w-xs bg-accent px-10 text-base font-semibold text-accent-foreground hover:bg-accent/90"
+                onClick={() => startAttemptMutation.mutate()}
+                disabled={startAttemptMutation.isPending}
+              >
+                {startAttemptMutation.isPending ? "Starting..." : "Start Test"}
+              </Button>
+            ) : contest.registrationStatus === "OPEN" ? (
+              <div className="mt-8 space-y-3">
+                <Button
+                  size="lg"
+                  className="h-12 w-full max-w-xs bg-accent px-10 text-base font-semibold text-accent-foreground hover:bg-accent/90"
+                  onClick={() => registerMutation.mutate()}
+                  disabled={registerMutation.isPending}
+                >
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  {registerMutation.isPending ? "Registering..." : "Register to Attempt"}
+                </Button>
+                <p className="text-sm text-muted-foreground">
+                  Registration closes {formatDateTime(contest.registrationCloseAt)}.
+                </p>
+              </div>
+            ) : (
+              <Card className="mx-auto mt-8 max-w-md border border-destructive/40 bg-destructive/10 p-4 text-sm shadow-none">
+                {contest.registrationStatus === "NOT_OPEN"
+                  ? `Registration opens ${formatDateTime(contest.registrationOpenAt)}.`
+                  : "Registration for this contest is closed, so you cannot attempt it."}
+              </Card>
+            )}
+          </Card>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout hideNavbar={attemptIsActive} hideFooter={attemptIsActive}>
@@ -297,15 +463,18 @@ export default function ContestDetail() {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              {!attempt && canAttempt && (
+            <div className="flex flex-wrap items-center gap-2">
+              {attemptIsActive && (
+                <ContestTimer deadline={attempt?.deadlineAt} onExpire={handleTimeUp} />
+              )}
+              {!attempt && canAttempt && contest.isRegistered && (
                 <Button className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => startAttemptMutation.mutate()} disabled={startAttemptMutation.isPending}>
-                  {startAttemptMutation.isPending ? "Starting..." : "Start Contest"}
+                  {startAttemptMutation.isPending ? "Starting..." : "Start Test"}
                 </Button>
               )}
               {attemptIsActive && allQuestionsCompleted && (
                 <Button variant="destructive" onClick={() => submitAttemptMutation.mutate()} disabled={submitAttemptMutation.isPending}>
-                  {submitAttemptMutation.isPending ? "Ending..." : "End Test"}
+                  {submitAttemptMutation.isPending ? "Submitting..." : "Submit Test"}
                 </Button>
               )}
             </div>
@@ -314,10 +483,10 @@ export default function ContestDetail() {
 
         {!showReport && (attemptIsActive ? (
           <Alert variant="destructive">
-            <AlertTitle>Proctoring Alert</AlertTitle>
+            <AlertTitle>Proctored Session</AlertTitle>
             <AlertDescription>
-              Tab switching, fullscreen exit, and screenshot attempts are tracked. {contest.maxViolations} violations trigger auto-submit.
-              {attempt ? ` Current violations: ${attempt.violationCount}/${contest.maxViolations}.` : ""}
+              Fullscreen is enforced, and tab switching, copy/paste and right-click are disabled until
+              you submit. Screenshot attempts are recorded and penalised — {attempt?.violationCount ?? 0} so far.
             </AlertDescription>
           </Alert>
         ) : contestEnded ? (
@@ -329,10 +498,23 @@ export default function ContestDetail() {
           </Alert>
         ) : null)}
 
-        {!showReport && attemptIsLocked && (
+        {!showReport && submittedWhileLive && (
+          <Card className="border border-success/40 bg-success/10 p-5 text-center shadow-none">
+            <CheckCircle2 className="mx-auto h-8 w-8 text-success" />
+            <h2 className="mt-3 font-display text-xl font-bold">Attempt Submitted</h2>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              Your answers are locked in. Questions and your report unlock when the contest closes.
+            </p>
+            <div className="mt-4 flex justify-center">
+              <ContestTimer deadline={contest.endAt} label="Contest closes in" />
+            </div>
+          </Card>
+        )}
+
+        {!showReport && attemptIsLocked && contestEnded && (
           <Card className="border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-200 shadow-none">
-            This attempt is {attempt?.status.toLowerCase().replace(/_/g, " ")}. Scored contest actions are locked.
-            {contestEnded ? " You can still review the questions below and open coding questions in practice mode." : ""}
+            This attempt is {attempt?.status.toLowerCase().replace(/_/g, " ")}. Scored contest actions are
+            locked. You can still review the questions below and open coding questions in practice mode.
           </Card>
         )}
 
@@ -446,14 +628,50 @@ export default function ContestDetail() {
         )}
 
         {contest.computedStatus === "Upcoming" ? (
-          <Card className="border border-border bg-background p-5 text-sm text-muted-foreground shadow-none">
-            Questions will be revealed when the contest starts.
+          <Card className="border border-border bg-background p-5 shadow-none">
+            <div className="flex flex-col items-center gap-3 py-4 text-center">
+              <CalendarClock className="h-7 w-7 text-accent" />
+              <div>
+                <h2 className="font-display text-lg font-bold">Starts {formatDateTime(contest.startAt)}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Questions unlock when the contest begins.
+                </p>
+              </div>
+              <ContestTimer deadline={contest.startAt} label="Starts in" />
+              {contest.isRegistered ? (
+                <Badge className="bg-success text-success-foreground hover:bg-success">
+                  <CheckCircle2 className="mr-1 h-3 w-3" /> You are registered
+                </Badge>
+              ) : contest.registrationStatus === "OPEN" ? (
+                <Button
+                  className="bg-accent text-accent-foreground hover:bg-accent/90"
+                  onClick={() => registerMutation.mutate()}
+                  disabled={registerMutation.isPending}
+                >
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  {registerMutation.isPending ? "Registering..." : "Register for Contest"}
+                </Button>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {contest.registrationStatus === "NOT_OPEN"
+                    ? `Registration opens ${formatDateTime(contest.registrationOpenAt)}.`
+                    : "Registration is closed for this contest."}
+                </p>
+              )}
+              {contest.isRegistered && contest.registrationStatus === "OPEN" && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  onClick={() => unregisterMutation.mutate()}
+                  disabled={unregisterMutation.isPending}
+                >
+                  {unregisterMutation.isPending ? "Withdrawing..." : "Withdraw registration"}
+                </Button>
+              )}
+            </div>
           </Card>
-        ) : !showQuestions ? (
-          <Card className="border border-border bg-background p-5 text-sm text-muted-foreground shadow-none">
-            Questions will be revealed after you start the contest and enter the proctored mode.
-          </Card>
-        ) : (
+        ) : !showQuestions ? null : (
           contest.questions.map((question) => {
           const state = attempt?.questionStates.find((entry) => entry.questionId === question.id);
           const status = state?.status ?? "UNATTEMPTED";

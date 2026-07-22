@@ -33,10 +33,7 @@ async function createProblem(app: Parameters<typeof request>[0], overrides: Reco
 }
 
 async function createContest(app: Parameters<typeof request>[0], overrides: Record<string, unknown> = {}) {
-  const response = await request(app)
-    .post("/api/contests")
-    .set(facultyHeaders)
-    .send({
+  const payload: Record<string, unknown> = {
       title: "T&P Test",
       startTime: "2026-05-07T00:00:00.000Z",
       duration: 60,
@@ -71,10 +68,25 @@ async function createContest(app: Parameters<typeof request>[0], overrides: Reco
         },
       ],
       ...overrides,
-    });
+  };
+
+  // Unless a test says otherwise the window is exactly one duration long and registration stays
+  // open for the whole of it, so any test can register at the moment it needs to.
+  const startAtMs = new Date(String(payload.startTime)).getTime();
+  payload.endTime ??= new Date(startAtMs + Number(payload.duration) * 60_000).toISOString();
+  payload.registrationOpenAt ??= new Date(startAtMs - 24 * 60 * 60_000).toISOString();
+  payload.registrationCloseAt ??= payload.endTime;
+
+  const response = await request(app).post("/api/contests").set(facultyHeaders).send(payload);
 
   expect(response.status).toBe(201);
   return response.body.contest;
+}
+
+async function registerForContest(app: Parameters<typeof request>[0], contestId: string) {
+  const response = await request(app).post(`/api/contests/${contestId}/registration`);
+  expect(response.status).toBe(201);
+  return response.body.registration;
 }
 
 describe("TCET Code Studio backend APIs", () => {
@@ -141,7 +153,7 @@ describe("TCET Code Studio backend APIs", () => {
       .set(incompleteStudentHeaders)
       .send({
         name: "New Student",
-        uid: "TCET1234",
+        uid: "24-COMPA35-28",
         rollNumber: "ROLL-2026-001",
         department: "B.E. Computer Engineering",
         semester: 4,
@@ -150,13 +162,14 @@ describe("TCET Code Studio backend APIs", () => {
       });
 
     expect(completedProfileResponse.status).toBe(200);
-    expect(completedProfileResponse.body.user.uid).toBe("TCET1234");
-    expect(completedProfileResponse.body.user.rollNumber).toBe("ROLL-2026-001");
+    expect(completedProfileResponse.body.user.uid).toBe("24-COMPA35-28");
+    // Roll number is always derived from the UID, never taken from the client payload.
+    expect(completedProfileResponse.body.user.rollNumber).toBe("35");
     expect(completedProfileResponse.body.user.isProfileComplete).toBe(true);
 
     const savedUser = await repositories.userRepository.getByEmail("newstudent@tcetmumbai.in");
-    expect(savedUser?.uid).toBe("TCET1234");
-    expect(savedUser?.rollNumber).toBe("ROLL-2026-001");
+    expect(savedUser?.uid).toBe("24-COMPA35-28");
+    expect(savedUser?.rollNumber).toBe("35");
     expect(savedUser?.isProfileComplete).toBe(true);
   });
 
@@ -486,7 +499,7 @@ describe("TCET Code Studio backend APIs", () => {
     expect(attemptResponse.status).toBe(409);
   });
 
-  it("gates live contest questions until start, ignores clipboard proctor events, and auto-submits on configured violations", async () => {
+  it("gates live contest questions until start, ignores clipboard proctor events, and scores only screenshots as violations", async () => {
     const { app, repositories, services } = createTestApp();
     const contest = await createContest(app, {
       startTime: "2026-05-07T00:00:00.000Z",
@@ -501,6 +514,8 @@ describe("TCET Code Studio backend APIs", () => {
 
     const questionBeforeStartResponse = await request(app).get(`/api/contests/${contest.id}/questions/q_mcq_1`);
     expect(questionBeforeStartResponse.status).toBe(409);
+
+    await registerForContest(app, contest.id);
 
     const startAttemptResponse = await request(app).post(`/api/contests/${contest.id}/attempts`);
     expect(startAttemptResponse.status).toBe(201);
@@ -552,24 +567,232 @@ describe("TCET Code Studio backend APIs", () => {
       expect(clipboardResponse.body.attempt.violationCount).toBe(0);
     }
 
-    await request(app).post(`/api/contests/${contest.id}/proctor-events`).send({ type: "TAB_SWITCH" });
-    await request(app).post(`/api/contests/${contest.id}/proctor-events`).send({ type: "VISIBILITY_LOSS" });
-    await request(app).post(`/api/contests/${contest.id}/proctor-events`).send({ type: "FULLSCREEN_EXIT" });
-    const autoSubmitResponse = await request(app)
+    // Fullscreen exits and tab switches are blocked client-side, so they are logged but never
+    // scored and never end the attempt.
+    for (const type of ["TAB_SWITCH", "VISIBILITY_LOSS", "FULLSCREEN_EXIT"]) {
+      const blockedEventResponse = await request(app)
+        .post(`/api/contests/${contest.id}/proctor-events`)
+        .send({ type });
+      expect(blockedEventResponse.status).toBe(200);
+      expect(blockedEventResponse.body.attempt.status).toBe("ACTIVE");
+      expect(blockedEventResponse.body.attempt.violationCount).toBe(0);
+    }
+
+    const screenshotResponse = await request(app)
       .post(`/api/contests/${contest.id}/proctor-events`)
       .send({ type: "PRINT_SCREEN" });
-    expect(autoSubmitResponse.status).toBe(200);
-    expect(autoSubmitResponse.body.attempt.status).toBe("AUTO_SUBMITTED");
+    expect(screenshotResponse.status).toBe(200);
+    expect(screenshotResponse.body.attempt.status).toBe("ACTIVE");
+    expect(screenshotResponse.body.attempt.violationCount).toBe(1);
+    expect(screenshotResponse.body.attempt.violationPenaltyPoints).toBe(5);
 
-    const blockedAnswerResponse = await request(app)
+    const answerAfterScreenshotResponse = await request(app)
       .post(`/api/contests/${contest.id}/answers`)
       .send({ questionId: "q_mcq_1", answer: "B" });
-    expect(blockedAnswerResponse.status).toBe(409);
+    expect(answerAfterScreenshotResponse.status).toBe(200);
 
     const attemptsResponse = await request(app)
       .get(`/api/contests/${contest.id}/attempts`)
       .set(facultyHeaders);
     expect(attemptsResponse.status).toBe(200);
-    expect(attemptsResponse.body.items[0].violationCount).toBe(4);
+    expect(attemptsResponse.body.items[0].violationCount).toBe(1);
+  });
+
+  it("shows a department-targeted contest to matching students using their saved profile department", async () => {
+    const { app } = createTestApp();
+    // student1 is seeded into Computer Engineering, student2 into Information Technology.
+    const targetedContest = await createContest(app, {
+      title: "Computer Engineering Only",
+      targetDepartment: "B.E. Computer Engineering",
+    });
+
+    const studentTwoHeaders = {
+      "x-coe-role": "STUDENT",
+      "x-coe-email": "student2@tcetmumbai.in",
+      "x-coe-name": "Student Two",
+    };
+
+    // Matching department: visible in the list and openable.
+    const matchingListResponse = await request(app).get("/api/contests");
+    expect(matchingListResponse.status).toBe(200);
+    expect(matchingListResponse.body.items.map((item: { id: string }) => item.id)).toContain(targetedContest.id);
+
+    const matchingDetailResponse = await request(app).get(`/api/contests/${targetedContest.id}`);
+    expect(matchingDetailResponse.status).toBe(200);
+
+    const matchingRegistrationResponse = await request(app).post(`/api/contests/${targetedContest.id}/registration`);
+    expect(matchingRegistrationResponse.status).toBe(201);
+
+    // Different department: filtered out of the list and blocked on direct access.
+    const otherListResponse = await request(app).get("/api/contests").set(studentTwoHeaders);
+    expect(otherListResponse.status).toBe(200);
+    expect(otherListResponse.body.items.map((item: { id: string }) => item.id)).not.toContain(targetedContest.id);
+
+    const otherDetailResponse = await request(app)
+      .get(`/api/contests/${targetedContest.id}`)
+      .set(studentTwoHeaders);
+    expect(otherDetailResponse.status).toBe(403);
+
+    const otherRegistrationResponse = await request(app)
+      .post(`/api/contests/${targetedContest.id}/registration`)
+      .set(studentTwoHeaders);
+    expect(otherRegistrationResponse.status).toBe(403);
+  });
+
+  it("requires registration before a student can start a live contest", async () => {
+    const { app } = createTestApp();
+    const contest = await createContest(app, { startTime: "2026-05-07T00:00:00.000Z", duration: 60 });
+
+    const unregisteredAttemptResponse = await request(app).post(`/api/contests/${contest.id}/attempts`);
+    expect(unregisteredAttemptResponse.status).toBe(403);
+
+    const detailBeforeRegistration = await request(app).get(`/api/contests/${contest.id}`);
+    expect(detailBeforeRegistration.body.contest.isRegistered).toBe(false);
+    expect(detailBeforeRegistration.body.contest.registrationStatus).toBe("OPEN");
+
+    await registerForContest(app, contest.id);
+
+    // Registration is idempotent — a double submit must not create a second row.
+    const duplicateRegistrationResponse = await request(app).post(`/api/contests/${contest.id}/registration`);
+    expect(duplicateRegistrationResponse.status).toBe(201);
+
+    const detailAfterRegistration = await request(app).get(`/api/contests/${contest.id}`);
+    expect(detailAfterRegistration.body.contest.isRegistered).toBe(true);
+    expect(detailAfterRegistration.body.contest.registeredCount).toBe(1);
+
+    const registeredAttemptResponse = await request(app).post(`/api/contests/${contest.id}/attempts`);
+    expect(registeredAttemptResponse.status).toBe(201);
+
+    const registrationsResponse = await request(app)
+      .get(`/api/contests/${contest.id}/registrations`)
+      .set(facultyHeaders);
+    expect(registrationsResponse.status).toBe(200);
+    expect(registrationsResponse.body.items).toHaveLength(1);
+    expect(registrationsResponse.body.items[0].userEmail).toBe("student1@tcetmumbai.in");
+    expect(registrationsResponse.body.items[0].hasAttempted).toBe(true);
+
+    // Withdrawing is no longer possible once the attempt exists.
+    const withdrawResponse = await request(app).delete(`/api/contests/${contest.id}/registration`);
+    expect(withdrawResponse.status).toBe(409);
+  });
+
+  it("rejects registration outside the faculty-configured window", async () => {
+    const { app } = createTestApp();
+    const contest = await createContest(app, {
+      startTime: "2026-05-07T00:00:00.000Z",
+      duration: 60,
+      registrationOpenAt: "2026-05-06T00:00:00.000Z",
+      registrationCloseAt: "2026-05-06T12:00:00.000Z",
+    });
+
+    const registrationResponse = await request(app).post(`/api/contests/${contest.id}/registration`);
+    expect(registrationResponse.status).toBe(409);
+
+    const detailResponse = await request(app).get(`/api/contests/${contest.id}`);
+    expect(detailResponse.body.contest.registrationStatus).toBe("CLOSED");
+  });
+
+  it("caps a late-started attempt at the end of the contest window", async () => {
+    const { app } = createTestApp();
+    // "Now" is 2026-05-07T00:00, so only 20 minutes of the window are left when the student
+    // starts — well short of the 40-minute attempt duration.
+    const contest = await createContest(app, {
+      startTime: "2026-05-06T23:30:00.000Z",
+      endTime: "2026-05-07T00:20:00.000Z",
+      duration: 40,
+    });
+
+    await registerForContest(app, contest.id);
+    const attemptResponse = await request(app).post(`/api/contests/${contest.id}/attempts`);
+
+    expect(attemptResponse.status).toBe(201);
+    expect(new Date(attemptResponse.body.attempt.deadlineAt).toISOString()).toBe("2026-05-07T00:20:00.000Z");
+  });
+
+  it("accepts coding questions with blank input/output formats and reports field-level errors", async () => {
+    const { app } = createTestApp();
+
+    // The builder always sends trimmed strings, so blank format fields arrive as "" — these are
+    // optional and get sensible defaults rather than failing validation.
+    const contest = await createContest(app, {
+      questions: [
+        {
+          id: "q_code_blank_formats",
+          type: "Coding",
+          points: 100,
+          problemTitle: "Sum of Array",
+          difficulty: "Easy",
+          problemStatement: "Read N integers and print their sum.",
+          constraints: "1 <= N <= 10^5",
+          inputFormat: "",
+          outputFormat: "",
+          sampleTestCases: [{ input: "3\n1 2 3", output: "6" }],
+          hiddenTestCases: [{ input: "6\n10 15 20 25 30 35", output: "135" }],
+        },
+      ],
+    });
+
+    expect(contest.questions[0].inputFormat).toBe("Read input from standard input.");
+    expect(contest.questions[0].outputFormat).toBe("Print output to standard output.");
+
+    // A genuinely invalid question reports only its own fields, not every union branch.
+    const invalidResponse = await request(app)
+      .post("/api/contests")
+      .set(facultyHeaders)
+      .send({
+        title: "Broken Question Contest",
+        startTime: "2026-05-07T00:00:00.000Z",
+        endTime: "2026-05-07T02:00:00.000Z",
+        duration: 60,
+        type: "Rated",
+        targetDepartment: null,
+        questions: [
+          {
+            id: "q_code_missing_constraints",
+            type: "Coding",
+            points: 100,
+            problemTitle: "No Constraints",
+            difficulty: "Easy",
+            problemStatement: "Do something useful.",
+            constraints: "",
+            sampleTestCases: [{ input: "1", output: "1" }],
+            hiddenTestCases: [{ input: "2", output: "2" }],
+          },
+        ],
+      });
+
+    expect(invalidResponse.status).toBe(400);
+    const issuePaths = invalidResponse.body.details.fieldIssues.map(
+      (issue: { path: string }) => issue.path,
+    );
+    expect(issuePaths).toContain("questions.0.constraints");
+    expect(issuePaths).not.toContain("questions.0.type");
+  });
+
+  it("rejects a contest whose duration does not fit inside its window", async () => {
+    const { app } = createTestApp();
+    const response = await request(app)
+      .post("/api/contests")
+      .set(facultyHeaders)
+      .send({
+        title: "Impossible Window",
+        startTime: "2026-05-07T00:00:00.000Z",
+        endTime: "2026-05-07T00:30:00.000Z",
+        duration: 60,
+        type: "Rated",
+        targetDepartment: null,
+        questions: [
+          {
+            id: "q_mcq_1",
+            type: "MCQ",
+            points: 10,
+            statement: "Which data structure follows the LIFO principle?",
+            options: ["Queue", "Stack", "Heap", "Tree"],
+            correctAnswer: "B",
+          },
+        ],
+      });
+
+    expect(response.status).toBe(400);
   });
 });

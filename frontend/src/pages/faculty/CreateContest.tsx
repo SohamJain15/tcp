@@ -1,10 +1,11 @@
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ClipboardCopy, FileJson, Plus, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { AppLayout } from "@/components/AppLayout";
+import { ApiError } from "@/api/client";
 import { contestsApi } from "@/api/services";
 import { EXECUTABLE_LANGUAGES } from "@/api/mappers";
 import {
@@ -15,12 +16,20 @@ import {
   type FacultyContestDetail,
   type ProblemTestCase,
 } from "@/api/types";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { ThemedSelect } from "@/components/ThemedSelect";
+import { copyTextToClipboard } from "@/lib/clipboard";
+import {
+  CONTEST_CODING_EXAMPLE_JSON,
+  parseContestCodingQuestionsJson,
+} from "@/lib/contest-question-import";
+import type { JsonImportFieldError } from "@/lib/problem-import-schema";
 
 type BuilderQuestionType = "MCQ" | "MSQ" | "Coding";
 type CodingDifficulty = "Easy" | "Medium" | "Hard";
@@ -29,7 +38,10 @@ type TestCaseBuilder = { input: string; output: string };
 type ContestMetadata = {
   title: string;
   startTime: string;
+  endTime: string;
   duration: string;
+  registrationOpenAt: string;
+  registrationCloseAt: string;
   type: ContestType;
   targetDepartment: Department | "All";
   maxViolations: string;
@@ -152,17 +164,70 @@ function mapContestToMetadata(contest: FacultyContestDetail): ContestMetadata {
   return {
     title: contest.title,
     startTime: toDateTimeLocalValue(contest.startAt),
+    endTime: toDateTimeLocalValue(contest.endAt),
     duration: String(contest.durationMinutes),
+    registrationOpenAt: toDateTimeLocalValue(contest.registrationOpenAt),
+    registrationCloseAt: toDateTimeLocalValue(contest.registrationCloseAt),
     type: contest.type,
     targetDepartment: contest.targetDepartment ?? "All",
     maxViolations: String(contest.maxViolations),
   };
 }
 
+function toIsoOrEmpty(dateTimeLocalValue: string): string {
+  return dateTimeLocalValue ? new Date(dateTimeLocalValue).toISOString() : "";
+}
+
+/** Minutes between the contest start and end, or null while either end is unset/invalid. */
+function computeWindowMinutes(startTime: string, endTime: string): number | null {
+  if (!startTime || !endTime) {
+    return null;
+  }
+
+  const windowMs = new Date(endTime).getTime() - new Date(startTime).getTime();
+  return Number.isFinite(windowMs) ? Math.floor(windowMs / 60_000) : null;
+}
+
+/**
+ * The API requires a non-empty input on every test case, so half-filled rows are dropped here
+ * rather than sent and rejected. A question left with no hidden cases still fails validation,
+ * which is the message faculty actually need to see.
+ */
 function filterCompletedTestCases(testCases: TestCaseBuilder[]): TestCaseBuilder[] {
   return testCases
     .map((testCase) => ({ input: testCase.input.trim(), output: testCase.output.trim() }))
-    .filter((testCase) => testCase.input.length > 0 || testCase.output.length > 0);
+    .filter((testCase) => testCase.input.length > 0);
+}
+
+/** Blank option boxes are ignored so a 2-option MCQ does not fail on the unused C/D fields. */
+function filterFilledOptions(options: string[]): string[] {
+  return options.map((option) => option.trim()).filter((option) => option.length > 0);
+}
+
+/**
+ * Turns a rejected save into the specific, per-field list the backend already sends, instead of
+ * the bare "Validation failed" message.
+ */
+function toSaveErrors(error: unknown): JsonImportFieldError[] {
+  if (error instanceof ApiError) {
+    const details = (error.details as { details?: { fieldIssues?: JsonImportFieldError[] } })?.details;
+    if (details?.fieldIssues?.length) {
+      return details.fieldIssues;
+    }
+  }
+
+  return [{ path: "contest", message: (error as Error)?.message || "Failed to save contest" }];
+}
+
+/** "questions.2.constraints" reads better as "Question 3 › constraints". */
+function humanizeErrorPath(path: string): string {
+  const questionMatch = /^questions\.(\d+)\.?(.*)$/.exec(path);
+  if (questionMatch) {
+    const [, index, rest] = questionMatch;
+    return rest ? `Question ${Number(index) + 1} › ${rest}` : `Question ${Number(index) + 1}`;
+  }
+
+  return path;
 }
 
 export default function CreateContest() {
@@ -173,12 +238,20 @@ export default function CreateContest() {
   const [metadata, setMetadata] = useState<ContestMetadata>({
     title: "",
     startTime: "",
+    endTime: "",
     duration: "",
+    registrationOpenAt: "",
+    registrationCloseAt: "",
     type: "Rated",
     targetDepartment: "All",
     maxViolations: "3",
   });
   const [questions, setQuestions] = useState<BuilderQuestion[]>([]);
+  const [authoringTab, setAuthoringTab] = useState("form");
+  const [jsonSource, setJsonSource] = useState("");
+  const [jsonErrors, setJsonErrors] = useState<JsonImportFieldError[]>([]);
+  const [jsonStructureCopied, setJsonStructureCopied] = useState(false);
+  const [saveErrors, setSaveErrors] = useState<JsonImportFieldError[]>([]);
 
   const contestQuery = useQuery({
     queryKey: ["faculty-contest-edit", id],
@@ -214,7 +287,7 @@ export default function CreateContest() {
             type: "MSQ",
             points: question.points,
             statement: question.statement.trim(),
-            options: question.options.map((option) => option.trim()),
+            options: filterFilledOptions(question.options),
             correctAnswers: question.correctAnswers,
           };
         }
@@ -224,15 +297,19 @@ export default function CreateContest() {
           type: "MCQ",
           points: question.points,
           statement: question.statement.trim(),
-          options: question.options.map((option) => option.trim()),
+          options: filterFilledOptions(question.options),
           correctAnswer: question.correctAnswer,
         };
       });
 
       const payload = {
         title: metadata.title.trim(),
-        startTime: metadata.startTime ? new Date(metadata.startTime).toISOString() : "",
+        startTime: toIsoOrEmpty(metadata.startTime),
+        endTime: toIsoOrEmpty(metadata.endTime),
         duration: Number(metadata.duration),
+        // Left blank, the backend opens registration immediately and closes it at contest start.
+        ...(metadata.registrationOpenAt ? { registrationOpenAt: toIsoOrEmpty(metadata.registrationOpenAt) } : {}),
+        ...(metadata.registrationCloseAt ? { registrationCloseAt: toIsoOrEmpty(metadata.registrationCloseAt) } : {}),
         type: metadata.type,
         targetDepartment: metadata.targetDepartment === "All" ? null : metadata.targetDepartment,
         maxViolations: Number(metadata.maxViolations),
@@ -242,11 +319,18 @@ export default function CreateContest() {
       return isEditMode ? contestsApi.update(id!, payload, pathname) : contestsApi.create(payload, pathname);
     },
     onSuccess: (response) => {
+      setSaveErrors([]);
       toast.success(isEditMode ? "Contest updated successfully" : "Contest created successfully");
       navigate(`/faculty/contests/${response.contest.id}`);
     },
     onError: (error) => {
-      toast.error((error as Error).message || `Failed to ${isEditMode ? "update" : "create"} contest`);
+      const errors = toSaveErrors(error);
+      setSaveErrors(errors);
+      toast.error(
+        errors.length === 1
+          ? errors[0].message
+          : `${errors.length} problems need fixing before this contest can be saved`,
+      );
     },
   });
 
@@ -265,8 +349,48 @@ export default function CreateContest() {
     [questions],
   );
 
+  const windowMinutes = computeWindowMinutes(metadata.startTime, metadata.endTime);
+  const durationMinutes = Number(metadata.duration);
+  const durationExceedsWindow =
+    windowMinutes !== null && Number.isFinite(durationMinutes) && durationMinutes > windowMinutes;
+
   const addQuestion = (type: BuilderQuestionType) => {
     setQuestions((current) => [...current, createQuestion(type)]);
+  };
+
+  const copyJsonStructure = async () => {
+    try {
+      await copyTextToClipboard(CONTEST_CODING_EXAMPLE_JSON);
+      setJsonStructureCopied(true);
+      toast.success("Ideal JSON structure copied");
+      window.setTimeout(() => setJsonStructureCopied(false), 1600);
+    } catch {
+      toast.error("Could not copy JSON structure");
+    }
+  };
+
+  // Imported questions land in the same builder list as hand-authored ones, so faculty can
+  // review and tweak them in the form before saving.
+  const importQuestionsFromJson = () => {
+    const { questions: imported, errors } = parseContestCodingQuestionsJson(jsonSource);
+    setJsonErrors(errors);
+
+    if (errors.length > 0) {
+      return;
+    }
+
+    setQuestions((current) => [
+      ...current,
+      ...imported.map((question) => ({
+        ...createQuestion("Coding"),
+        ...question,
+        sampleTestCases: normalizeTestCases(question.sampleTestCases),
+        hiddenTestCases: normalizeTestCases(question.hiddenTestCases),
+      })) as BuilderQuestion[],
+    ]);
+    setJsonSource("");
+    setAuthoringTab("form");
+    toast.success(`${imported.length} coding question${imported.length === 1 ? "" : "s"} added`);
   };
 
   const removeQuestion = (questionId: string) => {
@@ -359,59 +483,147 @@ export default function CreateContest() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Start Time</label>
-              <Input type="datetime-local" value={metadata.startTime} onChange={(event) => setMetadata((current) => ({ ...current, startTime: event.target.value }))} />
+              <label className="text-sm font-medium" htmlFor="contest-start-time">Contest Window Opens</label>
+              <Input id="contest-start-time" type="datetime-local" value={metadata.startTime} onChange={(event) => setMetadata((current) => ({ ...current, startTime: event.target.value }))} />
+              <p className="text-xs text-muted-foreground">Students can begin their attempt from this moment.</p>
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Duration (minutes)</label>
-              <Input type="number" min={1} value={metadata.duration} onChange={(event) => setMetadata((current) => ({ ...current, duration: event.target.value }))} placeholder="120" />
+              <label className="text-sm font-medium" htmlFor="contest-end-time">Contest Window Closes</label>
+              <Input id="contest-end-time" type="datetime-local" value={metadata.endTime} onChange={(event) => setMetadata((current) => ({ ...current, endTime: event.target.value }))} />
+              <p className="text-xs text-muted-foreground">Every attempt is force-submitted at this time.</p>
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Contest Type</label>
-              <Select value={metadata.type} onValueChange={(value: ContestType) => setMetadata((current) => ({ ...current, type: value }))}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Rated">Rated</SelectItem>
-                  <SelectItem value="Practice">Practice</SelectItem>
-                </SelectContent>
-              </Select>
+              <label className="text-sm font-medium" htmlFor="contest-duration">Attempt Duration (minutes)</label>
+              <Input id="contest-duration" type="number" min={1} value={metadata.duration} onChange={(event) => setMetadata((current) => ({ ...current, duration: event.target.value }))} placeholder="120" />
+              {durationExceedsWindow ? (
+                <p className="text-xs font-medium text-destructive">
+                  The window is only {windowMinutes} minutes long — shorten the duration or extend the window.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Each student gets this long from when they start
+                  {windowMinutes !== null ? `; the window is ${windowMinutes} minutes` : ""}.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Visibility</label>
-              <Select value={metadata.targetDepartment} onValueChange={(value: Department | "All") => setMetadata((current) => ({ ...current, targetDepartment: value }))}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="All">All Departments</SelectItem>
-                  {DEPARTMENTS.map((department) => (
-                    <SelectItem key={department} value={department}>
-                      {department}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <label className="text-sm font-medium" htmlFor="contest-type">Contest Type</label>
+              <ThemedSelect
+                id="contest-type"
+                value={metadata.type}
+                onValueChange={(value) => setMetadata((current) => ({ ...current, type: value as ContestType }))}
+                options={[
+                  { value: "Rated", label: "Rated" },
+                  { value: "Practice", label: "Practice" },
+                ]}
+              />
             </div>
+
             <div className="space-y-2">
-              <label className="text-sm font-medium">Max Violations</label>
-              <Input type="number" min={1} value={metadata.maxViolations} onChange={(event) => setMetadata((current) => ({ ...current, maxViolations: event.target.value }))} />
+              <label className="text-sm font-medium" htmlFor="contest-registration-open">Registration Opens</label>
+              <Input id="contest-registration-open" type="datetime-local" value={metadata.registrationOpenAt} onChange={(event) => setMetadata((current) => ({ ...current, registrationOpenAt: event.target.value }))} />
+              <p className="text-xs text-muted-foreground">Leave blank to open registration immediately.</p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="contest-registration-close">Registration Closes</label>
+              <Input id="contest-registration-close" type="datetime-local" value={metadata.registrationCloseAt} onChange={(event) => setMetadata((current) => ({ ...current, registrationCloseAt: event.target.value }))} />
+              <p className="text-xs text-muted-foreground">Leave blank to close it when the contest starts.</p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="contest-department">Department Visibility</label>
+              <ThemedSelect
+                id="contest-department"
+                value={metadata.targetDepartment}
+                onValueChange={(value) => setMetadata((current) => ({ ...current, targetDepartment: value as Department | "All" }))}
+                options={[
+                  { value: "All", label: "All Departments" },
+                  ...DEPARTMENTS.map((department) => ({ value: department, label: department })),
+                ]}
+              />
+              <p className="text-xs text-muted-foreground">
+                {metadata.targetDepartment === "All"
+                  ? "Visible to every student."
+                  : "Only students in this department can see and register."}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="contest-max-violations">Violation Warning Threshold</label>
+              <Input id="contest-max-violations" type="number" min={1} value={metadata.maxViolations} onChange={(event) => setMetadata((current) => ({ ...current, maxViolations: event.target.value }))} />
+              <p className="text-xs text-muted-foreground">Screenshot attempts warn the student at this count. Each one costs 5 points.</p>
             </div>
           </div>
         </Card>
 
         <Card className="space-y-5 p-6 shadow-card">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-2">
-            <h2 className="font-display text-lg font-bold">Question Builder</h2>
+            <h2 className="font-display text-lg font-bold">Questions</h2>
             <p className="text-sm text-muted-foreground">
               {questions.length} question{questions.length === 1 ? "" : "s"} • {totalPoints} pts total
             </p>
           </div>
 
+          <Tabs value={authoringTab} onValueChange={setAuthoringTab}>
+            <TabsList className="grid w-full max-w-md grid-cols-2">
+              <TabsTrigger value="form">Form Builder</TabsTrigger>
+              <TabsTrigger value="json">
+                <FileJson className="mr-1.5 h-3.5 w-3.5" /> Import JSON
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="json" className="mt-5 space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-display text-base font-bold">Import Coding Questions</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Paste one coding question or an array of them. MCQ and MSQ are authored in the
+                    Form Builder.
+                  </p>
+                </div>
+                <Button type="button" variant="outline" onClick={copyJsonStructure}>
+                  {jsonStructureCopied ? <CheckCircle2 className="mr-2 h-4 w-4" /> : <ClipboardCopy className="mr-2 h-4 w-4" />}
+                  {jsonStructureCopied ? "Copied Structure" : "Copy JSON Structure"}
+                </Button>
+              </div>
+
+              <Textarea
+                value={jsonSource}
+                onChange={(event) => setJsonSource(event.target.value)}
+                placeholder="Paste the copied JSON structure here and replace the values with your question data."
+                className="min-h-[320px] resize-y font-mono-code text-xs leading-5"
+              />
+
+              {jsonErrors.length > 0 ? (
+                <div className="max-h-48 overflow-auto border border-destructive/30 bg-destructive/10 p-3 text-sm">
+                  <p className="font-medium text-destructive">Import validation failed</p>
+                  <ul className="mt-2 space-y-1">
+                    {jsonErrors.map((error, index) => (
+                      <li key={`${error.path}-${error.message}-${index}`}>
+                        <span className="font-mono-code text-xs">{error.path}</span>: {error.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="border border-border bg-muted/60 p-3 text-sm text-muted-foreground">
+                  Validated questions are appended to the Form Builder, where you can review and edit
+                  them before saving the contest.
+                </p>
+              )}
+
+              <div className="flex justify-end">
+                <Button type="button" onClick={importQuestionsFromJson} disabled={!jsonSource.trim()}>
+                  <Upload className="mr-2 h-4 w-4" /> Validate & Add Questions
+                </Button>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="form" className="mt-5 space-y-5">
           <div>
             {questions.length === 0 && (
               <Card className="border border-dashed border-border p-4 text-sm text-muted-foreground shadow-none">
@@ -437,14 +649,16 @@ export default function CreateContest() {
 
                     <div className="space-y-2 md:max-w-xs">
                       <label className="text-sm font-medium">Difficulty</label>
-                      <Select value={question.difficulty} onValueChange={(value: CodingDifficulty) => updateQuestion(question.id, (current) => current.type === "Coding" ? { ...current, difficulty: value } : current)}>
-                        <SelectTrigger><SelectValue placeholder="Select difficulty" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Easy">Easy</SelectItem>
-                          <SelectItem value="Medium">Medium</SelectItem>
-                          <SelectItem value="Hard">Hard</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <ThemedSelect
+                        value={question.difficulty}
+                        onValueChange={(value) => updateQuestion(question.id, (current) => current.type === "Coding" ? { ...current, difficulty: value as CodingDifficulty } : current)}
+                        placeholder="Select difficulty"
+                        options={[
+                          { value: "Easy", label: "Easy" },
+                          { value: "Medium", label: "Medium" },
+                          { value: "Hard", label: "Hard" },
+                        ]}
+                      />
                     </div>
 
                     <div className="space-y-2">
@@ -552,14 +766,12 @@ export default function CreateContest() {
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
                           <label className="text-sm font-medium">Correct Answer</label>
-                          <Select value={question.correctAnswer} onValueChange={(value) => updateQuestion(question.id, (current) => current.type === "MCQ" ? { ...current, correctAnswer: value } : current)}>
-                            <SelectTrigger><SelectValue placeholder="Select correct option" /></SelectTrigger>
-                            <SelectContent>
-                              {OPTION_KEYS.map((key) => (
-                                <SelectItem key={key} value={key}>{key}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <ThemedSelect
+                            value={question.correctAnswer}
+                            onValueChange={(value) => updateQuestion(question.id, (current) => current.type === "MCQ" ? { ...current, correctAnswer: value } : current)}
+                            placeholder="Select correct option"
+                            options={OPTION_KEYS.map((key) => ({ value: key, label: `Option ${key}` }))}
+                          />
                         </div>
                         <div className="space-y-2">
                           <label className="text-sm font-medium">Points</label>
@@ -600,15 +812,46 @@ export default function CreateContest() {
             ))}
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => addQuestion("MCQ")}>Add MCQ</Button>
-            <Button variant="outline" onClick={() => addQuestion("MSQ")}>Add MSQ</Button>
-            <Button variant="outline" onClick={() => addQuestion("Coding")}>Add Coding Problem</Button>
-          </div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={() => addQuestion("MCQ")}>
+                  <Plus className="mr-1.5 h-4 w-4" /> Add MCQ
+                </Button>
+                <Button variant="outline" onClick={() => addQuestion("MSQ")}>
+                  <Plus className="mr-1.5 h-4 w-4" /> Add MSQ
+                </Button>
+                <Button variant="outline" onClick={() => addQuestion("Coding")}>
+                  <Plus className="mr-1.5 h-4 w-4" /> Add Coding Problem
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
         </Card>
 
-        <div className="flex justify-end">
-          <Button className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+        {saveErrors.length > 0 && (
+          <Card className="border border-destructive/40 bg-destructive/10 p-4 shadow-none">
+            <h3 className="font-display text-base font-bold text-destructive">
+              This contest could not be saved
+            </h3>
+            <ul className="mt-2 max-h-56 space-y-1.5 overflow-auto text-sm">
+              {saveErrors.map((error, index) => (
+                <li key={`${error.path}-${error.message}-${index}`} className="flex flex-wrap gap-x-1.5">
+                  <span className="font-mono-code text-xs font-semibold">{humanizeErrorPath(error.path)}</span>
+                  <span className="text-muted-foreground">— {error.message}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
+
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {questions.length === 0 && (
+            <Badge variant="outline" className="text-muted-foreground">Add at least one question</Badge>
+          )}
+          <Button
+            className="bg-accent text-accent-foreground hover:bg-accent/90"
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending || questions.length === 0 || durationExceedsWindow}
+          >
             {saveMutation.isPending ? (isEditMode ? "Saving..." : "Creating...") : isEditMode ? "Save Changes" : "Create Contest"}
           </Button>
         </div>

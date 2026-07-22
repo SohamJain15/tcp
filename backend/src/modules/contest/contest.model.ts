@@ -8,6 +8,7 @@ export type ContestLifecycleState = "Published";
 export type ContestComputedStatus = "Live" | "Upcoming" | "Ended";
 export type ContestStudentListStatus = "Live" | "Upcoming" | "Past";
 export type ContestQuestionType = "MCQ" | "MSQ" | "Coding";
+export type ContestRegistrationStatus = "NOT_OPEN" | "OPEN" | "CLOSED";
 export type ContestAttemptStatus = "NOT_STARTED" | "ACTIVE" | "SUBMITTED" | "AUTO_SUBMITTED" | "DISQUALIFIED";
 export type ContestStudentAttemptStatus = ContestAttemptStatus | "NOT_ATTEMPTED";
 export type ContestQuestionAttemptStatus = "UNATTEMPTED" | "ATTEMPTED" | "SOLVED";
@@ -68,7 +69,12 @@ export interface ContestRecord {
   id: string;
   title: string;
   startAt: Date;
+  /** Close of the contest window. Attempts can be started any time between startAt and endAt. */
+  endAt: Date;
+  /** Length of a single student's attempt, always capped by endAt. */
   durationMinutes: number;
+  registrationOpenAt: Date;
+  registrationCloseAt: Date;
   type: ContestType;
   lifecycleState: ContestLifecycleState;
   resultsPublished: boolean;
@@ -100,6 +106,28 @@ export interface ContestQuestionAttemptState {
   solvedAt: Date | null;
 }
 
+export interface ContestRegistrationRecord {
+  id: string;
+  contestId: string;
+  userEmail: string;
+  userName: string | null;
+  userUid: string | null;
+  userDepartment: Department | null;
+  registeredAt: Date;
+}
+
+export interface ContestRegistrationItem {
+  id: string;
+  userEmail: string;
+  userName: string | null;
+  userUid: string | null;
+  userDepartment: Department | null;
+  year: StudentYear | null;
+  registeredAt: string;
+  hasAttempted: boolean;
+  attemptStatus: ContestStudentAttemptStatus;
+}
+
 export interface ContestAttemptRecord {
   id: string;
   contestId: string;
@@ -115,6 +143,8 @@ export interface ContestAttemptRecord {
   timeTakenMs: number | null;
   questionStates: ContestQuestionAttemptState[];
   startedAt: Date;
+  /** min(startedAt + contest duration, contest.endAt) — frozen when the attempt starts. */
+  deadlineAt: Date;
   updatedAt: Date;
   submittedAt: Date | null;
   autoSubmittedAt: Date | null;
@@ -142,8 +172,14 @@ export interface ContestListItem {
   attemptStatus: ContestStudentAttemptStatus;
   hasAttempted: boolean;
   startAt: string;
+  endAt: string;
   durationMinutes: number;
   duration: string;
+  registrationOpenAt: string;
+  registrationCloseAt: string;
+  registrationStatus: ContestRegistrationStatus;
+  isRegistered: boolean;
+  registeredCount: number;
   participantsCount: number;
   targetDepartment: Department | null;
   createdBy: string;
@@ -230,7 +266,13 @@ export interface StudentContestDetailResponse {
   resultsPublished: boolean;
   computedStatus: ContestComputedStatus;
   startAt: string;
+  endAt: string;
   durationMinutes: number;
+  registrationOpenAt: string;
+  registrationCloseAt: string;
+  registrationStatus: ContestRegistrationStatus;
+  isRegistered: boolean;
+  registeredCount: number;
   targetDepartment: Department | null;
   maxViolations: number;
   studentListStatus: ContestStudentListStatus;
@@ -247,8 +289,14 @@ export interface FacultyContestDetailResponse {
   type: ContestType;
   lifecycleState: ContestLifecycleState;
   resultsPublished: boolean;
+  computedStatus: ContestComputedStatus;
   startAt: string;
+  endAt: string;
   durationMinutes: number;
+  registrationOpenAt: string;
+  registrationCloseAt: string;
+  registrationStatus: ContestRegistrationStatus;
+  registeredCount: number;
   targetDepartment: Department | null;
   maxViolations: number;
   questions: ContestQuestion[];
@@ -343,6 +391,7 @@ export interface StudentContestQuestionEnvelope {
     type: ContestType;
     computedStatus: ContestComputedStatus;
     startAt: string;
+    endAt: string;
     durationMinutes: number;
     maxViolations: number;
     resultsPublished: boolean;
@@ -416,7 +465,7 @@ export interface FacultyContestAttemptReview {
 
 export function computeContestStatus(contest: ContestRecord, now: Date): ContestComputedStatus {
   const startsAt = contest.startAt.getTime();
-  const endsAt = startsAt + contest.durationMinutes * 60_000;
+  const endsAt = contest.endAt.getTime();
   const nowMs = now.getTime();
 
   if (nowMs < startsAt) {
@@ -431,7 +480,34 @@ export function computeContestStatus(contest: ContestRecord, now: Date): Contest
 }
 
 export function computeContestDeadline(contest: ContestRecord): Date {
-  return new Date(contest.startAt.getTime() + contest.durationMinutes * 60_000);
+  return contest.endAt;
+}
+
+/**
+ * A student attempt never outlives the contest window: whoever starts late gets whatever is
+ * left of it rather than the full duration.
+ */
+export function computeAttemptDeadline(contest: ContestRecord, startedAt: Date): Date {
+  return new Date(
+    Math.min(startedAt.getTime() + contest.durationMinutes * 60_000, contest.endAt.getTime()),
+  );
+}
+
+export function computeRegistrationStatus(
+  contest: ContestRecord,
+  now: Date,
+): ContestRegistrationStatus {
+  const nowMs = now.getTime();
+
+  if (nowMs < contest.registrationOpenAt.getTime()) {
+    return "NOT_OPEN";
+  }
+
+  if (nowMs > contest.registrationCloseAt.getTime() || nowMs > contest.endAt.getTime()) {
+    return "CLOSED";
+  }
+
+  return "OPEN";
 }
 
 export function computeViolationPenaltyPoints(violationCount: number): number {
@@ -463,21 +539,18 @@ export function buildStudentQuestionTitle(question: ContestQuestion): string {
   return question.statement;
 }
 
+/**
+ * A submitted attempt no longer moves the contest to "Past": a live contest stays in the Live
+ * section (rendered as "Attempted") until its window actually closes.
+ */
 export function deriveStudentListStatus(
   contest: ContestRecord,
-  attempt: ContestAttemptRecord | null,
+  _attempt: ContestAttemptRecord | null,
   now: Date,
 ): ContestStudentListStatus {
   const computedStatus = computeContestStatus(contest, now);
-  const attemptStatus = attempt?.status;
 
-  if (
-    contest.resultsPublished ||
-    computedStatus === "Ended" ||
-    attemptStatus === "SUBMITTED" ||
-    attemptStatus === "AUTO_SUBMITTED" ||
-    attemptStatus === "DISQUALIFIED"
-  ) {
+  if (contest.resultsPublished || computedStatus === "Ended") {
     return "Past";
   }
 
@@ -489,6 +562,8 @@ export function toContestListItem(
   participantsCount: number,
   now: Date,
   attempt: ContestAttemptRecord | null = null,
+  isRegistered = false,
+  registeredCount = 0,
 ): ContestListItem {
   return {
     id: contest.id,
@@ -501,8 +576,14 @@ export function toContestListItem(
     attemptStatus: attempt?.status ?? "NOT_ATTEMPTED",
     hasAttempted: Boolean(attempt),
     startAt: toIsoString(contest.startAt) ?? new Date(0).toISOString(),
+    endAt: toIsoString(contest.endAt) ?? new Date(0).toISOString(),
     durationMinutes: contest.durationMinutes,
     duration: `${contest.durationMinutes} mins`,
+    registrationOpenAt: toIsoString(contest.registrationOpenAt) ?? new Date(0).toISOString(),
+    registrationCloseAt: toIsoString(contest.registrationCloseAt) ?? new Date(0).toISOString(),
+    registrationStatus: computeRegistrationStatus(contest, now),
+    isRegistered,
+    registeredCount,
     participantsCount,
     targetDepartment: contest.targetDepartment,
     createdBy: contest.createdBy,
@@ -514,6 +595,8 @@ export function toStudentContestDetailResponse(
   attempt: ContestAttemptRecord | null,
   now: Date,
   report: StudentContestReport | null = null,
+  isRegistered = false,
+  registeredCount = 0,
 ): StudentContestDetailResponse {
   const computedStatus = computeContestStatus(contest, now);
   const includeQuestions = computedStatus === "Ended" || (computedStatus === "Live" && attempt?.status === "ACTIVE");
@@ -527,7 +610,13 @@ export function toStudentContestDetailResponse(
     resultsPublished: contest.resultsPublished,
     computedStatus,
     startAt: toIsoString(contest.startAt) ?? new Date(0).toISOString(),
+    endAt: toIsoString(contest.endAt) ?? new Date(0).toISOString(),
     durationMinutes: contest.durationMinutes,
+    registrationOpenAt: toIsoString(contest.registrationOpenAt) ?? new Date(0).toISOString(),
+    registrationCloseAt: toIsoString(contest.registrationCloseAt) ?? new Date(0).toISOString(),
+    registrationStatus: computeRegistrationStatus(contest, now),
+    isRegistered,
+    registeredCount,
     targetDepartment: contest.targetDepartment,
     maxViolations: contest.maxViolations,
     studentListStatus: deriveStudentListStatus(contest, attempt, now),
@@ -574,15 +663,25 @@ export function toStudentContestDetailResponse(
   };
 }
 
-export function toFacultyContestDetailResponse(contest: ContestRecord): FacultyContestDetailResponse {
+export function toFacultyContestDetailResponse(
+  contest: ContestRecord,
+  now: Date = new Date(),
+  registeredCount = 0,
+): FacultyContestDetailResponse {
   return {
     id: contest.id,
     title: contest.title,
     type: contest.type,
     lifecycleState: contest.lifecycleState,
     resultsPublished: contest.resultsPublished,
+    computedStatus: computeContestStatus(contest, now),
     startAt: toIsoString(contest.startAt) ?? new Date(0).toISOString(),
+    endAt: toIsoString(contest.endAt) ?? new Date(0).toISOString(),
     durationMinutes: contest.durationMinutes,
+    registrationOpenAt: toIsoString(contest.registrationOpenAt) ?? new Date(0).toISOString(),
+    registrationCloseAt: toIsoString(contest.registrationCloseAt) ?? new Date(0).toISOString(),
+    registrationStatus: computeRegistrationStatus(contest, now),
+    registeredCount,
     targetDepartment: contest.targetDepartment,
     maxViolations: contest.maxViolations,
     questions: contest.questions,
@@ -678,12 +777,31 @@ export function toStudentContestQuestionEnvelope(
       type: contest.type,
       computedStatus: computeContestStatus(contest, now),
       startAt: toIsoString(contest.startAt) ?? new Date(0).toISOString(),
+      endAt: toIsoString(contest.endAt) ?? new Date(0).toISOString(),
       durationMinutes: contest.durationMinutes,
       maxViolations: contest.maxViolations,
       resultsPublished: contest.resultsPublished,
     },
     attempt,
     question: toStudentContestQuestionDetailResponse(contest, question, attempt, now),
+  };
+}
+
+export function toContestRegistrationItem(
+  registration: ContestRegistrationRecord,
+  attempt: ContestAttemptRecord | null = null,
+  year: StudentYear | null = null,
+): ContestRegistrationItem {
+  return {
+    id: registration.id,
+    userEmail: registration.userEmail,
+    userName: registration.userName,
+    userUid: registration.userUid,
+    userDepartment: registration.userDepartment,
+    year,
+    registeredAt: toIsoString(registration.registeredAt) ?? new Date(0).toISOString(),
+    hasAttempted: Boolean(attempt),
+    attemptStatus: attempt?.status ?? "NOT_ATTEMPTED",
   };
 }
 

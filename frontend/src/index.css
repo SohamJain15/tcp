@@ -4,6 +4,10 @@
 
 @layer base {
   :root {
+    /* Tells the browser which palette to draw native controls with — without it the
+       datetime-local calendar icon renders dark-on-dark and disappears in dark mode. */
+    color-scheme: light;
+
     /* TCET Light - Ivory + Navy + Coral */
     --background: 42 40% 97%;
     --foreground: 218 58% 16%;
@@ -49,6 +53,8 @@
   }
 
   .dark {
+    color-scheme: dark;
+
     /* Keep the same palette as light mode, only invert the canvas */
     --background: 222 12% 4%;
     --foreground: 42 40% 97%;
@@ -96,6 +102,22 @@
 
 @layer base {
   * { @apply border-border; }
+  /* Chromium draws the picker glyph as a fixed dark bitmap, so `color-scheme` alone is not
+     always enough — invert it explicitly in dark mode to keep it legible. */
+  .dark input[type="date"]::-webkit-calendar-picker-indicator,
+  .dark input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+  .dark input[type="time"]::-webkit-calendar-picker-indicator,
+  .dark input[type="month"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    opacity: 0.75;
+    cursor: pointer;
+  }
+  .dark input[type="date"]::-webkit-calendar-picker-indicator:hover,
+  .dark input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
+  .dark input[type="time"]::-webkit-calendar-picker-indicator:hover,
+  .dark input[type="month"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+  }
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', system-ui, sans-serif;
