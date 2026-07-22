@@ -25,8 +25,13 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ContestLockOverlay } from "@/components/ContestLockOverlay";
+import { ContestQuestionNav } from "@/components/ContestQuestionNav";
+import { ContestScreenGuard } from "@/components/ContestScreenGuard";
+import { ContestSubmitDialog } from "@/components/ContestSubmitDialog";
 import { ContestTimer } from "@/components/ContestTimer";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { useVisitedQuestions } from "@/hooks/useVisitedQuestions";
 import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { useContestProctoring } from "./useContestProctoring";
@@ -177,6 +182,9 @@ export default function ContestDetail() {
   const queryClient = useQueryClient();
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [revealedAnswers, setRevealedAnswers] = useState<Record<string, boolean>>({});
+  const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
+  const [navSheetOpen, setNavSheetOpen] = useState(false);
+  const { visitedIds, markVisited } = useVisitedQuestions(id);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["contest-detail", id],
@@ -199,7 +207,7 @@ export default function ContestDetail() {
     [id, queryClient],
   );
 
-  const { isLocked, violationCount, requestFullscreen } = useContestProctoring({
+  const { isLocked, isObscured, violationCount, requestFullscreen } = useContestProctoring({
     contestId: id,
     pathname,
     attempt,
@@ -273,6 +281,7 @@ export default function ContestDetail() {
     mutationFn: () => contestsApi.submitAttempt(id, pathname),
     onSuccess: async (response) => {
       updateAttemptInCache(response.attempt);
+      setSubmitDialogOpen(false);
       if (document.fullscreenElement && document.exitFullscreen) {
         try {
           await document.exitFullscreen();
@@ -280,11 +289,11 @@ export default function ContestDetail() {
           // Let the page continue even if the browser refuses to exit fullscreen.
         }
       }
-      toast.success("Contest ended successfully");
+      toast.success("Test submitted successfully");
       await refetch();
     },
     onError: (mutationError) => {
-      toast.error((mutationError as Error)?.message || "Failed to end contest");
+      toast.error((mutationError as Error)?.message || "Failed to submit the test");
     },
   });
 
@@ -327,17 +336,15 @@ export default function ContestDetail() {
   const attemptIsLocked = Boolean(attempt && attempt.status !== "ACTIVE");
   const showQuestions = contestEnded || attemptIsActive;
   const showReport = Boolean(report) && (contest.resultsPublished || contestEnded);
-  const allQuestionsCompleted = Boolean(
-    attempt &&
-      contest.questions.length > 0 &&
-      contest.questions.every((question) =>
-        attempt.questionStates.some((state) => state.questionId === question.id && state.status !== "UNATTEMPTED"),
-      ),
-  );
   // The pre-flight screen: contest is live, the student has not started, and there is nothing
   // to report yet. This replaces the old scattered cards with one focused call to action.
   const showPreflight = canAttempt && !attempt && !showReport;
   const submittedWhileLive = canAttempt && attemptIsLocked;
+
+  // Focus loss blanks the page before anything else, so an off-browser capture gets nothing.
+  if (isObscured) {
+    return <ContestScreenGuard />;
+  }
 
   if (isLocked) {
     return <ContestLockOverlay onReturnToFullscreen={requestFullscreen} violationCount={violationCount} />;
@@ -384,8 +391,9 @@ export default function ContestDetail() {
               </li>
               <li className="flex gap-2">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-                Tab switching, copy/paste and right-click are disabled. Screenshot attempts are
-                recorded and cost {5} points each.
+                Copy, paste and right-click are disabled. Leaving fullscreen, switching tabs and
+                screenshots are recorded, cost 5 points each, and auto-submit the test at{" "}
+                {contest.maxViolations} violations.
               </li>
               <li className="flex gap-2">
                 <Timer className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
@@ -431,9 +439,47 @@ export default function ContestDetail() {
     );
   }
 
+  const questionNav = (
+    <ContestQuestionNav
+      contestId={id}
+      questions={contest.questions}
+      attempt={attempt}
+      visitedIds={visitedIds}
+      maxViolations={contest.maxViolations}
+      onSelectQuestion={(question) => {
+        markVisited(question.id);
+        setNavSheetOpen(false);
+      }}
+      onSubmitTest={() => setSubmitDialogOpen(true)}
+      onTimeUp={handleTimeUp}
+      isSubmitting={submitAttemptMutation.isPending}
+    />
+  );
+
   return (
     <AppLayout hideNavbar={attemptIsActive} hideFooter={attemptIsActive}>
-      <div className={cn("container py-6", showReport ? "space-y-4" : "space-y-6")}>
+      <div className={cn(attemptIsActive && contest.questions.length > 0 && "flex min-h-[calc(100vh-3rem)]")}>
+        {attemptIsActive && contest.questions.length > 0 && (
+          <div className="sticky top-0 hidden h-[calc(100vh-3rem)] w-64 shrink-0 lg:block">{questionNav}</div>
+        )}
+
+        <div className="min-w-0 flex-1">
+          {attemptIsActive && contest.questions.length > 0 && (
+            <div className="border-b border-border bg-card px-4 py-2 lg:hidden">
+              <Sheet open={navSheetOpen} onOpenChange={setNavSheetOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <ListChecks className="mr-1.5 h-4 w-4" /> Questions
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-72 p-0">
+                  {questionNav}
+                </SheetContent>
+              </Sheet>
+            </div>
+          )}
+
+          <div className={cn("container py-6", showReport ? "space-y-4" : "space-y-6")}>
         {showReport ? (
           <div className="flex flex-wrap items-center gap-3">
             <Link
@@ -472,8 +518,13 @@ export default function ContestDetail() {
                   {startAttemptMutation.isPending ? "Starting..." : "Start Test"}
                 </Button>
               )}
-              {attemptIsActive && allQuestionsCompleted && (
-                <Button variant="destructive" onClick={() => submitAttemptMutation.mutate()} disabled={submitAttemptMutation.isPending}>
+              {/* Submittable at any point — the confirmation dialog surfaces what is unfinished. */}
+              {attemptIsActive && (
+                <Button
+                  className="bg-accent text-accent-foreground hover:bg-accent/90"
+                  onClick={() => setSubmitDialogOpen(true)}
+                  disabled={submitAttemptMutation.isPending}
+                >
                   {submitAttemptMutation.isPending ? "Submitting..." : "Submit Test"}
                 </Button>
               )}
@@ -485,8 +536,9 @@ export default function ContestDetail() {
           <Alert variant="destructive">
             <AlertTitle>Proctored Session</AlertTitle>
             <AlertDescription>
-              Fullscreen is enforced, and tab switching, copy/paste and right-click are disabled until
-              you submit. Screenshot attempts are recorded and penalised — {attempt?.violationCount ?? 0} so far.
+              Copy, paste and right-click are disabled. Leaving fullscreen, switching tabs and taking
+              screenshots are recorded and cost 5 points each — the test is submitted automatically at{" "}
+              {contest.maxViolations} violations. You are at {attempt?.violationCount ?? 0}.
             </AlertDescription>
           </Alert>
         ) : contestEnded ? (
@@ -678,7 +730,11 @@ export default function ContestDetail() {
           const answerValue = answers[question.id];
 
           return (
-            <Card key={question.id} className="border border-border bg-background p-5 shadow-none">
+            <Card
+              key={question.id}
+              id={`question-${question.id}`}
+              className="scroll-mt-6 border border-border bg-background p-5 shadow-none"
+            >
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
@@ -859,7 +915,19 @@ export default function ContestDetail() {
             </div>
           </Card>
         )}
+          </div>
+        </div>
       </div>
+
+      <ContestSubmitDialog
+        open={submitDialogOpen}
+        onOpenChange={setSubmitDialogOpen}
+        questions={contest.questions}
+        attempt={attempt}
+        visitedIds={visitedIds}
+        onConfirm={() => submitAttemptMutation.mutate()}
+        isSubmitting={submitAttemptMutation.isPending}
+      />
     </AppLayout>
   );
 }

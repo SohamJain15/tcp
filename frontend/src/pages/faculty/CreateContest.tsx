@@ -244,7 +244,8 @@ export default function CreateContest() {
     registrationCloseAt: "",
     type: "Rated",
     targetDepartment: "All",
-    maxViolations: "3",
+    // Every proctoring evasion now scores, so 3 is one accidental Esc plus one Alt+Tab.
+    maxViolations: "5",
   });
   const [questions, setQuestions] = useState<BuilderQuestion[]>([]);
   const [authoringTab, setAuthoringTab] = useState("form");
@@ -553,9 +554,12 @@ export default function CreateContest() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="contest-max-violations">Violation Warning Threshold</label>
+              <label className="text-sm font-medium" htmlFor="contest-max-violations">Max Violations (auto-submit)</label>
               <Input id="contest-max-violations" type="number" min={1} value={metadata.maxViolations} onChange={(event) => setMetadata((current) => ({ ...current, maxViolations: event.target.value }))} />
-              <p className="text-xs text-muted-foreground">Screenshot attempts warn the student at this count. Each one costs 5 points.</p>
+              <p className="text-xs text-muted-foreground">
+                Tab switches, fullscreen exits and screenshots each cost 5 points, and the attempt is
+                submitted automatically at this count. Keep it at 5 or above — an accidental Esc counts.
+              </p>
             </div>
           </div>
         </Card>

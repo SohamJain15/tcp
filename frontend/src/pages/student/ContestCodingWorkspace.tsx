@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Editor from "@monaco-editor/react";
 import type * as MonacoEditor from "monaco-editor";
-import { ChevronLeft, Play, Send } from "lucide-react";
+import { ChevronLeft, ListChecks, Play, Send } from "lucide-react";
 import { toast } from "sonner";
 
 import { contestsApi } from "@/api/services";
@@ -11,10 +11,20 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ContestLockOverlay } from "@/components/ContestLockOverlay";
+import { ContestQuestionNav } from "@/components/ContestQuestionNav";
+import { ContestScreenGuard } from "@/components/ContestScreenGuard";
+import { ContestSubmitDialog } from "@/components/ContestSubmitDialog";
 import { ContestTimer } from "@/components/ContestTimer";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { configureCodeEditor, formatCodeInEditor, getMonacoLanguage } from "@/lib/code-editor";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { useVisitedQuestions } from "@/hooks/useVisitedQuestions";
+import {
+  configureCodeEditor,
+  formatCodeInEditor,
+  getMonacoLanguage,
+  lockDownContestEditor,
+} from "@/lib/code-editor";
 import { EXECUTABLE_LANGUAGES, toLanguageLabel, toStatusLabel } from "@/api/mappers";
 import type { ContestAttempt, ContestCodingSubmissionReceipt, ExecutableLanguage, SubmissionResult } from "@/api/types";
 import { useContestProctoring } from "./useContestProctoring";
@@ -182,13 +192,34 @@ export default function ContestCodingWorkspace() {
   const { id = "", questionId = "" } = useParams();
   const pathname = `/student/contests/${id}/questions/${questionId}`;
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const editorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(null);
+  const editorLockRef = useRef<(() => void) | null>(null);
+  const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
+  const [navSheetOpen, setNavSheetOpen] = useState(false);
+  const { visitedIds, markVisited } = useVisitedQuestions(id);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["contest-question-detail", id, questionId],
     queryFn: () => contestsApi.getQuestionDetail(id, questionId, pathname),
     enabled: Boolean(id && questionId),
   });
+
+  // The full question list powers the left rail. Shares the cache key the contest page already
+  // populates, so this is usually served without an extra request.
+  const contestDetailQuery = useQuery({
+    queryKey: ["contest-detail", id],
+    queryFn: () => contestsApi.getStudentDetail(id, pathname),
+    enabled: Boolean(id),
+  });
+
+  useEffect(() => {
+    if (questionId) {
+      markVisited(questionId);
+    }
+  }, [markVisited, questionId]);
+
+  useEffect(() => () => editorLockRef.current?.(), []);
 
   const payload = data;
   const attempt = payload?.attempt ?? null;
@@ -231,15 +262,42 @@ export default function ContestCodingWorkspace() {
     [id, questionId, queryClient],
   );
 
-  // Clipboard, right-click and fullscreen are all blocked document-wide by the proctoring hook,
-  // which covers the Monaco editor too.
-  const { isLocked, violationCount, requestFullscreen } = useContestProctoring({
+  const { isLocked, isObscured, violationCount, requestFullscreen } = useContestProctoring({
     contestId: id,
     pathname,
     attempt,
     maxViolations: contest?.maxViolations,
     onAttemptUpdate: updateAttemptInCache,
   });
+
+  const submitAttemptMutation = useMutation({
+    mutationFn: () => contestsApi.submitAttempt(id, pathname),
+    onSuccess: async (response) => {
+      updateAttemptInCache(response.attempt);
+      setSubmitDialogOpen(false);
+      if (document.fullscreenElement && document.exitFullscreen) {
+        try {
+          await document.exitFullscreen();
+        } catch {
+          // Continue even if the browser refuses to leave fullscreen.
+        }
+      }
+      toast.success("Test submitted successfully");
+      navigate(`/student/contests/${id}`);
+    },
+    onError: (mutationError) => {
+      toast.error((mutationError as Error)?.message || "Failed to submit the test");
+    },
+  });
+
+  // A violation-triggered auto-submit can land while the student is mid-question; send them to the
+  // contest page so they are not left staring at an editor that no longer accepts input.
+  const attemptStatus = attempt?.status;
+  useEffect(() => {
+    if (attemptStatus === "AUTO_SUBMITTED" || attemptStatus === "DISQUALIFIED") {
+      navigate(`/student/contests/${id}`);
+    }
+  }, [attemptStatus, id, navigate]);
 
   const runMutation = useMutation({
     mutationFn: () => contestsApi.runCodingQuestion(id, { questionId, code, language }, pathname),
@@ -307,6 +365,11 @@ export default function ContestCodingWorkspace() {
     return <Navigate to={`/student/contests/${id}`} replace />;
   }
 
+  // Focus loss blanks the page before anything else, so an off-browser capture gets nothing.
+  if (isObscured) {
+    return <ContestScreenGuard />;
+  }
+
   if (isLocked) {
     return <ContestLockOverlay onReturnToFullscreen={requestFullscreen} violationCount={violationCount} />;
   }
@@ -315,33 +378,79 @@ export default function ContestCodingWorkspace() {
   const activeResult = runResult;
   const currentQuestionState = attempt?.questionStates.find((state) => state.questionId === questionId) ?? null;
   const finalSubmissionUsed = Boolean(currentQuestionState?.hasFinalCodingSubmission) && !practiceMode;
+  const allQuestions = contestDetailQuery.data?.contest.questions ?? [];
+  const showQuestionNav = attemptIsActive && allQuestions.length > 0;
+
+  const questionNav = (
+    <ContestQuestionNav
+      contestId={id}
+      questions={allQuestions}
+      attempt={attempt}
+      visitedIds={visitedIds}
+      activeQuestionId={questionId}
+      maxViolations={contest.maxViolations}
+      onSelectQuestion={(nextQuestion) => {
+        markVisited(nextQuestion.id);
+        setNavSheetOpen(false);
+      }}
+      onSubmitTest={() => setSubmitDialogOpen(true)}
+      onTimeUp={() => submitAttemptMutation.mutate()}
+      isSubmitting={submitAttemptMutation.isPending}
+    />
+  );
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <div className="border-b border-border bg-card">
-        <div className="container flex h-12 items-center justify-between">
-          <Link
-            to={`/student/contests/${id}`}
-            className="inline-flex items-center gap-1 rounded-none bg-orange-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-600"
-          >
-            <ChevronLeft className="h-4 w-4" /> Back to contest
-          </Link>
+        <div className="flex h-12 items-center justify-between px-4">
+          <div className="flex items-center gap-2">
+            {showQuestionNav && (
+              <Sheet open={navSheetOpen} onOpenChange={setNavSheetOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="outline" size="sm" className="lg:hidden">
+                    <ListChecks className="mr-1.5 h-4 w-4" /> Questions
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-72 p-0">
+                  {questionNav}
+                </SheetContent>
+              </Sheet>
+            )}
+            <Link
+              to={`/student/contests/${id}`}
+              className="inline-flex items-center gap-1 border border-border bg-secondary/40 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-secondary"
+            >
+              <ChevronLeft className="h-4 w-4" /> Back to contest
+            </Link>
+          </div>
           <div className="flex items-center gap-3">
             <div className="hidden text-xs text-muted-foreground sm:block">
               Time limit: {question.timeLimitSeconds}s {"\u2022"} Memory: {question.memoryLimitMb} MB
               {!practiceMode && (
                 <>
-                  {" \u2022 "}Violations: {attempt?.violationCount ?? 0}
+                  {" \u2022 "}Violations: {attempt?.violationCount ?? 0}/{contest.maxViolations}
                 </>
               )}
             </div>
             {attemptIsActive && <ContestTimer deadline={attempt?.deadlineAt} className="py-1" />}
+            {attemptIsActive && (
+              <Button
+                size="sm"
+                className="bg-accent text-accent-foreground hover:bg-accent/90"
+                onClick={() => setSubmitDialogOpen(true)}
+                disabled={submitAttemptMutation.isPending}
+              >
+                <Send className="mr-1.5 h-3.5 w-3.5" /> Submit Test
+              </Button>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="h-[calc(100vh-4.5rem)] w-full overflow-hidden flex flex-col">
-        <ResizablePanelGroup direction="horizontal" className="flex-1 overflow-hidden">
+      <div className="flex h-[calc(100vh-3rem)] w-full overflow-hidden">
+        {showQuestionNav && <div className="hidden w-64 shrink-0 lg:block">{questionNav}</div>}
+
+        <ResizablePanelGroup direction="horizontal" className="min-w-0 flex-1 overflow-hidden">
           <ResizablePanel defaultSize={40} minSize={28} className="h-full">
             <div className="relative h-full w-full">
               <div className="absolute inset-0 overflow-y-auto p-6">
@@ -478,6 +587,14 @@ export default function ContestCodingWorkspace() {
                   onMount={(editor, monaco) => {
                     editorRef.current = editor;
                     configureCodeEditor(monaco);
+                    // Monaco routes Ctrl+C/V/X through its own command layer, so the document-level
+                    // clipboard block does not reach it — lock the instance down directly.
+                    editorLockRef.current?.();
+                    editorLockRef.current = attemptIsActive
+                      ? lockDownContestEditor(editor, monaco, () =>
+                          toast.info("Copy, cut and paste are disabled during the contest."),
+                        )
+                      : null;
                     editor.focus();
                   }}
                   onChange={(value) =>
@@ -553,6 +670,16 @@ export default function ContestCodingWorkspace() {
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
+
+      <ContestSubmitDialog
+        open={submitDialogOpen}
+        onOpenChange={setSubmitDialogOpen}
+        questions={allQuestions}
+        attempt={attempt}
+        visitedIds={visitedIds}
+        onConfirm={() => submitAttemptMutation.mutate()}
+        isSubmitting={submitAttemptMutation.isPending}
+      />
     </div>
   );
 }

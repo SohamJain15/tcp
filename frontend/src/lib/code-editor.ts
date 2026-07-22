@@ -185,6 +185,69 @@ export function configureCodeEditor(monaco: Monaco): void {
   });
 }
 
+/**
+ * Disables clipboard use inside a Monaco instance for proctored contests.
+ *
+ * Document-level copy/cut/paste listeners are not enough: Monaco handles those key chords through
+ * its own command layer and does not always let the native event reach the document. This rebinds
+ * the chords directly and undoes anything that still lands, then returns a disposer.
+ *
+ * Deliberately separate from `configureCodeEditor`, which is shared with the practice problem
+ * editor and must keep working normally there.
+ */
+export function lockDownContestEditor(
+  editor: StandaloneCodeEditor,
+  monaco: Monaco,
+  onBlocked: () => void,
+): () => void {
+  const noop = () => onBlocked();
+  const { CtrlCmd, Shift } = monaco.KeyMod;
+  const { KeyC, KeyV, KeyX, Insert } = monaco.KeyCode;
+
+  // Rebinding a chord to a no-op command is what actually stops Monaco's internal clipboard
+  // actions; preventDefault on the DOM event alone does not reach them.
+  for (const chord of [
+    CtrlCmd | KeyC,
+    CtrlCmd | KeyV,
+    CtrlCmd | KeyX,
+    CtrlCmd | Shift | KeyV,
+    CtrlCmd | Insert,
+    Shift | Insert,
+  ]) {
+    editor.addCommand(chord, noop);
+  }
+
+  // Backstop: anything that still pastes (middle-click, IME, drag-drop) is immediately reverted.
+  const pasteDisposable = editor.onDidPaste(() => {
+    editor.trigger("contest-proctoring", "undo", null);
+    onBlocked();
+  });
+
+  const domNode = editor.getDomNode();
+  const blockEvent = (event: Event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onBlocked();
+  };
+
+  domNode?.addEventListener("copy", blockEvent, true);
+  domNode?.addEventListener("cut", blockEvent, true);
+  domNode?.addEventListener("paste", blockEvent, true);
+  domNode?.addEventListener("contextmenu", blockEvent, true);
+  domNode?.addEventListener("dragstart", blockEvent, true);
+  domNode?.addEventListener("drop", blockEvent, true);
+
+  return () => {
+    pasteDisposable.dispose();
+    domNode?.removeEventListener("copy", blockEvent, true);
+    domNode?.removeEventListener("cut", blockEvent, true);
+    domNode?.removeEventListener("paste", blockEvent, true);
+    domNode?.removeEventListener("contextmenu", blockEvent, true);
+    domNode?.removeEventListener("dragstart", blockEvent, true);
+    domNode?.removeEventListener("drop", blockEvent, true);
+  };
+}
+
 export async function formatCodeInEditor(
   editor: StandaloneCodeEditor,
   language: ExecutableLanguage,

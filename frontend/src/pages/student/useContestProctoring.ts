@@ -13,37 +13,60 @@ interface UseContestProctoringOptions {
 }
 
 interface UseContestProctoringResult {
-  /** True whenever the contest is active but the browser is not in fullscreen. */
+  /** Browser is out of fullscreen — cover the contest until it is restored. */
   isLocked: boolean;
+  /** Window lost focus — blank the contest so off-browser capture tools get nothing. */
+  isObscured: boolean;
   violationCount: number;
-  /** Must be called from a user gesture — browsers refuse programmatic fullscreen otherwise. */
+  /** Must run inside a user gesture; browsers reject programmatic fullscreen otherwise. */
   requestFullscreen: () => void;
 }
 
-const COOLDOWN_MS = 1500;
+// One student action often fires several DOM events (Esc → fullscreenchange + blur; Alt+Tab →
+// blur + visibilitychange). Events sharing a bucket inside this window are reported once, so a
+// single action costs exactly one violation.
+const COOLDOWN_MS = 2500;
 
-/** Shortcuts that would open a new surface, leave the page, or reveal devtools. */
+function isPrintScreenKey(event: KeyboardEvent): boolean {
+  return (
+    event.key === "PrintScreen" ||
+    event.code === "PrintScreen" ||
+    // Some keyboard drivers still emit the legacy DOM 3 name.
+    event.key === "Snapshot"
+  );
+}
+
+/** Shortcuts that would open another surface, leave the page, or reveal devtools. */
 function isBlockedShortcut(event: KeyboardEvent): boolean {
   const key = event.key.toLowerCase();
   const withModifier = event.ctrlKey || event.metaKey;
 
-  if (key === "f11" || key === "f12") {
+  if (key === "f11" || key === "f12" || key === "f5") {
     return true;
   }
 
-  if (withModifier && event.shiftKey && ["i", "j", "c"].includes(key)) {
+  if (withModifier && event.shiftKey && ["i", "j", "c", "tab"].includes(key)) {
     return true;
   }
 
-  if (withModifier && ["t", "n", "w", "r", "p", "s", "u", "tab"].includes(key)) {
-    return true;
-  }
-
-  if (key === "f5") {
+  if (withModifier && ["t", "n", "w", "r", "p", "s", "u", "a", "tab"].includes(key)) {
     return true;
   }
 
   return false;
+}
+
+/**
+ * A PrintScreen capture lands on the system clipboard. Overwriting it immediately is the only
+ * lever a web page has over a screenshot that has already been taken. Requires document focus,
+ * so failure is expected and ignored.
+ */
+async function wipeClipboard(): Promise<void> {
+  try {
+    await navigator.clipboard?.writeText(" ");
+  } catch {
+    // Permission denied or the document lost focus — nothing further we can do.
+  }
 }
 
 export function useContestProctoring({
@@ -56,6 +79,7 @@ export function useContestProctoring({
   const cooldownsRef = useRef<Record<string, number>>({});
   const isRestoringRef = useRef(false);
   const [isLocked, setIsLocked] = useState(false);
+  const [isObscured, setIsObscured] = useState(false);
 
   const isActive = attempt?.status === "ACTIVE";
 
@@ -77,6 +101,7 @@ export function useContestProctoring({
   useEffect(() => {
     if (!isActive) {
       setIsLocked(false);
+      setIsObscured(false);
       return;
     }
 
@@ -91,9 +116,12 @@ export function useContestProctoring({
       return false;
     };
 
-    // Events are recorded for faculty review. Only screenshots are scored server-side; the rest
-    // are behaviours we block outright, so they never cost the student points.
-    const logEvent = async (payload: ContestProctoringPayload, bucket: string, warning: string, scored: boolean) => {
+    const logEvent = async (
+      payload: ContestProctoringPayload,
+      bucket: string,
+      warning: string,
+      scored: boolean,
+    ) => {
       if (shouldSkip(bucket)) {
         return;
       }
@@ -101,11 +129,17 @@ export function useContestProctoring({
       try {
         const response = await contestsApi.recordProctorEvent(contestId, payload, pathname);
         onAttemptUpdate(response.attempt);
-        if (scored) {
-          toast.warning(`${warning} Violation ${response.attempt.violationCount}/${maxViolations}.`);
-        } else {
-          toast.warning(warning);
+
+        if (response.attempt.status === "AUTO_SUBMITTED") {
+          toast.error(`${warning} Violation limit reached — your test has been submitted.`);
+          return;
         }
+
+        toast.warning(
+          scored
+            ? `${warning} Violation ${response.attempt.violationCount}/${maxViolations}.`
+            : warning,
+        );
       } catch {
         // A logging failure must never interrupt the attempt itself.
         toast.warning(warning);
@@ -122,50 +156,71 @@ export function useContestProctoring({
       void logEvent(
         { type: "FULLSCREEN_EXIT", details: "Exited fullscreen" },
         "fullscreen",
-        "Fullscreen is required. Return to fullscreen to continue.",
-        false,
+        "Leaving fullscreen is recorded.",
+        true,
       );
-      // Try to recover silently; if the browser refuses, the overlay stays up until the student
-      // clicks through it.
+      // Try to return immediately. This succeeds while the browser still considers the page
+      // user-activated; otherwise the overlay's click-anywhere handler picks it up.
       requestFullscreen();
     };
 
     const onVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
+        setIsObscured(true);
         void logEvent(
           { type: "VISIBILITY_LOSS", details: "Document hidden" },
-          "switch",
-          "Tab switching is disabled during the contest.",
-          false,
+          "focus",
+          "Leaving the contest tab is recorded.",
+          true,
         );
         return;
       }
 
+      setIsObscured(false);
       if (!document.fullscreenElement) {
         setIsLocked(true);
       }
     };
 
     const onBlur = () => {
+      // Blank the contest the instant focus leaves, so a Snipping Tool or Alt+Tab capture taken
+      // while the browser is in the background contains nothing readable.
+      setIsObscured(true);
       void logEvent(
         { type: "TAB_SWITCH", details: "Window blurred" },
-        "switch",
-        "Leaving the contest window is disabled.",
-        false,
+        "focus",
+        "Leaving the contest window is recorded.",
+        true,
       );
+    };
+
+    const onFocus = () => {
+      setIsObscured(false);
       if (!document.fullscreenElement) {
         setIsLocked(true);
       }
     };
 
+    const onScreenshotKey = (event: KeyboardEvent) => {
+      if (!isPrintScreenKey(event)) {
+        return;
+      }
+
+      event.preventDefault();
+      void wipeClipboard();
+      void logEvent(
+        { type: "PRINT_SCREEN", details: `PrintScreen (${event.type})` },
+        "printscreen",
+        "Screenshots are recorded.",
+        true,
+      );
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "PrintScreen") {
-        void logEvent(
-          { type: "PRINT_SCREEN", details: "PrintScreen pressed" },
-          "printscreen",
-          "Screenshots are not allowed.",
-          true,
-        );
+      // Windows browsers deliver PrintScreen on keyup only, so detection lives in its own handler
+      // bound to both events; this branch just suppresses the default where it does fire.
+      if (isPrintScreenKey(event)) {
+        onScreenshotKey(event);
         return;
       }
 
@@ -188,7 +243,12 @@ export function useContestProctoring({
 
     const blockContextMenu = (event: Event) => {
       event.preventDefault();
-      void logEvent({ type: "CONTEXT_MENU", details: "Right click blocked" }, "contextmenu", "Right-click is disabled during the contest.", false);
+      void logEvent(
+        { type: "CONTEXT_MENU", details: "Right click blocked" },
+        "contextmenu",
+        "Right-click is disabled during the contest.",
+        false,
+      );
     };
 
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -196,14 +256,16 @@ export function useContestProctoring({
       event.returnValue = "";
     };
 
-    // The attempt may already have been started elsewhere (e.g. navigating into the coding
-    // workspace), so reflect the current fullscreen state on mount rather than assuming.
+    // The attempt may have been started on another page (e.g. navigating into the coding
+    // workspace), so reflect the current fullscreen state rather than assuming it.
     setIsLocked(!document.fullscreenElement);
 
     document.addEventListener("fullscreenchange", onFullscreenChange);
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
     window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onScreenshotKey, true);
     document.addEventListener("copy", blockClipboard);
     document.addEventListener("cut", blockClipboard);
     document.addEventListener("paste", blockClipboard);
@@ -214,7 +276,9 @@ export function useContestProctoring({
       document.removeEventListener("fullscreenchange", onFullscreenChange);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
       window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onScreenshotKey, true);
       document.removeEventListener("copy", blockClipboard);
       document.removeEventListener("cut", blockClipboard);
       document.removeEventListener("paste", blockClipboard);
@@ -223,8 +287,29 @@ export function useContestProctoring({
     };
   }, [contestId, isActive, maxViolations, onAttemptUpdate, pathname, requestFullscreen]);
 
+  // While locked out of fullscreen, the very next interaction anywhere on the page counts as the
+  // gesture the Fullscreen API demands — so the student never has to find a button.
+  useEffect(() => {
+    if (!isActive || !isLocked) {
+      return;
+    }
+
+    const restore = () => requestFullscreen();
+
+    window.addEventListener("pointerdown", restore, true);
+    window.addEventListener("keydown", restore, true);
+    window.addEventListener("touchstart", restore, true);
+
+    return () => {
+      window.removeEventListener("pointerdown", restore, true);
+      window.removeEventListener("keydown", restore, true);
+      window.removeEventListener("touchstart", restore, true);
+    };
+  }, [isActive, isLocked, requestFullscreen]);
+
   return {
     isLocked: isActive && isLocked,
+    isObscured: isActive && isObscured,
     violationCount: attempt?.violationCount ?? 0,
     requestFullscreen,
   };

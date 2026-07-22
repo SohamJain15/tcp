@@ -277,12 +277,17 @@ function ensureContestHasEnded(contest: ContestRecord, now: Date): void {
 }
 
 /**
- * Fullscreen exits and tab switches are now blocked client-side rather than punished, so they are
- * logged for faculty review without costing the student anything. A screenshot is the one action
- * the browser cannot prevent, so it stays a scored violation.
+ * Every evasion the browser cannot hard-block is scored: leaving the tab, leaving fullscreen, and
+ * screenshots. Clipboard and context-menu events are prevented outright client-side, so they are
+ * logged for faculty review but cost the student nothing — the action never succeeded.
  */
 function isViolationEvent(type: ContestProctoringEventRecord["type"]): boolean {
-  return type === "PRINT_SCREEN";
+  return (
+    type === "TAB_SWITCH" ||
+    type === "VISIBILITY_LOSS" ||
+    type === "FULLSCREEN_EXIT" ||
+    type === "PRINT_SCREEN"
+  );
 }
 
 function ensureStudentCanViewStandings(contest: ContestRecord): void {
@@ -887,11 +892,17 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       );
       const attempt = ensureActiveAttempt(await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email));
 
-      // Events are always logged for faculty review, but only scored violations move the counter,
-      // and no event ends the attempt — the client blocks the behaviour instead of punishing it.
+      // Every event is logged for faculty review; only scored ones move the counter, and reaching
+      // the contest's threshold ends the attempt.
+      const isScored = isViolationEvent(type);
+      const nextViolationCount = isScored ? attempt.violationCount + 1 : attempt.violationCount;
+      const shouldAutoSubmit = isScored && nextViolationCount >= contest.maxViolations;
       const updatedAttempt = withDerivedAttemptFields({
         ...attempt,
-        violationCount: isViolationEvent(type) ? attempt.violationCount + 1 : attempt.violationCount,
+        violationCount: nextViolationCount,
+        status: shouldAutoSubmit ? "AUTO_SUBMITTED" : attempt.status,
+        autoSubmittedAt: shouldAutoSubmit ? now : attempt.autoSubmittedAt,
+        submittedAt: shouldAutoSubmit ? now : attempt.submittedAt,
         updatedAt: now,
       });
 

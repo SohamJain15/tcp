@@ -499,7 +499,7 @@ describe("TCET Code Studio backend APIs", () => {
     expect(attemptResponse.status).toBe(409);
   });
 
-  it("gates live contest questions until start, ignores clipboard proctor events, and scores only screenshots as violations", async () => {
+  it("gates live contest questions until start, ignores clipboard proctor events, and auto-submits once scored violations hit the threshold", async () => {
     const { app, repositories, services } = createTestApp();
     const contest = await createContest(app, {
       startTime: "2026-05-07T00:00:00.000Z",
@@ -567,35 +567,37 @@ describe("TCET Code Studio backend APIs", () => {
       expect(clipboardResponse.body.attempt.violationCount).toBe(0);
     }
 
-    // Fullscreen exits and tab switches are blocked client-side, so they are logged but never
-    // scored and never end the attempt.
-    for (const type of ["TAB_SWITCH", "VISIBILITY_LOSS", "FULLSCREEN_EXIT"]) {
-      const blockedEventResponse = await request(app)
+    // Leaving the tab, leaving fullscreen and screenshots are all scored. maxViolations is 4 for
+    // this contest, so the first three tick the counter without ending the attempt.
+    const scoredEvents = ["TAB_SWITCH", "VISIBILITY_LOSS", "FULLSCREEN_EXIT"];
+    for (const [index, type] of scoredEvents.entries()) {
+      const scoredEventResponse = await request(app)
         .post(`/api/contests/${contest.id}/proctor-events`)
         .send({ type });
-      expect(blockedEventResponse.status).toBe(200);
-      expect(blockedEventResponse.body.attempt.status).toBe("ACTIVE");
-      expect(blockedEventResponse.body.attempt.violationCount).toBe(0);
+      expect(scoredEventResponse.status).toBe(200);
+      expect(scoredEventResponse.body.attempt.status).toBe("ACTIVE");
+      expect(scoredEventResponse.body.attempt.violationCount).toBe(index + 1);
     }
 
-    const screenshotResponse = await request(app)
+    // The fourth scored event hits maxViolations and auto-submits.
+    const autoSubmitResponse = await request(app)
       .post(`/api/contests/${contest.id}/proctor-events`)
       .send({ type: "PRINT_SCREEN" });
-    expect(screenshotResponse.status).toBe(200);
-    expect(screenshotResponse.body.attempt.status).toBe("ACTIVE");
-    expect(screenshotResponse.body.attempt.violationCount).toBe(1);
-    expect(screenshotResponse.body.attempt.violationPenaltyPoints).toBe(5);
+    expect(autoSubmitResponse.status).toBe(200);
+    expect(autoSubmitResponse.body.attempt.status).toBe("AUTO_SUBMITTED");
+    expect(autoSubmitResponse.body.attempt.violationCount).toBe(4);
+    expect(autoSubmitResponse.body.attempt.violationPenaltyPoints).toBe(20);
 
-    const answerAfterScreenshotResponse = await request(app)
+    const blockedAnswerResponse = await request(app)
       .post(`/api/contests/${contest.id}/answers`)
       .send({ questionId: "q_mcq_1", answer: "B" });
-    expect(answerAfterScreenshotResponse.status).toBe(200);
+    expect(blockedAnswerResponse.status).toBe(409);
 
     const attemptsResponse = await request(app)
       .get(`/api/contests/${contest.id}/attempts`)
       .set(facultyHeaders);
     expect(attemptsResponse.status).toBe(200);
-    expect(attemptsResponse.body.items[0].violationCount).toBe(1);
+    expect(attemptsResponse.body.items[0].violationCount).toBe(4);
   });
 
   it("shows a department-targeted contest to matching students using their saved profile department", async () => {
