@@ -70,10 +70,8 @@ export function ContestQuestionNav({
             const progress = deriveQuestionProgress(question.id, attempt, visitedIds);
             const questionNumber = question.questionNumber ?? index + 1;
             const isActive = question.id === activeQuestionId;
-            const target =
-              question.type === "Coding"
-                ? `/student/contests/${contestId}/questions/${question.id}`
-                : `/student/contests/${contestId}#question-${question.id}`;
+            // Every question is its own page now, coding or objective.
+            const target = `/student/contests/${contestId}/questions/${question.id}`;
 
             return (
               <li key={question.id}>

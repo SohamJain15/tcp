@@ -251,6 +251,16 @@ export function useContestProctoring({
       );
     };
 
+    // Question text cannot be selected or dragged out of the page. The code editor manages its own
+    // selection, so anything inside Monaco is exempt.
+    const blockSelection = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".monaco-editor")) {
+        return;
+      }
+      event.preventDefault();
+    };
+
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
@@ -270,6 +280,8 @@ export function useContestProctoring({
     document.addEventListener("cut", blockClipboard);
     document.addEventListener("paste", blockClipboard);
     document.addEventListener("contextmenu", blockContextMenu);
+    document.addEventListener("selectstart", blockSelection);
+    document.addEventListener("dragstart", blockSelection);
     window.addEventListener("beforeunload", onBeforeUnload);
 
     return () => {
@@ -283,6 +295,8 @@ export function useContestProctoring({
       document.removeEventListener("cut", blockClipboard);
       document.removeEventListener("paste", blockClipboard);
       document.removeEventListener("contextmenu", blockContextMenu);
+      document.removeEventListener("selectstart", blockSelection);
+      document.removeEventListener("dragstart", blockSelection);
       window.removeEventListener("beforeunload", onBeforeUnload);
     };
   }, [contestId, isActive, maxViolations, onAttemptUpdate, pathname, requestFullscreen]);

@@ -3,7 +3,7 @@ import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Editor from "@monaco-editor/react";
 import type * as MonacoEditor from "monaco-editor";
-import { ChevronLeft, ListChecks, Play, Send } from "lucide-react";
+import { ListChecks, Play, Send } from "lucide-react";
 import { toast } from "sonner";
 
 import { contestsApi } from "@/api/services";
@@ -11,10 +11,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ContestLockOverlay } from "@/components/ContestLockOverlay";
+import { ContestObjectiveQuestion } from "@/components/ContestObjectiveQuestion";
 import { ContestQuestionNav } from "@/components/ContestQuestionNav";
 import { ContestScreenGuard } from "@/components/ContestScreenGuard";
 import { ContestSubmitDialog } from "@/components/ContestSubmitDialog";
 import { ContestTimer } from "@/components/ContestTimer";
+import { ContestWatermark } from "@/components/ContestWatermark";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -188,7 +190,7 @@ function formatRunStatus(status: SubmissionResult["status"]): string {
   return toStatusLabel(status);
 }
 
-export default function ContestCodingWorkspace() {
+export default function ContestQuestionPage() {
   const { id = "", questionId = "" } = useParams();
   const pathname = `/student/contests/${id}/questions/${questionId}`;
   const queryClient = useQueryClient();
@@ -361,10 +363,6 @@ export default function ContestCodingWorkspace() {
     );
   }
 
-  if (question.type !== "Coding") {
-    return <Navigate to={`/student/contests/${id}`} replace />;
-  }
-
   // Focus loss blanks the page before anything else, so an off-browser capture gets nothing.
   if (isObscured) {
     return <ContestScreenGuard />;
@@ -374,12 +372,14 @@ export default function ContestCodingWorkspace() {
     return <ContestLockOverlay onReturnToFullscreen={requestFullscreen} violationCount={violationCount} />;
   }
 
+  const isCoding = question.type === "Coding";
   const attemptIsFinalised = Boolean(attempt && attempt.status !== "ACTIVE" && !practiceMode);
   const activeResult = runResult;
   const currentQuestionState = attempt?.questionStates.find((state) => state.questionId === questionId) ?? null;
   const finalSubmissionUsed = Boolean(currentQuestionState?.hasFinalCodingSubmission) && !practiceMode;
   const allQuestions = contestDetailQuery.data?.contest.questions ?? [];
   const showQuestionNav = attemptIsActive && allQuestions.length > 0;
+  const watermarkPrimary = attempt?.userUid ?? attempt?.userEmail ?? "";
 
   const questionNav = (
     <ContestQuestionNav
@@ -400,10 +400,14 @@ export default function ContestCodingWorkspace() {
   );
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <div className="border-b border-border bg-card">
-        <div className="flex h-12 items-center justify-between px-4">
-          <div className="flex items-center gap-2">
+    <div className="flex h-screen flex-col overflow-hidden bg-background">
+      {attemptIsActive && watermarkPrimary && (
+        <ContestWatermark primary={watermarkPrimary} secondary={attempt?.userEmail ?? undefined} />
+      )}
+
+      <header className="shrink-0 border-b border-border bg-card">
+        <div className="flex h-12 items-center justify-between gap-3 px-4">
+          <div className="flex min-w-0 items-center gap-2">
             {showQuestionNav && (
               <Sheet open={navSheetOpen} onOpenChange={setNavSheetOpen}>
                 <SheetTrigger asChild>
@@ -416,41 +420,42 @@ export default function ContestCodingWorkspace() {
                 </SheetContent>
               </Sheet>
             )}
-            <Link
-              to={`/student/contests/${id}`}
-              className="inline-flex items-center gap-1 border border-border bg-secondary/40 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-secondary"
-            >
-              <ChevronLeft className="h-4 w-4" /> Back to contest
-            </Link>
+            <span className="truncate font-display text-sm font-bold">{contest.title}</span>
+            <Badge variant="outline" className="hidden shrink-0 sm:inline-flex">
+              Q{question.questionNumber}
+            </Badge>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="hidden text-xs text-muted-foreground sm:block">
-              Time limit: {question.timeLimitSeconds}s {"\u2022"} Memory: {question.memoryLimitMb} MB
-              {!practiceMode && (
-                <>
-                  {" \u2022 "}Violations: {attempt?.violationCount ?? 0}/{contest.maxViolations}
-                </>
-              )}
-            </div>
-            {attemptIsActive && <ContestTimer deadline={attempt?.deadlineAt} className="py-1" />}
-            {attemptIsActive && (
-              <Button
-                size="sm"
-                className="bg-accent text-accent-foreground hover:bg-accent/90"
-                onClick={() => setSubmitDialogOpen(true)}
-                disabled={submitAttemptMutation.isPending}
-              >
-                <Send className="mr-1.5 h-3.5 w-3.5" /> Submit Test
-              </Button>
+          <div className="flex shrink-0 items-center gap-3">
+            {question.type === "Coding" && (
+              <span className="hidden text-xs text-muted-foreground md:inline">
+                Time {question.timeLimitSeconds}s {"\u2022"} Mem {question.memoryLimitMb} MB
+              </span>
             )}
+            {!practiceMode && (
+              <span className="hidden text-xs text-muted-foreground sm:inline">
+                Violations: {attempt?.violationCount ?? 0}/{contest.maxViolations}
+              </span>
+            )}
+            {attemptIsActive && <ContestTimer deadline={attempt?.deadlineAt} className="py-1" />}
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="flex h-[calc(100vh-3rem)] w-full overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {showQuestionNav && <div className="hidden w-64 shrink-0 lg:block">{questionNav}</div>}
 
-        <ResizablePanelGroup direction="horizontal" className="min-w-0 flex-1 overflow-hidden">
+        <main className="min-w-0 flex-1 overflow-hidden">
+          {question.type !== "Coding" ? (
+            <ContestObjectiveQuestion
+              contestId={id}
+              pathname={pathname}
+              question={question}
+              attempt={attempt}
+              attemptIsActive={attemptIsActive}
+              onAttemptUpdate={updateAttemptInCache}
+            />
+          ) : (
+            <ResizablePanelGroup direction="horizontal" className="h-full min-w-0 overflow-hidden">
           <ResizablePanel defaultSize={40} minSize={28} className="h-full">
             <div className="relative h-full w-full">
               <div className="absolute inset-0 overflow-y-auto p-6">
@@ -668,7 +673,9 @@ export default function ContestCodingWorkspace() {
               </Card>
             </div>
           </ResizablePanel>
-        </ResizablePanelGroup>
+            </ResizablePanelGroup>
+          )}
+        </main>
       </div>
 
       <ContestSubmitDialog

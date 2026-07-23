@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import {
   CalendarClock,
   CheckCircle2,
@@ -24,17 +24,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ContestLockOverlay } from "@/components/ContestLockOverlay";
-import { ContestQuestionNav } from "@/components/ContestQuestionNav";
-import { ContestScreenGuard } from "@/components/ContestScreenGuard";
-import { ContestSubmitDialog } from "@/components/ContestSubmitDialog";
 import { ContestTimer } from "@/components/ContestTimer";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { useVisitedQuestions } from "@/hooks/useVisitedQuestions";
 import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
-import { useContestProctoring } from "./useContestProctoring";
 
 function difficultyBadgeClass(difficulty: "Easy" | "Medium" | "Hard"): string {
   if (difficulty === "Easy") return "bg-green-100 text-green-800";
@@ -180,11 +173,9 @@ export default function ContestDetail() {
   const { id = "" } = useParams();
   const pathname = `/student/contests/${id}`;
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [revealedAnswers, setRevealedAnswers] = useState<Record<string, boolean>>({});
-  const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
-  const [navSheetOpen, setNavSheetOpen] = useState(false);
-  const { visitedIds, markVisited } = useVisitedQuestions(id);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["contest-detail", id],
@@ -195,9 +186,8 @@ export default function ContestDetail() {
   const contest = data?.contest;
   const attempt = contest?.attempt ?? null;
   const report = contest?.report ?? null;
+  const firstQuestionId = contest?.questions[0]?.id ?? "";
 
-  // Stable identity: the proctoring hook keys its listener set on this callback, so a new
-  // function every render would tear down and re-attach every listener.
   const updateAttemptInCache = useCallback(
     (nextAttempt: ContestAttempt) => {
       queryClient.setQueryData(["contest-detail", id], (current: typeof data) =>
@@ -206,14 +196,6 @@ export default function ContestDetail() {
     },
     [id, queryClient],
   );
-
-  const { isLocked, isObscured, violationCount, requestFullscreen } = useContestProctoring({
-    contestId: id,
-    pathname,
-    attempt,
-    maxViolations: contest?.maxViolations,
-    onAttemptUpdate: updateAttemptInCache,
-  });
 
   const standingsEnabled = Boolean(contest?.resultsPublished);
 
@@ -250,14 +232,17 @@ export default function ContestDetail() {
     onSuccess: async (response) => {
       toast.success("Contest attempt started");
       updateAttemptInCache(response.attempt);
+      // Enter fullscreen from within the click chain; the question page re-asserts it and shows the
+      // click-to-restore overlay if the browser refuses here.
       if (document.documentElement.requestFullscreen) {
         try {
           await document.documentElement.requestFullscreen();
         } catch {
-          toast.info("Enter fullscreen to avoid violations.");
+          // The per-question page will prompt to return to fullscreen.
         }
       }
-      await refetch();
+      // The attempt is taken one question per page from here on.
+      navigate(`/student/contests/${id}/questions/${firstQuestionId}`);
     },
     onError: (mutationError) => {
       toast.error((mutationError as Error)?.message || "Failed to start contest");
@@ -277,38 +262,7 @@ export default function ContestDetail() {
     },
   });
 
-  const submitAttemptMutation = useMutation({
-    mutationFn: () => contestsApi.submitAttempt(id, pathname),
-    onSuccess: async (response) => {
-      updateAttemptInCache(response.attempt);
-      setSubmitDialogOpen(false);
-      if (document.fullscreenElement && document.exitFullscreen) {
-        try {
-          await document.exitFullscreen();
-        } catch {
-          // Let the page continue even if the browser refuses to exit fullscreen.
-        }
-      }
-      toast.success("Test submitted successfully");
-      await refetch();
-    },
-    onError: (mutationError) => {
-      toast.error((mutationError as Error)?.message || "Failed to submit the test");
-    },
-  });
-
   const standings = useMemo(() => standingsData?.items ?? [], [standingsData?.items]);
-
-  // When the clock runs out we finalise the attempt ourselves so the student lands on their
-  // report rather than a dead page. The backend enforces the same deadline independently.
-  const handleTimeUp = useCallback(() => {
-    if (attempt?.status !== "ACTIVE" || submitAttemptMutation.isPending) {
-      return;
-    }
-
-    toast.warning("Time is up. Submitting your contest.");
-    submitAttemptMutation.mutate();
-  }, [attempt?.status, submitAttemptMutation]);
 
   if (!id) {
     return <Navigate to="/student/contests" replace />;
@@ -341,13 +295,10 @@ export default function ContestDetail() {
   const showPreflight = canAttempt && !attempt && !showReport;
   const submittedWhileLive = canAttempt && attemptIsLocked;
 
-  // Focus loss blanks the page before anything else, so an off-browser capture gets nothing.
-  if (isObscured) {
-    return <ContestScreenGuard />;
-  }
-
-  if (isLocked) {
-    return <ContestLockOverlay onReturnToFullscreen={requestFullscreen} violationCount={violationCount} />;
+  // An active attempt is taken one question per page — this page only handles pre-flight, the
+  // registration/upcoming states, and the post-contest report.
+  if (attemptIsActive && firstQuestionId) {
+    return <Navigate to={`/student/contests/${id}/questions/${firstQuestionId}`} replace />;
   }
 
   if (showPreflight) {
@@ -439,47 +390,9 @@ export default function ContestDetail() {
     );
   }
 
-  const questionNav = (
-    <ContestQuestionNav
-      contestId={id}
-      questions={contest.questions}
-      attempt={attempt}
-      visitedIds={visitedIds}
-      maxViolations={contest.maxViolations}
-      onSelectQuestion={(question) => {
-        markVisited(question.id);
-        setNavSheetOpen(false);
-      }}
-      onSubmitTest={() => setSubmitDialogOpen(true)}
-      onTimeUp={handleTimeUp}
-      isSubmitting={submitAttemptMutation.isPending}
-    />
-  );
-
   return (
-    <AppLayout hideNavbar={attemptIsActive} hideFooter={attemptIsActive}>
-      <div className={cn(attemptIsActive && contest.questions.length > 0 && "flex min-h-[calc(100vh-3rem)]")}>
-        {attemptIsActive && contest.questions.length > 0 && (
-          <div className="sticky top-0 hidden h-[calc(100vh-3rem)] w-64 shrink-0 lg:block">{questionNav}</div>
-        )}
-
-        <div className="min-w-0 flex-1">
-          {attemptIsActive && contest.questions.length > 0 && (
-            <div className="border-b border-border bg-card px-4 py-2 lg:hidden">
-              <Sheet open={navSheetOpen} onOpenChange={setNavSheetOpen}>
-                <SheetTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <ListChecks className="mr-1.5 h-4 w-4" /> Questions
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="left" className="w-72 p-0">
-                  {questionNav}
-                </SheetContent>
-              </Sheet>
-            </div>
-          )}
-
-          <div className={cn("container py-6", showReport ? "space-y-4" : "space-y-6")}>
+    <AppLayout>
+      <div className={cn("container py-6", showReport ? "space-y-4" : "space-y-6")}>
         {showReport ? (
           <div className="flex flex-wrap items-center gap-3">
             <Link
@@ -510,45 +423,23 @@ export default function ContestDetail() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {attemptIsActive && (
-                <ContestTimer deadline={attempt?.deadlineAt} onExpire={handleTimeUp} />
-              )}
               {!attempt && canAttempt && contest.isRegistered && (
                 <Button className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => startAttemptMutation.mutate()} disabled={startAttemptMutation.isPending}>
                   {startAttemptMutation.isPending ? "Starting..." : "Start Test"}
-                </Button>
-              )}
-              {/* Submittable at any point — the confirmation dialog surfaces what is unfinished. */}
-              {attemptIsActive && (
-                <Button
-                  className="bg-accent text-accent-foreground hover:bg-accent/90"
-                  onClick={() => setSubmitDialogOpen(true)}
-                  disabled={submitAttemptMutation.isPending}
-                >
-                  {submitAttemptMutation.isPending ? "Submitting..." : "Submit Test"}
                 </Button>
               )}
             </div>
           </div>
         )}
 
-        {!showReport && (attemptIsActive ? (
-          <Alert variant="destructive">
-            <AlertTitle>Proctored Session</AlertTitle>
-            <AlertDescription>
-              Copy, paste and right-click are disabled. Leaving fullscreen, switching tabs and taking
-              screenshots are recorded and cost 5 points each — the test is submitted automatically at{" "}
-              {contest.maxViolations} violations. You are at {attempt?.violationCount ?? 0}.
-            </AlertDescription>
-          </Alert>
-        ) : contestEnded ? (
+        {!showReport && contestEnded && (
           <Alert>
             <AlertTitle>Contest Review & Practice</AlertTitle>
             <AlertDescription>
               This contest has ended. Objective solutions are now visible, and coding questions can be explored in practice mode without affecting rankings or your scored attempt.
             </AlertDescription>
           </Alert>
-        ) : null)}
+        )}
 
         {!showReport && submittedWhileLive && (
           <Card className="border border-success/40 bg-success/10 p-5 text-center shadow-none">
@@ -915,19 +806,7 @@ export default function ContestDetail() {
             </div>
           </Card>
         )}
-          </div>
-        </div>
       </div>
-
-      <ContestSubmitDialog
-        open={submitDialogOpen}
-        onOpenChange={setSubmitDialogOpen}
-        questions={contest.questions}
-        attempt={attempt}
-        visitedIds={visitedIds}
-        onConfirm={() => submitAttemptMutation.mutate()}
-        isSubmitting={submitAttemptMutation.isPending}
-      />
     </AppLayout>
   );
 }
