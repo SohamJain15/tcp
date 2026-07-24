@@ -200,18 +200,6 @@ function withDerivedContestAttemptFields(attempt: ContestAttemptRecord): Contest
   };
 }
 
-function computeContestCodingAwardedPoints(
-  question: CodingContestQuestion,
-  passedCount: number,
-  totalCount: number,
-): number {
-  if (totalCount <= 0) {
-    return 0;
-  }
-
-  return Math.max(0, Math.round((question.points * passedCount) / totalCount));
-}
-
 function calculateUserAggregateSnapshot(submissions: SubmissionRecord[]): {
   rating: number;
   problemsSolved: number;
@@ -582,42 +570,37 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
             );
 
             if (question) {
-              const fullPass =
-                finalizedSubmission.totalCount > 0 &&
-                finalizedSubmission.passedCount >= finalizedSubmission.totalCount &&
-                finalizedSubmission.status === "ACCEPTED";
-              const awardedPoints = computeContestCodingAwardedPoints(
-                question,
-                finalizedSubmission.passedCount,
-                finalizedSubmission.totalCount,
-              );
-              const solvedAt = fullPass ? finalizedSubmission.judgedAt ?? dependencies.now() : null;
-              const nextQuestionStates = attempt.questionStates.map((state) =>
-                state.questionId === question.id
-                  ? {
-                      ...state,
-                      status: (fullPass ? "SOLVED" : "ATTEMPTED") as ContestAttemptRecord["questionStates"][number]["status"],
-                      awardedPoints,
-                      passedCount: finalizedSubmission.passedCount,
-                      totalCount: finalizedSubmission.totalCount,
-                      hasFinalCodingSubmission: true,
-                      lastSubmissionId: finalizedSubmission.id,
-                      finalSubmissionLanguage: finalizedSubmission.language,
-                      finalSubmissionStatus: finalizedSubmission.status,
-                      finalRuntimeMs: finalizedSubmission.runtimeMs,
-                      finalMemoryKb: finalizedSubmission.memoryKb,
-                      solvedAt,
-                    }
-                  : state,
-              );
+              // Record the judged verdict for the student's live feedback and the eventual report,
+              // but do NOT score the attempt here — points and SOLVED are computed only at
+              // finalization/publish. Skip stale results: only the newest submission for the question
+              // may update its state, so an older judged run never clobbers a newer one.
+              const state = attempt.questionStates.find((item) => item.questionId === question.id);
+              if (state && state.lastSubmissionId === finalizedSubmission.id) {
+                const nextQuestionStates = attempt.questionStates.map((item) =>
+                  item.questionId === question.id
+                    ? {
+                        ...item,
+                        status: "ATTEMPTED" as ContestAttemptRecord["questionStates"][number]["status"],
+                        awardedPoints: 0,
+                        passedCount: finalizedSubmission.passedCount,
+                        totalCount: finalizedSubmission.totalCount,
+                        lastSubmissionId: finalizedSubmission.id,
+                        finalSubmissionLanguage: finalizedSubmission.language,
+                        finalSubmissionStatus: finalizedSubmission.status,
+                        finalRuntimeMs: finalizedSubmission.runtimeMs,
+                        finalMemoryKb: finalizedSubmission.memoryKb,
+                        solvedAt: null,
+                      }
+                    : item,
+                );
 
-              const nextAttempt = withDerivedContestAttemptFields({
-                ...attempt,
-                questionStates: nextQuestionStates,
-                lastSolvedAt: solvedAt ?? attempt.lastSolvedAt,
-                updatedAt: dependencies.now(),
-              });
-              await dependencies.contestAttemptRepository.save(nextAttempt);
+                const nextAttempt = withDerivedContestAttemptFields({
+                  ...attempt,
+                  questionStates: nextQuestionStates,
+                  updatedAt: dependencies.now(),
+                });
+                await dependencies.contestAttemptRepository.save(nextAttempt);
+              }
             }
           }
         }

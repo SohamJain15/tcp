@@ -599,8 +599,11 @@ export function toStudentContestDetailResponse(
   registeredCount = 0,
 ): StudentContestDetailResponse {
   const computedStatus = computeContestStatus(contest, now);
-  const includeQuestions = computedStatus === "Ended" || (computedStatus === "Live" && attempt?.status === "ACTIVE");
-  const revealSolutions = computedStatus === "Ended";
+  // Questions are visible while actively attempting, or after results are published for review.
+  // The ended-but-unpublished window shows nothing — no questions, no answers.
+  const includeQuestions = (computedStatus === "Live" && attempt?.status === "ACTIVE") || contest.resultsPublished;
+  // Correct answers are never revealed until faculty publishes results.
+  const revealSolutions = contest.resultsPublished;
 
   return {
     id: contest.id,
@@ -722,7 +725,7 @@ export function toStudentContestQuestionDetailResponse(
   const state = attempt?.questionStates.find((item) => item.questionId === question.id);
   const status = state?.status ?? "UNATTEMPTED";
   const awardedPoints = state?.awardedPoints ?? 0;
-  const revealSolutions = computeContestStatus(contest, now) === "Ended";
+  const revealSolutions = contest.resultsPublished;
 
   if (question.type === "Coding") {
     return {

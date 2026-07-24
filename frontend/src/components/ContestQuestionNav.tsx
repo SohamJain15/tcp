@@ -79,7 +79,7 @@ export function ContestQuestionNav({
                   to={target}
                   onClick={() => onSelectQuestion(question)}
                   className={cn(
-                    "flex items-center gap-2.5 border border-transparent px-2.5 py-2 transition-colors hover:bg-secondary/60",
+                    "flex items-start gap-2.5 border border-transparent px-2.5 py-2 transition-colors hover:bg-secondary/60",
                     isActive && "border-accent/50 bg-accent/10",
                   )}
                   title={`Q${questionNumber} — ${progressLabel(progress)}`}
@@ -94,13 +94,13 @@ export function ContestQuestionNav({
                   </span>
 
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5">
+                    <span className="flex items-start gap-1.5">
                       {question.type === "Coding" ? (
-                        <Code2 className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <Code2 className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
                       ) : (
-                        <ListChecks className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <ListChecks className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
                       )}
-                      <span className="truncate text-xs font-medium">{question.title}</span>
+                      <span className="line-clamp-2 text-xs font-medium leading-snug">{question.title}</span>
                     </span>
                     <span className="mt-0.5 block text-[10px] uppercase tracking-wider text-muted-foreground">
                       {question.type} · {question.points} pts
@@ -108,7 +108,7 @@ export function ContestQuestionNav({
                   </span>
 
                   <span
-                    className={cn("h-2.5 w-2.5 shrink-0 rounded-full", progressDotClass(progress))}
+                    className={cn("mt-1 h-2.5 w-2.5 shrink-0 rounded-full", progressDotClass(progress))}
                     aria-label={progressLabel(progress)}
                   />
                 </Link>

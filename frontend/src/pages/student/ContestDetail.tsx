@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
-  Eye,
   ListChecks,
   Maximize,
   Timer,
@@ -23,17 +22,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import { ContestTimer } from "@/components/ContestTimer";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
-
-function difficultyBadgeClass(difficulty: "Easy" | "Medium" | "Hard"): string {
-  if (difficulty === "Easy") return "bg-green-100 text-green-800";
-  if (difficulty === "Medium") return "bg-yellow-100 text-yellow-800";
-  return "bg-red-100 text-red-800";
-}
 
 function questionStatusLabel(status: "UNATTEMPTED" | "ATTEMPTED" | "SOLVED"): string {
   if (status === "SOLVED") return "Solved";
@@ -174,8 +165,6 @@ export default function ContestDetail() {
   const pathname = `/student/contests/${id}`;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
-  const [revealedAnswers, setRevealedAnswers] = useState<Record<string, boolean>>({});
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["contest-detail", id],
@@ -249,19 +238,6 @@ export default function ContestDetail() {
     },
   });
 
-  const answerMutation = useMutation({
-    mutationFn: (payload: { questionId: string; answer: string | string[] }) =>
-      contestsApi.answerQuestion(id, payload, pathname),
-    onSuccess: async (response) => {
-      updateAttemptInCache(response.attempt);
-      toast.success("Answer submitted");
-      await refetch();
-    },
-    onError: (mutationError) => {
-      toast.error((mutationError as Error)?.message || "Failed to submit answer");
-    },
-  });
-
   const standings = useMemo(() => standingsData?.items ?? [], [standingsData?.items]);
 
   if (!id) {
@@ -288,8 +264,10 @@ export default function ContestDetail() {
   const contestEnded = contest.computedStatus === "Ended";
   const attemptIsActive = attempt?.status === "ACTIVE";
   const attemptIsLocked = Boolean(attempt && attempt.status !== "ACTIVE");
-  const showQuestions = contestEnded || attemptIsActive;
-  const showReport = Boolean(report) && (contest.resultsPublished || contestEnded);
+  // The report — scores, correct answers, rank — appears only once faculty publishes results.
+  const showReport = Boolean(report) && contest.resultsPublished;
+  // Ended but not yet published: a strict blackout, no questions or answers shown.
+  const resultsPending = contestEnded && !contest.resultsPublished;
   // The pre-flight screen: contest is live, the student has not started, and there is nothing
   // to report yet. This replaces the old scattered cards with one focused call to action.
   const showPreflight = canAttempt && !attempt && !showReport;
@@ -432,21 +410,12 @@ export default function ContestDetail() {
           </div>
         )}
 
-        {!showReport && contestEnded && (
-          <Alert>
-            <AlertTitle>Contest Review & Practice</AlertTitle>
-            <AlertDescription>
-              This contest has ended. Objective solutions are now visible, and coding questions can be explored in practice mode without affecting rankings or your scored attempt.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {!showReport && submittedWhileLive && (
+        {!showReport && submittedWhileLive && !contestEnded && (
           <Card className="border border-success/40 bg-success/10 p-5 text-center shadow-none">
             <CheckCircle2 className="mx-auto h-8 w-8 text-success" />
-            <h2 className="mt-3 font-display text-xl font-bold">Attempt Submitted</h2>
+            <h2 className="mt-3 font-display text-xl font-bold">Test Submitted</h2>
             <p className="mt-1.5 text-sm text-muted-foreground">
-              Your answers are locked in. Questions and your report unlock when the contest closes.
+              Your answers are locked in. Results are released after faculty publishes them.
             </p>
             <div className="mt-4 flex justify-center">
               <ContestTimer deadline={contest.endAt} label="Contest closes in" />
@@ -454,16 +423,14 @@ export default function ContestDetail() {
           </Card>
         )}
 
-        {!showReport && attemptIsLocked && contestEnded && (
-          <Card className="border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-200 shadow-none">
-            This attempt is {attempt?.status.toLowerCase().replace(/_/g, " ")}. Scored contest actions are
-            locked. You can still review the questions below and open coding questions in practice mode.
-          </Card>
-        )}
-
-        {!showReport && contestEnded && !contest.resultsPublished && (
-          <Card className="border border-border bg-background p-4 text-sm text-muted-foreground shadow-none">
-            The contest is over, so questions and solutions are visible now. Leaderboard ranks stay hidden until faculty publishes results.
+        {!showReport && resultsPending && (
+          <Card className="border border-border bg-background p-8 text-center shadow-none">
+            <CalendarClock className="mx-auto h-9 w-9 text-muted-foreground" />
+            <h2 className="mt-4 font-display text-xl font-bold">Contest Ended</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+              Results are pending faculty review. Your scores, correct answers and rank will appear
+              here once faculty publishes the results.
+            </p>
           </Card>
         )}
 
@@ -570,7 +537,7 @@ export default function ContestDetail() {
           </Card>
         )}
 
-        {contest.computedStatus === "Upcoming" ? (
+        {contest.computedStatus === "Upcoming" && (
           <Card className="border border-border bg-background p-5 shadow-none">
             <div className="flex flex-col items-center gap-3 py-4 text-center">
               <CalendarClock className="h-7 w-7 text-accent" />
@@ -614,177 +581,7 @@ export default function ContestDetail() {
               )}
             </div>
           </Card>
-        ) : !showQuestions ? null : (
-          contest.questions.map((question) => {
-          const state = attempt?.questionStates.find((entry) => entry.questionId === question.id);
-          const status = state?.status ?? "UNATTEMPTED";
-          const answerValue = answers[question.id];
-
-          return (
-            <Card
-              key={question.id}
-              id={`question-${question.id}`}
-              className="scroll-mt-6 border border-border bg-background p-5 shadow-none"
-            >
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline">Q{question.questionNumber}</Badge>
-                    <Badge className={statusBadgeClass(status)}>{questionStatusLabel(status)}</Badge>
-                    <Badge variant="outline">{question.points} pts</Badge>
-                    {"difficulty" in question && question.difficulty ? (
-                      <Badge className={difficultyBadgeClass(question.difficulty)}>{question.difficulty}</Badge>
-                    ) : (
-                      <Badge variant="outline">Objective</Badge>
-                    )}
-                  </div>
-                  <h2 className="font-display text-xl font-semibold">{question.title}</h2>
-                  {"statement" in question && question.statement && <p className="text-sm text-muted-foreground">{question.statement}</p>}
-                  {"problemStatement" in question && question.problemStatement && (
-                    <div className="space-y-3 text-sm text-muted-foreground">
-                      <p>{question.problemStatement}</p>
-                      <div>
-                        <div className="mb-1 font-medium text-foreground">Constraints</div>
-                        <pre className="whitespace-pre-wrap break-words font-inherit text-muted-foreground">
-                          {question.constraints}
-                        </pre>
-                      </div>
-                      {question.inputFormat && question.outputFormat && (
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div>
-                            <div className="mb-1 font-medium text-foreground">Input Format</div>
-                            <pre className="whitespace-pre-wrap break-words font-inherit text-muted-foreground">
-                              {question.inputFormat}
-                            </pre>
-                          </div>
-                          <div>
-                            <div className="mb-1 font-medium text-foreground">Output Format</div>
-                            <pre className="whitespace-pre-wrap break-words font-inherit text-muted-foreground">
-                              {question.outputFormat}
-                            </pre>
-                          </div>
-                        </div>
-                      )}
-                      {question.sampleTestCases && question.sampleTestCases.length > 0 && (
-                        <div className="space-y-2">
-                          <div className="font-medium text-foreground">Sample Test Cases</div>
-                          {question.sampleTestCases.map((testCase, index) => (
-                            <div key={`${question.id}-sample-${index}`} className="rounded border border-border p-3">
-                              <div className="text-xs font-semibold">Case {index + 1}</div>
-                              <div className="mt-2 text-xs">
-                                <div className="font-semibold text-accent">Input</div>
-                                <pre className="mt-1 whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono-code text-xs text-foreground">
-                                  {testCase.input}
-                                </pre>
-                              </div>
-                              <div className="mt-2 text-xs">
-                                <div className="font-semibold text-accent">Expected Output</div>
-                                <pre className="mt-1 whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono-code text-xs text-foreground">
-                                  {testCase.output}
-                                </pre>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {"type" in question && question.type === "Coding" ? (
-                  <Button asChild className="bg-accent text-accent-foreground hover:bg-accent/90">
-                    <Link to={`/student/contests/${id}/questions/${question.id}`}>
-                      {contestEnded ? "Open Practice Workspace" : "Open Workspace"}
-                    </Link>
-                  </Button>
-                ) : null}
-              </div>
-
-              {question.type === "MCQ" && question.options && (
-                <div className="mt-4 space-y-4">
-                  <RadioGroup value={typeof answerValue === "string" ? answerValue : ""} onValueChange={(value) => setAnswers((current) => ({ ...current, [question.id]: value }))} disabled={!attemptIsActive}>
-                    {question.options.map((option, index) => {
-                      const key = String.fromCharCode(65 + index);
-                      return (
-                        <label key={`${question.id}-${key}`} className="flex items-center gap-3 rounded border border-border p-3">
-                          <RadioGroupItem value={key} id={`${question.id}-${key}`} />
-                          <span className="text-sm">{key}. {option}</span>
-                        </label>
-                      );
-                    })}
-                  </RadioGroup>
-                  {attemptIsActive && (
-                    <Button onClick={() => answerMutation.mutate({ questionId: question.id, answer: typeof answerValue === "string" ? answerValue : "" })} disabled={typeof answerValue !== "string" || answerValue.length === 0 || answerMutation.isPending}>
-                      Submit Answer
-                    </Button>
-                  )}
-                  {contestEnded && question.correctAnswer && (
-                    revealedAnswers[question.id] ? (
-                      <Card className="border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm shadow-none">
-                        Correct answer: <span className="font-semibold text-foreground">{question.correctAnswer}</span>
-                      </Card>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setRevealedAnswers((current) => ({ ...current, [question.id]: true }))}
-                      >
-                        <Eye className="mr-2 h-4 w-4" /> View Answer
-                      </Button>
-                    )
-                  )}
-                </div>
-              )}
-
-              {question.type === "MSQ" && question.options && (
-                <div className="mt-4 space-y-4">
-                  <div className="space-y-2">
-                    {question.options.map((option, index) => {
-                      const key = String.fromCharCode(65 + index);
-                      const selected = Array.isArray(answerValue) ? answerValue.includes(key) : false;
-                      return (
-                        <label key={`${question.id}-${key}`} className="flex items-center gap-3 rounded border border-border p-3">
-                          <Checkbox
-                            checked={selected}
-                            disabled={!attemptIsActive}
-                            onCheckedChange={(checked) => {
-                              setAnswers((current) => {
-                                const existing = Array.isArray(current[question.id]) ? [...(current[question.id] as string[])] : [];
-                                const next = checked ? [...existing, key] : existing.filter((value) => value !== key);
-                                return { ...current, [question.id]: next };
-                              });
-                            }}
-                          />
-                          <span className="text-sm">{key}. {option}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                  {attemptIsActive && (
-                    <Button onClick={() => answerMutation.mutate({ questionId: question.id, answer: Array.isArray(answerValue) ? answerValue : [] })} disabled={!Array.isArray(answerValue) || answerValue.length === 0 || answerMutation.isPending}>
-                      Submit Answer
-                    </Button>
-                  )}
-                  {contestEnded && Array.isArray(question.correctAnswer) && (
-                    revealedAnswers[question.id] ? (
-                      <Card className="border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm shadow-none">
-                        Correct answers: <span className="font-semibold text-foreground">{question.correctAnswer.join(", ")}</span>
-                      </Card>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setRevealedAnswers((current) => ({ ...current, [question.id]: true }))}
-                      >
-                        <Eye className="mr-2 h-4 w-4" /> View Answer
-                      </Button>
-                    )
-                  )}
-                </div>
-              )}
-            </Card>
-          );
-        }))}
+        )}
 
         {standingsEnabled && (
           <Card className="border border-border bg-background p-6 shadow-none">
