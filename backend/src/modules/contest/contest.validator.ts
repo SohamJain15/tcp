@@ -227,6 +227,14 @@ export const contestCodingSubmissionSchema = z.object({
 
 export const contestCodingRunSchema = contestCodingSubmissionSchema;
 
+/**
+ * Auto-saved editor content. Unlike a submission the code may be empty or half-written, so it is
+ * not required to be non-blank.
+ */
+export const contestCodingDraftSchema = contestCodingSubmissionSchema.extend({
+  code: z.string(),
+});
+
 export const contestProctoringEventSchema = z.object({
   type: z.enum([
     "TAB_SWITCH",

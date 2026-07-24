@@ -119,6 +119,14 @@ function mapQuestionState(value: unknown): ContestQuestionAttemptState | null {
     passedCount: normalizeNumber(record.passedCount, 0),
     totalCount: normalizeNumber(record.totalCount, 0),
     hasFinalCodingSubmission: Boolean(record.hasFinalCodingSubmission),
+    draftCode: typeof record.draftCode === "string" ? record.draftCode : null,
+    draftLanguage:
+      typeof record.draftLanguage === "string"
+        ? (() => {
+            const normalized = tryNormalizeSupportedLanguage(record.draftLanguage);
+            return normalized && normalized !== "react" && normalized !== "html" && normalized !== "css" ? normalized : null;
+          })()
+        : null,
     finalSubmissionLanguage:
       typeof record.finalSubmissionLanguage === "string"
         ? (() => {

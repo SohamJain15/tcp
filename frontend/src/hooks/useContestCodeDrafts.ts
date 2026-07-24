@@ -11,6 +11,11 @@ function draftKey(contestId: string, questionId: string, language: string): stri
   return `tcet:contest:${contestId}:code:${questionId}:${language}`;
 }
 
+/** The language a question was last worked in, so reopening it does not reset to the default. */
+function languageKey(contestId: string, questionId: string): string {
+  return `tcet:contest:${contestId}:lang:${questionId}`;
+}
+
 export function useContestCodeDrafts(contestId: string) {
   const getDraft = useCallback(
     (questionId: string, language: string): string | null => {
@@ -40,5 +45,33 @@ export function useContestCodeDrafts(contestId: string) {
     [contestId],
   );
 
-  return { getDraft, setDraft };
+  const getLanguage = useCallback(
+    (questionId: string): string | null => {
+      if (!contestId || !questionId) {
+        return null;
+      }
+      try {
+        return window.sessionStorage.getItem(languageKey(contestId, questionId));
+      } catch {
+        return null;
+      }
+    },
+    [contestId],
+  );
+
+  const setLanguage = useCallback(
+    (questionId: string, language: string) => {
+      if (!contestId || !questionId) {
+        return;
+      }
+      try {
+        window.sessionStorage.setItem(languageKey(contestId, questionId), language);
+      } catch {
+        // Non-fatal — the editor still works, it just reopens in the default language.
+      }
+    },
+    [contestId],
+  );
+
+  return { getDraft, setDraft, getLanguage, setLanguage };
 }

@@ -231,6 +231,13 @@ export const contestsApi = {
       body: payload,
       pathname,
     }),
+  /** Auto-saves editor content so it is submitted for the student if the attempt ends without them. */
+  saveCodingDraft: (contestId: string, payload: ContestCodingSubmissionPayload, pathname?: string) =>
+    apiRequest<ContestAttemptEnvelope>(`/api/contests/${contestId}/coding-draft`, {
+      method: "POST",
+      body: payload,
+      pathname,
+    }),
   submitCodingQuestion: (contestId: string, payload: ContestCodingSubmissionPayload, pathname?: string) =>
     apiRequest<ContestCodingSubmissionReceipt>(`/api/contests/${contestId}/coding-submissions`, {
       method: "POST",

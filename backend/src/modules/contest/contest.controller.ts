@@ -5,6 +5,7 @@ import { normalizeNumber } from "../../shared/utils/normalize";
 import type { ContestService } from "./contest.service";
 import {
   contestAnswerSchema,
+  contestCodingDraftSchema,
   contestCodingRunSchema,
   contestCodingSubmissionSchema,
   contestProctoringEventSchema,
@@ -155,6 +156,16 @@ export function createContestController(contestService: ContestService) {
         payload,
       );
       res.status(201).json(result);
+    },
+
+    async saveCodingDraft(req: Request, res: Response): Promise<void> {
+      const payload = contestCodingDraftSchema.parse(req.body);
+      const attempt = await contestService.saveCodingDraft(
+        req.user!,
+        routeIdSchema.parse(getRouteParam(req.params.contestId)),
+        payload,
+      );
+      res.json({ attempt });
     },
 
     async getStandings(req: Request, res: Response): Promise<void> {
