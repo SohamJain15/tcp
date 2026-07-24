@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+// Correctness is never shown during the contest — a saved answer is just saved, never marked right
+// or wrong, and always editable until the whole test is submitted.
 
 import { contestsApi } from "@/api/services";
 import type { ContestAttempt, ObjectiveContestQuestionDetail } from "@/api/types";
@@ -53,8 +55,8 @@ export function ContestObjectiveQuestion({
   onAttemptUpdate,
 }: ContestObjectiveQuestionProps) {
   const state = attempt?.questionStates.find((item) => item.questionId === question.id) ?? null;
-  const isSolved = state?.status === "SOLVED";
-  const disabled = !attemptIsActive || isSolved;
+  // Editable for the whole live attempt — never locked on "correct", because correctness is hidden.
+  const disabled = !attemptIsActive;
 
   // Seeded from the server answer; the component is keyed by questionId in the parent, so this
   // initialises correctly each time the student opens a different question.
@@ -176,14 +178,12 @@ export function ContestObjectiveQuestion({
           )}
         </div>
 
-        {isSolved && (
-          <div className="mt-5 flex items-center gap-2 border border-success/40 bg-success/10 p-3 text-sm">
-            <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
-            Correct — this answer is locked in.
-          </div>
-        )}
-
-        {!attemptIsActive && !isSolved && (
+        {attemptIsActive ? (
+          <p className="mt-5 text-xs text-muted-foreground">
+            Your answer is saved automatically and can be changed any time before you submit the test.
+            Results are shown after faculty publishes them.
+          </p>
+        ) : (
           <p className="mt-5 text-sm text-muted-foreground">This attempt is no longer active.</p>
         )}
       </Card>

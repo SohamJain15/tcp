@@ -401,56 +401,40 @@ describe("TCET Code Studio backend APIs", () => {
     expect(csvExportResponse.text).toContain("rating");
   });
 
-  it("reveals ended contest questions and practice coding without exposing standings until results are published", async () => {
+  it("hides questions, correct answers and the report once a contest ends, until faculty publishes results", async () => {
     const { app } = createTestApp();
     const contest = await createContest(app, {
       startTime: "2026-05-06T23:00:00.000Z",
       duration: 30,
       lifecycleState: "Published",
     });
-    expect(contest.lifecycleState).toBe("Published");
-
-    const stateUpdateResponse = await request(app)
-      .patch(`/api/contests/${contest.id}/state`)
-      .set(facultyHeaders)
-      .send({ lifecycleState: "Archived" });
-    expect(stateUpdateResponse.status).toBe(404);
 
     const contestListResponse = await request(app).get("/api/contests");
     expect(contestListResponse.status).toBe(200);
-    expect(contestListResponse.body.items).toHaveLength(1);
     expect(contestListResponse.body.items[0].computedStatus).toBe("Ended");
 
+    // Ended but unpublished: no questions, no correct answers, no report — a strict blackout.
     const endedContestDetailResponse = await request(app).get(`/api/contests/${contest.id}`);
     expect(endedContestDetailResponse.status).toBe(200);
-    expect(endedContestDetailResponse.body.contest.questions).toHaveLength(2);
-    expect(endedContestDetailResponse.body.contest.questions[0].correctAnswer).toBe("B");
+    expect(endedContestDetailResponse.body.contest.questions).toEqual([]);
+    expect(endedContestDetailResponse.body.contest.report).toBeNull();
 
+    // The per-question and code endpoints are closed once the contest is over (no practice mode).
     const studentQuestionResponse = await request(app).get(`/api/contests/${contest.id}/questions/q_mcq_1`);
-    expect(studentQuestionResponse.status).toBe(200);
-    expect(studentQuestionResponse.body.question.correctAnswer).toBe("B");
+    expect(studentQuestionResponse.status).toBe(409);
 
-    const practiceRunResponse = await request(app)
+    const runResponse = await request(app)
       .post(`/api/contests/${contest.id}/coding-run`)
       .send({ questionId: "q_code_1", code: "accepted", language: "python" });
-    expect(practiceRunResponse.status).toBe(200);
-    expect(practiceRunResponse.body.result.status).toBe("ACCEPTED");
+    expect(runResponse.status).toBe(409);
 
-    const practiceSubmitResponse = await request(app)
+    const submitResponse = await request(app)
       .post(`/api/contests/${contest.id}/coding-submissions`)
       .send({ questionId: "q_code_1", code: "accepted", language: "python" });
-    expect(practiceSubmitResponse.status).toBe(201);
-    expect(practiceSubmitResponse.body.practiceMode).toBe(true);
-    expect(practiceSubmitResponse.body.status).toBe("ACCEPTED");
-    expect(practiceSubmitResponse.body.passedCount).toBe(practiceSubmitResponse.body.totalCount);
+    expect(submitResponse.status).toBe(409);
 
     const hiddenStandingsResponse = await request(app).get(`/api/contests/${contest.id}/standings`);
     expect(hiddenStandingsResponse.status).toBe(403);
-
-    const facultyStandingsResponse = await request(app)
-      .get(`/api/contests/${contest.id}/standings`)
-      .set(facultyHeaders);
-    expect(facultyStandingsResponse.status).toBe(200);
 
     const publishResultsResponse = await request(app)
       .patch(`/api/contests/${contest.id}/results`)
@@ -458,6 +442,11 @@ describe("TCET Code Studio backend APIs", () => {
       .send({ resultsPublished: true });
     expect(publishResultsResponse.status).toBe(200);
     expect(publishResultsResponse.body.contest.resultsPublished).toBe(true);
+
+    // Only after publishing do the questions, correct answers and standings become visible.
+    const publishedDetailResponse = await request(app).get(`/api/contests/${contest.id}`);
+    expect(publishedDetailResponse.body.contest.questions).toHaveLength(2);
+    expect(publishedDetailResponse.body.contest.questions[0].correctAnswer).toBe("B");
 
     const visibleStandingsResponse = await request(app).get(`/api/contests/${contest.id}/standings`);
     expect(visibleStandingsResponse.status).toBe(200);
@@ -530,11 +519,33 @@ describe("TCET Code Studio backend APIs", () => {
     expect(questionAfterStartResponse.body.question.questionNumber).toBe(1);
     expect(questionAfterStartResponse.body.question.correctAnswer).toBeUndefined();
 
+    // Answering never scores or reveals correctness during the live contest — it only saves the
+    // choice, and the answer stays freely changeable.
     const answerResponse = await request(app)
       .post(`/api/contests/${contest.id}/answers`)
       .send({ questionId: "q_mcq_1", answer: "B" });
     expect(answerResponse.status).toBe(200);
-    expect(answerResponse.body.attempt.score).toBe(10);
+    expect(answerResponse.body.attempt.score).toBe(0);
+    const answeredState = answerResponse.body.attempt.questionStates.find(
+      (state: { questionId: string }) => state.questionId === "q_mcq_1",
+    );
+    expect(answeredState.status).toBe("ATTEMPTED");
+    expect(answeredState.isCorrect).toBeNull();
+    expect(answeredState.awardedPoints).toBe(0);
+    expect(answeredState.submittedAnswer).toBe("B");
+
+    // The student can change a correct answer to a wrong one — nothing is locked.
+    const changedAnswerResponse = await request(app)
+      .post(`/api/contests/${contest.id}/answers`)
+      .send({ questionId: "q_mcq_1", answer: "A" });
+    expect(changedAnswerResponse.status).toBe(200);
+    const changedState = changedAnswerResponse.body.attempt.questionStates.find(
+      (state: { questionId: string }) => state.questionId === "q_mcq_1",
+    );
+    expect(changedState.submittedAnswer).toBe("A");
+    expect(changedState.status).toBe("ATTEMPTED");
+    // Restore the correct answer for the finalization assertions below.
+    await request(app).post(`/api/contests/${contest.id}/answers`).send({ questionId: "q_mcq_1", answer: "B" });
 
     const runResponse = await request(app)
       .post(`/api/contests/${contest.id}/coding-run`)
@@ -542,6 +553,12 @@ describe("TCET Code Studio backend APIs", () => {
     expect(runResponse.status).toBe(200);
     expect(runResponse.body.result.status).toBe("ACCEPTED");
     expect(runResponse.body.result.totalCount).toBe(1);
+
+    // Coding is resubmittable — the first submission never locks the question.
+    const firstSubmissionResponse = await request(app)
+      .post(`/api/contests/${contest.id}/coding-submissions`)
+      .send({ questionId: "q_code_1", code: "wrong", language: "python" });
+    expect(firstSubmissionResponse.status).toBe(201);
 
     const submissionResponse = await request(app)
       .post(`/api/contests/${contest.id}/coding-submissions`)
@@ -559,6 +576,15 @@ describe("TCET Code Studio backend APIs", () => {
       "contest-job-1",
     );
     expect(processedContestSubmission.status).toBe("ACCEPTED");
+
+    // Judging records the verdict but does not award points during the contest.
+    const detailDuringContest = await request(app).get(`/api/contests/${contest.id}`);
+    expect(detailDuringContest.body.contest.attempt.score).toBe(0);
+    const codingStateLive = detailDuringContest.body.contest.attempt.questionStates.find(
+      (state: { questionId: string }) => state.questionId === "q_code_1",
+    );
+    expect(codingStateLive.awardedPoints).toBe(0);
+    expect(codingStateLive.status).toBe("ATTEMPTED");
 
     for (const type of ["COPY", "CUT", "PASTE", "CONTEXT_MENU"]) {
       const clipboardResponse = await request(app).post(`/api/contests/${contest.id}/proctor-events`).send({ type });
@@ -598,6 +624,8 @@ describe("TCET Code Studio backend APIs", () => {
       .set(facultyHeaders);
     expect(attemptsResponse.status).toBe(200);
     expect(attemptsResponse.body.items[0].violationCount).toBe(4);
+    // Auto-submit finalised the attempt: MCQ "B" (10) + coding accepted (100) − 20 violation penalty.
+    expect(attemptsResponse.body.items[0].score).toBe(90);
   });
 
   it("shows a department-targeted contest to matching students using their saved profile department", async () => {

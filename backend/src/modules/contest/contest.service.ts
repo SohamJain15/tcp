@@ -339,6 +339,67 @@ function withDerivedAttemptFields(attempt: ContestAttemptRecord): ContestAttempt
   };
 }
 
+function hasObjectiveAnswer(submittedAnswer: string | string[] | null): submittedAnswer is string | string[] {
+  if (submittedAnswer == null) {
+    return false;
+  }
+  return Array.isArray(submittedAnswer) ? submittedAnswer.length > 0 : submittedAnswer.length > 0;
+}
+
+/**
+ * Computes the real result for every question from what the student saved during the contest.
+ *
+ * This is the ONLY place answers are graded. During the live contest nothing is scored, so a student
+ * never learns whether an answer is right. Objective correctness comes from the saved answer; coding
+ * points come from the latest judged submission's pass count (the worker keeps those fields current).
+ * Deterministic and idempotent, so it can safely run at submit, at auto-submit, and again at publish.
+ */
+function finalizeAttemptScoring(
+  attempt: ContestAttemptRecord,
+  contest: ContestRecord,
+  now: Date,
+): ContestAttemptRecord {
+  const questionsById = new Map(contest.questions.map((question) => [question.id, question]));
+
+  const questionStates = attempt.questionStates.map((state) => {
+    const question = questionsById.get(state.questionId);
+    if (!question) {
+      return state;
+    }
+
+    if (question.type === "Coding") {
+      const fullPass =
+        state.totalCount > 0 &&
+        state.passedCount >= state.totalCount &&
+        state.finalSubmissionStatus === "ACCEPTED";
+      const awardedPoints =
+        state.totalCount > 0 ? Math.max(0, Math.round((question.points * state.passedCount) / state.totalCount)) : 0;
+      return {
+        ...state,
+        status: state.lastSubmissionId ? (fullPass ? "SOLVED" : "ATTEMPTED") : "UNATTEMPTED",
+        awardedPoints,
+        isCorrect: null,
+        solvedAt: fullPass ? state.solvedAt ?? now : null,
+      } satisfies ContestQuestionAttemptState;
+    }
+
+    if (!hasObjectiveAnswer(state.submittedAnswer)) {
+      return { ...state, status: "UNATTEMPTED", awardedPoints: 0, isCorrect: null, solvedAt: null } satisfies ContestQuestionAttemptState;
+    }
+
+    const isCorrect = isCorrectObjectiveAnswer(question, state.submittedAnswer);
+    return {
+      ...state,
+      status: isCorrect ? "SOLVED" : "ATTEMPTED",
+      awardedPoints: isCorrect ? question.points : 0,
+      isCorrect,
+      solvedAt: isCorrect ? state.solvedAt ?? now : null,
+    } satisfies ContestQuestionAttemptState;
+  });
+
+  return withDerivedAttemptFields({ ...attempt, questionStates, updatedAt: now });
+}
+
 function sortStandings(left: ContestAttemptRecord, right: ContestAttemptRecord): number {
   if (right.score !== left.score) {
     return right.score - left.score;
@@ -544,14 +605,19 @@ async function resolveAttemptWithinDeadline(
     return attempt;
   }
 
+  // Deadline passed with the attempt still open — finalise and grade it as of the deadline. This is
+  // a rare path (only when a request lands after the personal deadline), so loading the contest here
+  // is cheap; publish re-grades everyone regardless.
+  const contest = await dependencies.contestRepository.getById(contestId);
+  const expiredAttempt = {
+    ...attempt,
+    status: "AUTO_SUBMITTED" as const,
+    autoSubmittedAt: attempt.deadlineAt,
+    submittedAt: attempt.submittedAt ?? attempt.deadlineAt,
+    updatedAt: now,
+  };
   await dependencies.contestAttemptRepository.save(
-    withDerivedAttemptFields({
-      ...attempt,
-      status: "AUTO_SUBMITTED",
-      autoSubmittedAt: attempt.deadlineAt,
-      submittedAt: attempt.submittedAt ?? attempt.deadlineAt,
-      updatedAt: now,
-    }),
+    contest ? finalizeAttemptScoring(expiredAttempt, contest, now) : withDerivedAttemptFields(expiredAttempt),
   );
 
   throw new AppError(409, "Your contest time is over and the attempt was submitted automatically");
@@ -652,12 +718,13 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email),
         dependencies.contestRegistrationRepository.listByContest(contestId),
       ]);
-      const contestEnded = computeContestStatus(visibleContest, now) === "Ended";
       const standings =
         visibleContest.resultsPublished
           ? (await dependencies.contestAttemptRepository.listByContest(contestId)).sort(sortStandings).map((item, index) => toContestStandingItem(item, index + 1))
           : [];
-      const report = visibleContest.resultsPublished || contestEnded ? buildStudentReport(visibleContest, attempt, standings) : null;
+      // The report — scores, correctness, correct answers, rank — is revealed only once faculty
+      // publishes, never merely because the contest ended.
+      const report = visibleContest.resultsPublished ? buildStudentReport(visibleContest, attempt, standings) : null;
       return toStudentContestDetailResponse(
         visibleContest,
         attempt,
@@ -732,6 +799,14 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       const now = dependencies.now();
       if (input.resultsPublished) {
         ensureContestHasEnded(contest, now);
+        // Publish is the authoritative grading pass: grade every attempt from its saved answers,
+        // including any that were abandoned without a manual submit, so standings are complete.
+        const attempts = await dependencies.contestAttemptRepository.listByContest(contestId);
+        await Promise.all(
+          attempts.map((attempt) =>
+            dependencies.contestAttemptRepository.save(finalizeAttemptScoring(attempt, contest, now)),
+          ),
+        );
       }
       const updatedContest: ContestRecord = {
         ...contest,
@@ -872,14 +947,18 @@ export function createContestService(dependencies: ContestServiceDependencies): 
     },
 
     async submitAttempt(user, contestId) {
+      const contest = ensureStudentCanAccessContest(
+        await dependencies.contestRepository.getById(contestId),
+        await resolveStudentDepartment(user, dependencies),
+      );
       const attempt = ensureActiveAttempt(await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email));
       const now = dependencies.now();
-      const updatedAttempt = withDerivedAttemptFields({
-        ...attempt,
-        status: "SUBMITTED",
-        submittedAt: now,
-        updatedAt: now,
-      });
+      // Grade the saved answers now that the student is done. Publish re-runs this for everyone.
+      const updatedAttempt = finalizeAttemptScoring(
+        { ...attempt, status: "SUBMITTED", submittedAt: now },
+        contest,
+        now,
+      );
       await dependencies.contestAttemptRepository.save(updatedAttempt);
       return updatedAttempt;
     },
@@ -897,14 +976,18 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       const isScored = isViolationEvent(type);
       const nextViolationCount = isScored ? attempt.violationCount + 1 : attempt.violationCount;
       const shouldAutoSubmit = isScored && nextViolationCount >= contest.maxViolations;
-      const updatedAttempt = withDerivedAttemptFields({
+      const violatedAttempt = {
         ...attempt,
         violationCount: nextViolationCount,
-        status: shouldAutoSubmit ? "AUTO_SUBMITTED" : attempt.status,
+        status: shouldAutoSubmit ? ("AUTO_SUBMITTED" as const) : attempt.status,
         autoSubmittedAt: shouldAutoSubmit ? now : attempt.autoSubmittedAt,
         submittedAt: shouldAutoSubmit ? now : attempt.submittedAt,
         updatedAt: now,
-      });
+      };
+      // Hitting the violation limit ends and grades the attempt just like a manual submit.
+      const updatedAttempt = shouldAutoSubmit
+        ? finalizeAttemptScoring(violatedAttempt, contest, now)
+        : withDerivedAttemptFields(violatedAttempt);
 
       await dependencies.contestProctoringRepository.create({
         id: `proctor_${randomUUID()}`,
@@ -925,16 +1008,12 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         await dependencies.contestRepository.getById(contestId),
         await resolveStudentDepartment(user, dependencies),
       );
-      const status = computeContestStatus(contest, now);
-      if (status === "Upcoming") {
-        throw new AppError(409, "Contest questions are not available yet");
+      // A single question is only served during a live, active attempt. Post-contest review happens
+      // through the published report card, never this endpoint.
+      if (computeContestStatus(contest, now) !== "Live") {
+        throw new AppError(409, "Contest questions are not available");
       }
-      // Live contests require an active attempt that still has time left; ended contests open in
-      // practice mode where any (or no) attempt is fine — the envelope mapper accepts a null attempt.
-      const attempt =
-        status === "Live"
-          ? await resolveAttemptWithinDeadline(contestId, user.email, now, dependencies)
-          : await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email);
+      const attempt = await resolveAttemptWithinDeadline(contestId, user.email, now, dependencies);
       const question = ensureContestQuestion(contest, questionId);
       return toStudentContestQuestionEnvelope(contest, question, attempt, now);
     },
@@ -958,24 +1037,21 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         throw new AppError(404, "Contest question state not found");
       }
 
-      if (state.status === "SOLVED") {
-        return attempt;
-      }
-
-      const isCorrect = isCorrectObjectiveAnswer(question, input.answer);
+      // Integrity: the answer is only saved during the contest — never scored or marked correct.
+      // Correctness and points are computed at finalization/publish (finalizeAttemptScoring), so the
+      // student can freely change their answer and never learns whether it is right.
       const questionStates = updateQuestionState(attempt, question.id, (current) => ({
         ...current,
-        status: isCorrect ? "SOLVED" : "ATTEMPTED",
+        status: "ATTEMPTED",
         attemptsCount: current.attemptsCount + 1,
-        awardedPoints: isCorrect ? question.points : current.awardedPoints,
+        awardedPoints: 0,
         submittedAnswer: input.answer,
-        isCorrect,
-        solvedAt: isCorrect ? now : current.solvedAt,
+        isCorrect: null,
+        solvedAt: null,
       }));
 
       const updatedAttempt = withDerivedAttemptFields({
         ...attempt,
-        lastSolvedAt: isCorrect ? now : attempt.lastSolvedAt,
         questionStates,
         updatedAt: now,
       });
@@ -990,13 +1066,11 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         await dependencies.contestRepository.getById(contestId),
         await resolveStudentDepartment(user, dependencies),
       );
-      const status = computeContestStatus(contest, now);
-      if (status === "Upcoming") {
-        throw new AppError(409, "Contest is not live yet");
+      // Running code is only available during a live, active attempt — no post-contest practice.
+      if (computeContestStatus(contest, now) !== "Live") {
+        throw new AppError(409, "Contest is not live");
       }
-      if (status === "Live") {
-        await resolveAttemptWithinDeadline(contestId, user.email, now, dependencies);
-      }
+      await resolveAttemptWithinDeadline(contestId, user.email, now, dependencies);
       const question = ensureContestQuestion(contest, input.questionId);
 
       if (question.type !== "Coding") {
@@ -1042,37 +1116,12 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         throw new AppError(400, "Question does not accept code submissions");
       }
 
-      if (status === "Ended") {
-        const result = await dependencies.executionProvider.executeSubmission({
-          code: wrapSubmissionCode(input.language, input.code),
-          language: input.language,
-          testCases: [...question.sampleTestCases, ...question.hiddenTestCases],
-          problemId: `${contest.id}:${question.id}:practice`,
-          timeLimitSeconds: question.timeLimitSeconds,
-          memoryLimitMb: question.memoryLimitMb,
-        });
-
-        return {
-          submissionId: `practice_${randomUUID()}`,
-          status: result.status,
-          practiceMode: true,
-          runtimeMs: result.runtimeMs,
-          memoryKb: result.memoryKb,
-          passedCount: result.passedCount,
-          totalCount: result.totalCount,
-          stdout: result.stdout,
-          stderr: result.stderr,
-        };
-      }
-
+      // Coding is submittable only while the attempt is live; there is no post-contest practice mode.
       const attempt = await resolveAttemptWithinDeadline(contestId, user.email, now, dependencies);
 
       const state = attempt.questionStates.find((item) => item.questionId === question.id);
       if (!state) {
         throw new AppError(404, "Contest question state not found");
-      }
-      if (state.hasFinalCodingSubmission) {
-        throw new AppError(409, "Final submission has already been used for this coding question");
       }
 
       const userRecord = await dependencies.userRepository.getByEmail(user.email);
@@ -1131,17 +1180,23 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         throw new AppError(500, "Failed to queue contest submission");
       }
 
+      // Point the question at this newest submission. Nothing is locked — the student may resubmit
+      // as often as they like; the latest submission is what finalization scores. Points are not
+      // awarded here (awardedPoints stays 0 until finalization).
       const questionStates = updateQuestionState(attempt, question.id, (current) => ({
         ...current,
         status: "ATTEMPTED",
         attemptsCount: current.attemptsCount + 1,
         lastSubmissionId: submissionId,
+        awardedPoints: 0,
+        passedCount: 0,
         totalCount: question.sampleTestCases.length + question.hiddenTestCases.length,
         hasFinalCodingSubmission: true,
         finalSubmissionLanguage: input.language,
         finalSubmissionStatus: "QUEUED",
         finalRuntimeMs: 0,
         finalMemoryKb: 0,
+        solvedAt: null,
       }));
 
       const updatedAttempt = withDerivedAttemptFields({
