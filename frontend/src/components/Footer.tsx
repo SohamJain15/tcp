@@ -40,6 +40,7 @@
           >
             Gyaneshwar Jha
           </a>
+          {" · "}
           <a
             href="https://www.linkedin.com/in/bhavik-jain-535325321/"
             target="_blank"
