@@ -230,8 +230,18 @@ export default function ContestDetail() {
           // The per-question page will prompt to return to fullscreen.
         }
       }
+      // The pre-flight payload carries no questions — the API only sends them once an attempt is
+      // ACTIVE — so `firstQuestionId` is still empty here. Refetch first, otherwise we would
+      // navigate to `/questions/` (no id), which matches no route and renders the 404 page.
+      const refreshed = await refetch();
+      const nextQuestionId = refreshed.data?.contest.questions[0]?.id ?? "";
+      if (!nextQuestionId) {
+        toast.error("Contest started, but its questions could not be loaded. Please refresh.");
+        return;
+      }
+
       // The attempt is taken one question per page from here on.
-      navigate(`/student/contests/${id}/questions/${firstQuestionId}`);
+      navigate(`/student/contests/${id}/questions/${nextQuestionId}`);
     },
     onError: (mutationError) => {
       toast.error((mutationError as Error)?.message || "Failed to start contest");
