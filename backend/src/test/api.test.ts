@@ -628,6 +628,72 @@ describe("TCET Code Studio backend APIs", () => {
     expect(attemptsResponse.body.items[0].score).toBe(90);
   });
 
+  it("auto-submits unsubmitted code drafts when the test is submitted", async () => {
+    const { app, repositories } = createTestApp();
+    const contest = await createContest(app, { startTime: "2026-05-07T00:00:00.000Z", duration: 60 });
+    await registerForContest(app, contest.id);
+    await request(app).post(`/api/contests/${contest.id}/attempts`);
+
+    const draftCode = "accepted // written but never submitted";
+
+    // The student types code; the editor auto-saves it, but they never press Submit on the question.
+    const draftResponse = await request(app)
+      .post(`/api/contests/${contest.id}/coding-draft`)
+      .send({ questionId: "q_code_1", code: draftCode, language: "python" });
+    expect(draftResponse.status).toBe(200);
+
+    const codingStateBefore = draftResponse.body.attempt.questionStates.find(
+      (state: { questionId: string }) => state.questionId === "q_code_1",
+    );
+    expect(codingStateBefore.draftCode).toBe(draftCode);
+    // Saving a draft must not create a submission or score anything on its own.
+    expect(codingStateBefore.lastSubmissionId).toBeNull();
+    expect(draftResponse.body.attempt.score).toBe(0);
+
+    const submitResponse = await request(app).post(`/api/contests/${contest.id}/attempts/submit`);
+    expect(submitResponse.status).toBe(200);
+    expect(submitResponse.body.attempt.status).toBe("SUBMITTED");
+
+    // Submitting the test submitted the draft for them, against the full test set.
+    const codingStateAfter = submitResponse.body.attempt.questionStates.find(
+      (state: { questionId: string }) => state.questionId === "q_code_1",
+    );
+    expect(codingStateAfter.lastSubmissionId).not.toBeNull();
+
+    const autoSubmission = await repositories.submissionRepository.getById(codingStateAfter.lastSubmissionId);
+    expect(autoSubmission?.code).toBe(draftCode);
+    expect(autoSubmission?.language).toBe("python");
+    expect(autoSubmission?.sourceType).toBe("contest_coding");
+  });
+
+  it("does not auto-submit a draft that matches what was already submitted", async () => {
+    const { app, repositories } = createTestApp();
+    const contest = await createContest(app, { startTime: "2026-05-07T00:00:00.000Z", duration: 60 });
+    await registerForContest(app, contest.id);
+    await request(app).post(`/api/contests/${contest.id}/attempts`);
+
+    const code = "accepted // submitted normally";
+    const submission = await request(app)
+      .post(`/api/contests/${contest.id}/coding-submissions`)
+      .send({ questionId: "q_code_1", code, language: "python" });
+    expect(submission.status).toBe(201);
+
+    // The editor's auto-save mirrors exactly what was just submitted.
+    await request(app)
+      .post(`/api/contests/${contest.id}/coding-draft`)
+      .send({ questionId: "q_code_1", code, language: "python" });
+
+    await request(app).post(`/api/contests/${contest.id}/attempts/submit`);
+
+    // Only the one explicit submission exists — no duplicate was created for the identical draft.
+    const submissions = await repositories.submissionRepository.list({
+      contestId: contest.id,
+      userEmail: "student1@tcetmumbai.in",
+    });
+    expect(submissions).toHaveLength(1);
+    expect(submissions[0].id).toBe(submission.body.submissionId);
+  });
+
   it("shows faculty the student's latest coding submission, not their first", async () => {
     const { app, services } = createTestApp();
     const contest = await createContest(app, { startTime: "2026-05-07T00:00:00.000Z", duration: 60 });

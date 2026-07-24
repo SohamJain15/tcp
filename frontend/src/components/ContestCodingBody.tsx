@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import Editor from "@monaco-editor/react";
 import type * as MonacoEditor from "monaco-editor";
@@ -61,6 +61,8 @@ function getFileExtension(language: ExecutableLanguage): string {
   return map[language] ?? language;
 }
 
+const DRAFT_AUTOSAVE_DELAY_MS = 1000;
+
 interface ContestCodingBodyProps {
   contestId: string;
   questionId: string;
@@ -91,7 +93,8 @@ export function ContestCodingBody({
   const editorLockRef = useRef<(() => void) | null>(null);
   const consolePanelRef = useRef<ImperativePanelHandle | null>(null);
   const [isConsoleCollapsed, setIsConsoleCollapsed] = useState(false);
-  const { getDraft, setDraft } = useContestCodeDrafts(contestId);
+  const { getDraft, setDraft, getLanguage, setLanguage: persistLanguage } = useContestCodeDrafts(contestId);
+  const autoSaveTimerRef = useRef<number | null>(null);
 
   const toggleConsole = () => {
     const panel = consolePanelRef.current;
@@ -105,8 +108,10 @@ export function ContestCodingBody({
     }
   };
 
+  // Reopen the question in whatever language it was last written in, otherwise a student who wrote
+  // Python and navigated away would come back to an empty default-language editor.
   const [language, setLanguage] = useState<ExecutableLanguage>(
-    (EXECUTABLE_LANGUAGES[0] ?? "cpp") as ExecutableLanguage,
+    () => (getLanguage(questionId) as ExecutableLanguage | null) ?? ((EXECUTABLE_LANGUAGES[0] ?? "cpp") as ExecutableLanguage),
   );
   // Per-language edits for this question, seeded from the persisted draft.
   const [drafts, setDrafts] = useState<Partial<Record<ExecutableLanguage, string>>>({});
@@ -115,10 +120,41 @@ export function ContestCodingBody({
 
   const code = drafts[language] ?? getDraft(questionId, language) ?? getStarterCode(language);
 
+  const changeLanguage = (next: ExecutableLanguage) => {
+    setLanguage(next);
+    persistLanguage(questionId, next);
+  };
+
   const setCode = (value: string) => {
     setDrafts((current) => ({ ...current, [language]: value }));
     setDraft(questionId, language, value);
+
+    // Mirror the code to the server (debounced) so it is auto-submitted for the student if the
+    // attempt ends without them pressing Submit. Untouched starter templates are never sent, which
+    // is what keeps never-attempted questions out of the auto-submit set.
+    if (autoSaveTimerRef.current) {
+      window.clearTimeout(autoSaveTimerRef.current);
+    }
+    if (!attemptIsActive || value === getStarterCode(language)) {
+      return;
+    }
+    autoSaveTimerRef.current = window.setTimeout(() => {
+      void contestsApi
+        .saveCodingDraft(contestId, { questionId, code: value, language }, pathname)
+        .catch(() => {
+          // Best-effort: the local draft is still safe in sessionStorage.
+        });
+    }, DRAFT_AUTOSAVE_DELAY_MS);
   };
+
+  useEffect(
+    () => () => {
+      if (autoSaveTimerRef.current) {
+        window.clearTimeout(autoSaveTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const runMutation = useMutation({
     mutationFn: () => contestsApi.runCodingQuestion(contestId, { questionId, code, language }, pathname),
@@ -234,7 +270,7 @@ export function ContestCodingBody({
               <div className="flex items-center gap-2">
                 <ThemedSelect
                   value={language}
-                  onValueChange={(value) => setLanguage(value as ExecutableLanguage)}
+                  onValueChange={(value) => changeLanguage(value as ExecutableLanguage)}
                   disabled={!attemptIsActive}
                   triggerClassName="h-9 w-auto min-w-[130px] text-sm"
                   options={EXECUTABLE_LANGUAGES.map((supportedLanguage) => ({

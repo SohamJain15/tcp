@@ -423,6 +423,8 @@ export interface ContestQuestionAttemptState {
   passedCount: number;
   totalCount: number;
   hasFinalCodingSubmission: boolean;
+  draftCode: string | null;
+  draftLanguage: ExecutableLanguage | null;
   finalSubmissionLanguage: ExecutableLanguage | null;
   finalSubmissionStatus: string | null;
   finalRuntimeMs: number;

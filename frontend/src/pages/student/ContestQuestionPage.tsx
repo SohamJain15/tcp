@@ -16,8 +16,9 @@ import { ContestSubmitDialog } from "@/components/ContestSubmitDialog";
 import { ContestTimer } from "@/components/ContestTimer";
 import { ContestWatermark } from "@/components/ContestWatermark";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { useContestCodeDrafts } from "@/hooks/useContestCodeDrafts";
 import { useVisitedQuestions } from "@/hooks/useVisitedQuestions";
-import type { ContestAttempt } from "@/api/types";
+import type { ContestAttempt, ExecutableLanguage } from "@/api/types";
 import { useContestProctoring } from "./useContestProctoring";
 
 /**
@@ -34,6 +35,7 @@ export default function ContestQuestionPage() {
   const [submitDialogOpen, setSubmitDialogOpen] = useState(false);
   const [navSheetOpen, setNavSheetOpen] = useState(false);
   const { visitedIds, markVisited } = useVisitedQuestions(id);
+  const { getDraft, getLanguage } = useContestCodeDrafts(id);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["contest-question-detail", id, questionId],
@@ -81,7 +83,22 @@ export default function ContestQuestionPage() {
   });
 
   const submitAttemptMutation = useMutation({
-    mutationFn: () => contestsApi.submitAttempt(id, pathname),
+    mutationFn: async () => {
+      // Flush the question on screen before finalising — its auto-save is debounced, so the last
+      // second of typing may not have reached the server yet. Other questions were already flushed
+      // when the student navigated away from them.
+      const draftLanguage = getLanguage(questionId);
+      const draftCode = draftLanguage ? getDraft(questionId, draftLanguage) : null;
+      if (draftCode) {
+        try {
+          await contestsApi.saveCodingDraft(id, { questionId, code: draftCode, language: draftLanguage as ExecutableLanguage }, pathname);
+        } catch {
+          // Best-effort: a failed flush must never block submitting the test.
+        }
+      }
+
+      return contestsApi.submitAttempt(id, pathname);
+    },
     onSuccess: async (response) => {
       updateAttemptInCache(response.attempt);
       setSubmitDialogOpen(false);

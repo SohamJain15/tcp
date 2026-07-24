@@ -99,6 +99,9 @@ export interface ContestQuestionAttemptState {
   passedCount: number;
   totalCount: number;
   hasFinalCodingSubmission: boolean;
+  /** Latest editor content auto-saved by the student, submitted for them when the attempt ends. */
+  draftCode: string | null;
+  draftLanguage: ExecutableLanguage | null;
   finalSubmissionLanguage: ExecutableLanguage | null;
   finalSubmissionStatus: string | null;
   finalRuntimeMs: number;

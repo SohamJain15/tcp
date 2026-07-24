@@ -56,6 +56,7 @@ import type {
 import {
   normalizeCodingQuestion,
   type contestAnswerSchema,
+  type contestCodingDraftSchema,
   type contestCodingRunSchema,
   type contestCodingSubmissionSchema,
   type contestResultsSchema,
@@ -68,6 +69,7 @@ type ContestUpdateInput = Partial<ContestCreateInput>;
 type ContestAnswerInput = import("zod").infer<typeof contestAnswerSchema>;
 type ContestCodingSubmissionInput = import("zod").infer<typeof contestCodingSubmissionSchema>;
 type ContestCodingRunInput = import("zod").infer<typeof contestCodingRunSchema>;
+type ContestCodingDraftInput = import("zod").infer<typeof contestCodingDraftSchema>;
 type ContestResultsInput = import("zod").infer<typeof contestResultsSchema>;
 
 export interface ContestService {
@@ -111,6 +113,7 @@ export interface ContestService {
     stdout?: string;
     stderr?: string;
   }>;
+  saveCodingDraft(user: AuthenticatedUser, contestId: string, input: ContestCodingDraftInput): Promise<ContestAttemptRecord>;
   getStandings(user: AuthenticatedUser, contestId: string, query?: { department?: Department; year?: StudentYear }): Promise<ContestStandingItem[]>;
   exportStandingsCsv(user: AuthenticatedUser, contestId: string, query?: { department?: Department; year?: StudentYear }): Promise<string>;
   listAttempts(user: AuthenticatedUser, contestId: string): Promise<ContestAttemptSummary[]>;
@@ -187,6 +190,8 @@ function createDefaultQuestionState(question: ContestQuestion): ContestQuestionA
     passedCount: 0,
     totalCount: 0,
     hasFinalCodingSubmission: false,
+    draftCode: null,
+    draftLanguage: null,
     finalSubmissionLanguage: null,
     finalSubmissionStatus: null,
     finalRuntimeMs: 0,
@@ -627,11 +632,199 @@ async function resolveAttemptWithinDeadline(
     submittedAt: attempt.submittedAt ?? attempt.deadlineAt,
     updatedAt: now,
   };
-  await dependencies.contestAttemptRepository.save(
-    contest ? finalizeAttemptScoring(expiredAttempt, contest, now) : withDerivedAttemptFields(expiredAttempt),
-  );
+
+  if (contest) {
+    // Running out of time still submits whatever the student had written. Judging finishes in the
+    // background; publish re-grades every attempt once the worker is done.
+    const { attempt: withDrafts } = await autoSubmitPendingCodingDrafts(contest, expiredAttempt, now, dependencies);
+    await dependencies.contestAttemptRepository.save(finalizeAttemptScoring(withDrafts, contest, now));
+  } else {
+    await dependencies.contestAttemptRepository.save(withDerivedAttemptFields(expiredAttempt));
+  }
 
   throw new AppError(409, "Your contest time is over and the attempt was submitted automatically");
+}
+
+/**
+ * Creates and enqueues a contest coding submission and points the question state at it. Shared by the
+ * student's explicit Submit and by the automatic submission of unsubmitted drafts when an attempt
+ * ends, so both paths produce identical records. Awards no points — scoring happens at finalization.
+ */
+async function createContestCodingSubmission(
+  contest: ContestRecord,
+  question: CodingContestQuestion,
+  attempt: ContestAttemptRecord,
+  code: string,
+  language: ExecutableLanguage,
+  userEmail: string,
+  now: Date,
+  dependencies: ContestServiceDependencies,
+): Promise<{ attempt: ContestAttemptRecord; submissionId: string }> {
+  // The saved profile is the source of truth for role/department — the request identity carries
+  // neither, and this also runs from server-side endings that have no request user at all.
+  const userRecord = await dependencies.userRepository.getByEmail(userEmail);
+  const submissionId = `submission_${randomUUID()}`;
+  const totalCount = question.sampleTestCases.length + question.hiddenTestCases.length;
+
+  await dependencies.submissionRepository.create({
+    id: submissionId,
+    queueJobId: null,
+    judge0Token: null,
+    sourceType: "contest_coding",
+    userEmail,
+    userRole: userRecord?.role ?? "STUDENT",
+    userDepartment: userRecord?.department ?? attempt.userDepartment ?? null,
+    resourceOwnerEmail: contest.createdBy,
+    resourceTargetDepartment: contest.targetDepartment,
+    problemId: question.id,
+    problemTitleSnapshot: question.problemTitle,
+    problemDifficultySnapshot: question.difficulty,
+    contestId: contest.id,
+    contestTitleSnapshot: contest.title,
+    contestQuestionId: question.id,
+    code,
+    language,
+    status: "QUEUED",
+    runtimeMs: 0,
+    memoryKb: 0,
+    passedCount: 0,
+    totalCount,
+    executionProvider: "judge0",
+    ratingAwarded: 0,
+    stdout: null,
+    stderr: null,
+    createdAt: now,
+    updatedAt: now,
+    judgedAt: null,
+    finalizationAppliedAt: null,
+  });
+
+  try {
+    const queueJobId = await dependencies.submissionQueue.enqueue(submissionId);
+    await dependencies.submissionRepository.save({
+      ...(await dependencies.submissionRepository.getById(submissionId))!,
+      queueJobId,
+      updatedAt: dependencies.now(),
+    });
+  } catch (error) {
+    const persisted = await dependencies.submissionRepository.getById(submissionId);
+    if (persisted) {
+      await dependencies.submissionRepository.save({
+        ...persisted,
+        status: "INTERNAL_ERROR",
+        stderr: error instanceof Error ? error.message : "Failed to queue contest submission",
+        updatedAt: dependencies.now(),
+        judgedAt: dependencies.now(),
+        finalizationAppliedAt: dependencies.now(),
+      });
+    }
+    throw new AppError(500, "Failed to queue contest submission");
+  }
+
+  // Point the question at this newest submission. Nothing is locked — the student may resubmit as
+  // often as they like; the latest submission is what finalization scores.
+  return {
+    submissionId,
+    attempt: withDerivedAttemptFields({
+      ...attempt,
+      questionStates: updateQuestionState(attempt, question.id, (current) => ({
+        ...current,
+        status: "ATTEMPTED",
+        attemptsCount: current.attemptsCount + 1,
+        lastSubmissionId: submissionId,
+        awardedPoints: 0,
+        passedCount: 0,
+        totalCount,
+        hasFinalCodingSubmission: true,
+        finalSubmissionLanguage: language,
+        finalSubmissionStatus: "QUEUED",
+        finalRuntimeMs: 0,
+        finalMemoryKb: 0,
+        solvedAt: null,
+      })),
+      updatedAt: now,
+    }),
+  };
+}
+
+/**
+ * Submits any coding work the student saved but never submitted, so nothing they wrote is thrown
+ * away when the attempt ends — whether they pressed Submit Test, ran out of time, tripped the
+ * violation limit, or simply closed the tab.
+ *
+ * A draft counts as pending when it exists and is not already identical to the last submitted code,
+ * so post-submit edits are picked up and re-submitting the same code is skipped. Untouched starter
+ * templates never reach the server (the client only saves once the code differs), so they are
+ * naturally excluded.
+ */
+async function autoSubmitPendingCodingDrafts(
+  contest: ContestRecord,
+  attempt: ContestAttemptRecord,
+  now: Date,
+  dependencies: ContestServiceDependencies,
+): Promise<{ attempt: ContestAttemptRecord; submissionIds: string[] }> {
+  const questionsById = new Map(contest.questions.map((question) => [question.id, question]));
+  let workingAttempt = attempt;
+  const submissionIds: string[] = [];
+
+  for (const state of attempt.questionStates) {
+    const question = questionsById.get(state.questionId);
+    if (!question || question.type !== "Coding" || !state.draftCode?.trim()) {
+      continue;
+    }
+
+    const lastSubmission = state.lastSubmissionId
+      ? await dependencies.submissionRepository.getById(state.lastSubmissionId)
+      : null;
+    if (lastSubmission?.code === state.draftCode) {
+      continue;
+    }
+
+    const created = await createContestCodingSubmission(
+      contest,
+      question,
+      workingAttempt,
+      state.draftCode,
+      state.draftLanguage ?? lastSubmission?.language ?? "cpp",
+      attempt.userEmail,
+      now,
+      dependencies,
+    );
+    workingAttempt = created.attempt;
+    submissionIds.push(created.submissionId);
+  }
+
+  return { attempt: workingAttempt, submissionIds };
+}
+
+/**
+ * Waits (bounded) for freshly queued submissions to be judged, so the student's own Submit Test
+ * produces correct scores immediately rather than after the worker catches up.
+ */
+async function waitForSubmissionsJudged(
+  submissionIds: string[],
+  dependencies: ContestServiceDependencies,
+  timeoutMs = 20_000,
+  pollMs = 500,
+): Promise<void> {
+  if (submissionIds.length === 0) {
+    return;
+  }
+
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const submissions = await Promise.all(
+      submissionIds.map((id) => dependencies.submissionRepository.getById(id)),
+    );
+    const stillRunning = submissions.some(
+      (submission) => submission && (submission.status === "QUEUED" || submission.status === "RUNNING"),
+    );
+    if (!stillRunning) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
 }
 
 async function buildRegistrationItems(
@@ -813,8 +1006,28 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         // Publish is the authoritative grading pass: grade every attempt from its saved answers,
         // including any that were abandoned without a manual submit, so standings are complete.
         const attempts = await dependencies.contestAttemptRepository.listByContest(contestId);
+
+        // Catch any attempt that ended without its drafts being submitted (e.g. the student simply
+        // closed the tab), then wait for the judge so those questions are scored, not zeroed.
+        const pendingIds: string[] = [];
+        for (const attempt of attempts) {
+          const { attempt: withDrafts, submissionIds } = await autoSubmitPendingCodingDrafts(
+            contest,
+            attempt,
+            now,
+            dependencies,
+          );
+          if (submissionIds.length > 0) {
+            await dependencies.contestAttemptRepository.save(withDrafts);
+            pendingIds.push(...submissionIds);
+          }
+        }
+        await waitForSubmissionsJudged(pendingIds, dependencies);
+
+        // Re-read so the worker's judged results are included in the grading pass.
+        const attemptsToGrade = await dependencies.contestAttemptRepository.listByContest(contestId);
         await Promise.all(
-          attempts.map((attempt) =>
+          attemptsToGrade.map((attempt) =>
             dependencies.contestAttemptRepository.save(finalizeAttemptScoring(attempt, contest, now)),
           ),
         );
@@ -964,9 +1177,16 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       );
       const attempt = ensureActiveAttempt(await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email));
       const now = dependencies.now();
+
+      // Submit any code the student wrote but never submitted. We deliberately do NOT wait for the
+      // judge here: the student is never shown their score at submit time (results are revealed only
+      // when faculty publishes, and publish re-grades every attempt once judging has finished), so
+      // waiting would just hang their Submit Test whenever the queue is busy or the worker is down.
+      const { attempt: withDrafts } = await autoSubmitPendingCodingDrafts(contest, attempt, now, dependencies);
+
       // Grade the saved answers now that the student is done. Publish re-runs this for everyone.
       const updatedAttempt = finalizeAttemptScoring(
-        { ...attempt, status: "SUBMITTED", submittedAt: now },
+        { ...withDrafts, status: "SUBMITTED", submittedAt: now },
         contest,
         now,
       );
@@ -995,10 +1215,21 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         submittedAt: shouldAutoSubmit ? now : attempt.submittedAt,
         updatedAt: now,
       };
-      // Hitting the violation limit ends and grades the attempt just like a manual submit.
-      const updatedAttempt = shouldAutoSubmit
-        ? finalizeAttemptScoring(violatedAttempt, contest, now)
-        : withDerivedAttemptFields(violatedAttempt);
+      // Hitting the violation limit ends and grades the attempt just like a manual submit — including
+      // submitting any code the student had written but not submitted. Judging finishes in the
+      // background; publish re-grades every attempt once the worker is done.
+      let updatedAttempt: ContestAttemptRecord;
+      if (shouldAutoSubmit) {
+        const { attempt: withDrafts } = await autoSubmitPendingCodingDrafts(
+          contest,
+          violatedAttempt,
+          now,
+          dependencies,
+        );
+        updatedAttempt = finalizeAttemptScoring(withDrafts, contest, now);
+      } else {
+        updatedAttempt = withDerivedAttemptFields(violatedAttempt);
+      }
 
       await dependencies.contestProctoringRepository.create({
         id: `proctor_${randomUUID()}`,
@@ -1135,92 +1366,52 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         throw new AppError(404, "Contest question state not found");
       }
 
-      const userRecord = await dependencies.userRepository.getByEmail(user.email);
-      const submissionId = `submission_${randomUUID()}`;
-      await dependencies.submissionRepository.create({
-        id: submissionId,
-        queueJobId: null,
-        judge0Token: null,
-        sourceType: "contest_coding",
-        userEmail: user.email,
-        userRole: user.role,
-        userDepartment: userRecord?.department ?? normalizeDepartment(user.department) ?? null,
-        resourceOwnerEmail: contest.createdBy,
-        resourceTargetDepartment: contest.targetDepartment,
-        problemId: question.id,
-        problemTitleSnapshot: question.problemTitle,
-        problemDifficultySnapshot: question.difficulty,
-        contestId: contest.id,
-        contestTitleSnapshot: contest.title,
-        contestQuestionId: question.id,
-        code: input.code,
-        language: input.language,
-        status: "QUEUED",
-        runtimeMs: 0,
-        memoryKb: 0,
-        passedCount: 0,
-        totalCount: question.sampleTestCases.length + question.hiddenTestCases.length,
-        executionProvider: "judge0",
-        ratingAwarded: 0,
-        stdout: null,
-        stderr: null,
-        createdAt: now,
-        updatedAt: now,
-        judgedAt: null,
-        finalizationAppliedAt: null,
-      });
-      try {
-        const queueJobId = await dependencies.submissionQueue.enqueue(submissionId);
-        await dependencies.submissionRepository.save({
-          ...(await dependencies.submissionRepository.getById(submissionId))!,
-          queueJobId,
-          updatedAt: dependencies.now(),
-        });
-      } catch (error) {
-        const persisted = await dependencies.submissionRepository.getById(submissionId);
-        if (persisted) {
-          await dependencies.submissionRepository.save({
-            ...persisted,
-            status: "INTERNAL_ERROR",
-            stderr: error instanceof Error ? error.message : "Failed to queue contest submission",
-            updatedAt: dependencies.now(),
-            judgedAt: dependencies.now(),
-            finalizationAppliedAt: dependencies.now(),
-          });
-        }
-        throw new AppError(500, "Failed to queue contest submission");
-      }
-
-      // Point the question at this newest submission. Nothing is locked — the student may resubmit
-      // as often as they like; the latest submission is what finalization scores. Points are not
-      // awarded here (awardedPoints stays 0 until finalization).
-      const questionStates = updateQuestionState(attempt, question.id, (current) => ({
-        ...current,
-        status: "ATTEMPTED",
-        attemptsCount: current.attemptsCount + 1,
-        lastSubmissionId: submissionId,
-        awardedPoints: 0,
-        passedCount: 0,
-        totalCount: question.sampleTestCases.length + question.hiddenTestCases.length,
-        hasFinalCodingSubmission: true,
-        finalSubmissionLanguage: input.language,
-        finalSubmissionStatus: "QUEUED",
-        finalRuntimeMs: 0,
-        finalMemoryKb: 0,
-        solvedAt: null,
-      }));
-
-      const updatedAttempt = withDerivedAttemptFields({
-        ...attempt,
-        questionStates,
-        updatedAt: now,
-      });
+      const { attempt: updatedAttempt, submissionId } = await createContestCodingSubmission(
+        contest,
+        question,
+        attempt,
+        input.code,
+        input.language,
+        user.email,
+        now,
+        dependencies,
+      );
 
       await dependencies.contestAttemptRepository.save(updatedAttempt);
       return {
         submissionId,
         status: "QUEUED",
       };
+    },
+
+    async saveCodingDraft(user, contestId, input) {
+      const now = dependencies.now();
+      const contest = ensureStudentCanAccessContest(
+        await dependencies.contestRepository.getById(contestId),
+        await resolveStudentDepartment(user, dependencies),
+      );
+      ensureContestIsLive(contest, now);
+      const question = ensureContestQuestion(contest, input.questionId);
+      if (question.type !== "Coding") {
+        throw new AppError(400, "Only coding questions have code drafts");
+      }
+
+      const attempt = await resolveAttemptWithinDeadline(contestId, user.email, now, dependencies);
+
+      // Purely a save — no submission, no judging, no scoring. The draft is what gets auto-submitted
+      // for the student when the attempt ends by any route.
+      const updatedAttempt = withDerivedAttemptFields({
+        ...attempt,
+        questionStates: updateQuestionState(attempt, question.id, (current) => ({
+          ...current,
+          draftCode: input.code,
+          draftLanguage: input.language,
+        })),
+        updatedAt: now,
+      });
+
+      await dependencies.contestAttemptRepository.save(updatedAttempt);
+      return updatedAttempt;
     },
 
     async getStandings(user, contestId, query = {}) {

@@ -44,7 +44,9 @@ export function ContestSubmitDialog({
         <DialogHeader>
           <DialogTitle className="font-display text-xl">Submit your test?</DialogTitle>
           <DialogDescription>
-            Once submitted you cannot return to the questions or change any answer.
+            Any code you have written but not submitted will be submitted and run against all test
+            cases automatically. Once submitted you cannot return to the questions or change any
+            answer.
           </DialogDescription>
         </DialogHeader>
 

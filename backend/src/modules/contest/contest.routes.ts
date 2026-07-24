@@ -34,6 +34,7 @@ export function createContestRouter(dependencies: ApplicationDependencies): Rout
   router.post("/:contestId/proctor-events", requireRole("STUDENT"), asyncHandler(controller.recordProctorEvent));
   router.post("/:contestId/answers", requireRole("STUDENT"), asyncHandler(controller.answerObjectiveQuestion));
   router.post("/:contestId/coding-run", requireRole("STUDENT"), asyncHandler(controller.runCodingQuestion));
+  router.post("/:contestId/coding-draft", requireRole("STUDENT"), asyncHandler(controller.saveCodingDraft));
   router.post(
     "/:contestId/coding-submissions",
     requireRole("STUDENT"),
