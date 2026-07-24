@@ -2,7 +2,8 @@ import { useMemo, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import Editor from "@monaco-editor/react";
 import type * as MonacoEditor from "monaco-editor";
-import { Play, Send } from "lucide-react";
+import type { ImperativePanelHandle } from "react-resizable-panels";
+import { ChevronDown, Play, Send } from "lucide-react";
 import { toast } from "sonner";
 
 import { contestsApi, submissionsApi } from "@/api/services";
@@ -19,11 +20,13 @@ import { Card } from "@/components/ui/card";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { useContestCodeDrafts } from "@/hooks/useContestCodeDrafts";
+import { cn } from "@/lib/utils";
 import {
   configureCodeEditor,
   formatCodeInEditor,
   getMonacoLanguage,
   lockDownContestEditor,
+  supportsFullFormatting,
 } from "@/lib/code-editor";
 import { pollSubmissionUntilComplete } from "@/pages/student/submissionPolling";
 
@@ -86,7 +89,21 @@ export function ContestCodingBody({
 }: ContestCodingBodyProps) {
   const editorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(null);
   const editorLockRef = useRef<(() => void) | null>(null);
+  const consolePanelRef = useRef<ImperativePanelHandle | null>(null);
+  const [isConsoleCollapsed, setIsConsoleCollapsed] = useState(false);
   const { getDraft, setDraft } = useContestCodeDrafts(contestId);
+
+  const toggleConsole = () => {
+    const panel = consolePanelRef.current;
+    if (!panel) {
+      return;
+    }
+    if (panel.isCollapsed()) {
+      panel.expand();
+    } else {
+      panel.collapse();
+    }
+  };
 
   const [language, setLanguage] = useState<ExecutableLanguage>(
     (EXECUTABLE_LANGUAGES[0] ?? "cpp") as ExecutableLanguage,
@@ -208,8 +225,11 @@ export function ContestCodingBody({
       <ResizableHandle withHandle className="bg-border" />
 
       <ResizablePanel defaultSize={60} minSize={30} className="flex h-full flex-col overflow-hidden">
-        <div className="flex h-full min-h-0 flex-col gap-3 p-3">
-          <Card className="overflow-hidden shadow-card">
+        {/* Vertical split so a huge error log can be dragged smaller or collapsed instead of
+            burying the editor. Mirrors the problem workspace. */}
+        <ResizablePanelGroup direction="vertical" className="h-full min-h-0 p-3">
+          <ResizablePanel defaultSize={68} minSize={30}>
+            <Card className="flex h-full flex-col overflow-hidden shadow-card">
             <div className="flex items-center justify-between border-b border-border px-3 py-2">
               <div className="flex items-center gap-2">
                 <ThemedSelect
@@ -233,6 +253,11 @@ export function ContestCodingBody({
                   if (!editorRef.current) return;
                   try {
                     await formatCodeInEditor(editorRef.current, language);
+                    toast.success(
+                      supportsFullFormatting(language)
+                        ? "Code formatted"
+                        : `${toLanguageLabel(language)} is indentation-sensitive — cleaned up spacing only`,
+                    );
                   } catch (error) {
                     toast.error((error as Error).message || "Format failed");
                   }
@@ -242,41 +267,67 @@ export function ContestCodingBody({
               </Button>
             </div>
 
-            <Editor
-              height="480px"
-              language={getMonacoLanguage(language)}
-              theme="vs-dark"
-              value={code}
-              onMount={(editor, monaco) => {
-                editorRef.current = editor;
-                configureCodeEditor(monaco);
-                editorLockRef.current?.();
-                editorLockRef.current = attemptIsActive
-                  ? lockDownContestEditor(editor, monaco, () =>
-                      toast.info("Copy, cut and paste are disabled during the contest."),
-                    )
-                  : null;
-                editor.focus();
-              }}
-              onChange={(value) => setCode(value ?? "")}
-              options={{
-                fontSize: 15,
-                minimap: { enabled: false },
-                automaticLayout: true,
-                wordWrap: "on",
-                scrollBeyondLastLine: false,
-                fontFamily: "JetBrains Mono, monospace",
-                tabSize: 2,
-                formatOnPaste: false,
-                contextmenu: false,
-                readOnly: !attemptIsActive,
-              }}
-            />
-          </Card>
+              <div className="min-h-[200px] flex-1">
+                <Editor
+                  height="100%"
+                  language={getMonacoLanguage(language)}
+                  theme="vs-dark"
+                  value={code}
+                  onMount={(editor, monaco) => {
+                    editorRef.current = editor;
+                    configureCodeEditor(monaco);
+                    editorLockRef.current?.();
+                    editorLockRef.current = attemptIsActive
+                      ? lockDownContestEditor(editor, monaco, () =>
+                          toast.info("Copy, cut and paste are disabled during the contest."),
+                        )
+                      : null;
+                    editor.focus();
+                  }}
+                  onChange={(value) => setCode(value ?? "")}
+                  options={{
+                    fontSize: 15,
+                    minimap: { enabled: false },
+                    automaticLayout: true,
+                    wordWrap: "on",
+                    scrollBeyondLastLine: false,
+                    fontFamily: "JetBrains Mono, monospace",
+                    tabSize: 2,
+                    formatOnPaste: false,
+                    contextmenu: false,
+                    readOnly: !attemptIsActive,
+                  }}
+                />
+              </div>
+            </Card>
+          </ResizablePanel>
 
-          <Card className="p-4 shadow-card">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-sm text-muted-foreground">{statusLine}</div>
+          <ResizableHandle withHandle className="my-2 bg-border" />
+
+          <ResizablePanel
+            ref={consolePanelRef}
+            defaultSize={32}
+            minSize={12}
+            collapsible
+            collapsedSize={8}
+            onCollapse={() => setIsConsoleCollapsed(true)}
+            onExpand={() => setIsConsoleCollapsed(false)}
+          >
+            <Card className="flex h-full flex-col overflow-hidden shadow-card">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={toggleConsole}
+                  aria-label={isConsoleCollapsed ? "Expand console" : "Collapse console"}
+                  className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <ChevronDown
+                    className={cn("h-4 w-4 transition-transform duration-200", isConsoleCollapsed && "rotate-180")}
+                  />
+                </button>
+                <div className="truncate text-sm text-muted-foreground">{statusLine}</div>
+              </div>
               <div className="flex gap-2">
                 <Button
                   variant="secondary"
@@ -295,14 +346,24 @@ export function ContestCodingBody({
               </div>
             </div>
 
-            {output && (output.stdout || output.stderr) && (
-              <div className="mt-4 rounded border border-border bg-secondary p-3 font-mono-code text-xs">
-                {output.stdout && <pre className="whitespace-pre-wrap">{output.stdout}</pre>}
-                {output.stderr && <pre className="whitespace-pre-wrap text-destructive">{output.stderr}</pre>}
-              </div>
-            )}
-          </Card>
-        </div>
+            {/* Scrolls inside its own panel so a long compiler error can never push the editor away. */}
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 font-mono-code text-xs">
+              {output && (output.stdout || output.stderr) ? (
+                <>
+                  {output.stdout && <pre className="whitespace-pre-wrap break-words">{output.stdout}</pre>}
+                  {output.stderr && (
+                    <pre className="whitespace-pre-wrap break-words text-destructive">{output.stderr}</pre>
+                  )}
+                </>
+              ) : (
+                <pre className="whitespace-pre-wrap text-muted-foreground">
+                  {"// stdout and stderr will appear here"}
+                </pre>
+              )}
+            </div>
+            </Card>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </ResizablePanel>
     </ResizablePanelGroup>
   );

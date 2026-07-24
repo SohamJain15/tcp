@@ -29,7 +29,12 @@ import {
 import { DifficultyBadge, StatusBadge } from "@/components/Badges";
 import { cn } from "@/lib/utils";
 import { submissionsApi, problemsApi, userApi } from "@/api/services";
-import { configureCodeEditor, formatCodeInEditor, getMonacoLanguage } from "@/lib/code-editor";
+import {
+  configureCodeEditor,
+  formatCodeInEditor,
+  getMonacoLanguage,
+  supportsFullFormatting,
+} from "@/lib/code-editor";
 import {
   EXECUTABLE_LANGUAGES,
   toLanguageLabel,
@@ -310,6 +315,11 @@ export default function ProblemDetail() {
 
     try {
       await formatCodeInEditor(editorRef.current, language);
+      toast.success(
+        supportsFullFormatting(language)
+          ? "Code formatted"
+          : `${toLanguageLabel(language)} is indentation-sensitive — cleaned up spacing only`,
+      );
     } catch (error) {
       toast.error((error as Error).message || "Format failed");
     }
