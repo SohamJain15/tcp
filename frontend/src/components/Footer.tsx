@@ -40,6 +40,14 @@
           >
             Gyaneshwar Jha
           </a>
+          <a
+            href="https://www.linkedin.com/in/bhavik-jain-535325321/"
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium hover:text-foreground transition-colors"
+          >
+            Bhavik Jain
+          </a>
         </div>
       </div>
     </footer>
