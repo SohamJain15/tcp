@@ -11,11 +11,29 @@ const DEFAULT_FORMATTED_LANGUAGES = new Set<ExecutableLanguage>([
   "typescript",
 ]);
 
+/**
+ * Brace-delimited languages we can safely re-indent ourselves. Prettier does not cover these, so
+ * without this the Format button did nothing at all for the languages students use most (C, C++).
+ */
+const BRACE_INDENTED_LANGUAGES = new Set<ExecutableLanguage>([
+  "c",
+  "cpp",
+  "csharp",
+  "go",
+  "kotlin",
+  "php",
+  "rust",
+  "scala",
+  "swift",
+]);
+
 const PRETTIER_LANGUAGE_PARSERS: Partial<Record<ExecutableLanguage, string>> = {
   java: "java",
   javascript: "babel",
   typescript: "typescript",
 };
+
+const INDENT_UNIT = "    ";
 
 let configuredMonaco = false;
 
@@ -28,6 +46,156 @@ function trimTrailingWhitespace(source: string): string {
     .split("\n")
     .map((line) => line.replace(/[ \t]+$/g, ""))
     .join("\n");
+}
+
+/**
+ * Counts how a single line changes brace depth, and whether it *starts* by closing a block.
+ * String/char literals, line comments and block comments are skipped so braces inside them never
+ * move the indentation. `blockCommentDepth` carries multi-line `/* *\/` state between lines.
+ */
+function scanLineForBraces(
+  line: string,
+  startsInBlockComment: boolean,
+): { delta: number; leadingCloses: number; endsInBlockComment: boolean } {
+  let delta = 0;
+  let leadingCloses = 0;
+  let sawCode = false;
+  let inBlockComment = startsInBlockComment;
+  let index = 0;
+
+  while (index < line.length) {
+    const char = line[index];
+    const next = line[index + 1];
+
+    if (inBlockComment) {
+      if (char === "*" && next === "/") {
+        inBlockComment = false;
+        index += 2;
+        continue;
+      }
+      index += 1;
+      continue;
+    }
+
+    if (char === "/" && next === "*") {
+      inBlockComment = true;
+      index += 2;
+      continue;
+    }
+
+    // Line comments: `//` everywhere, plus `#` for PHP.
+    if ((char === "/" && next === "/") || char === "#") {
+      break;
+    }
+
+    if (char === '"' || char === "'" || char === "`") {
+      const quote = char;
+      index += 1;
+      while (index < line.length) {
+        if (line[index] === "\\") {
+          index += 2;
+          continue;
+        }
+        if (line[index] === quote) {
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      sawCode = true;
+      continue;
+    }
+
+    if (char === "{" || char === "(" || char === "[") {
+      delta += 1;
+      sawCode = true;
+    } else if (char === "}" || char === ")" || char === "]") {
+      delta -= 1;
+      // Only closers before any other code on the line pull this line back out.
+      if (!sawCode) {
+        leadingCloses += 1;
+      }
+      sawCode = true;
+    } else if (!/\s/.test(char)) {
+      sawCode = true;
+    }
+
+    index += 1;
+  }
+
+  return { delta, leadingCloses, endsInBlockComment: inBlockComment };
+}
+
+/**
+ * Re-indents brace-delimited source. It only ever rewrites the *leading whitespace* of a line —
+ * code content, ordering and line breaks are untouched — so the worst possible outcome is odd
+ * indentation, never a broken solution.
+ */
+function reindentBraceLanguage(source: string): string {
+  const lines = trimTrailingWhitespace(source).split("\n");
+  const formatted: string[] = [];
+  let depth = 0;
+  let inBlockComment = false;
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+
+    if (trimmed.length === 0) {
+      formatted.push("");
+      continue;
+    }
+
+    // Preprocessor directives and continuation of a block comment keep their own column.
+    if (!inBlockComment && trimmed.startsWith("#") && !trimmed.startsWith("#{")) {
+      formatted.push(trimmed);
+      continue;
+    }
+
+    if (inBlockComment) {
+      formatted.push(`${INDENT_UNIT.repeat(Math.max(depth, 0))} ${trimmed}`.replace(/\s+$/, ""));
+      const scan = scanLineForBraces(rawLine, inBlockComment);
+      inBlockComment = scan.endsInBlockComment;
+      continue;
+    }
+
+    const scan = scanLineForBraces(rawLine, inBlockComment);
+    // `case:`/`default:` and access labels sit one level back inside their block.
+    const isLabel = /^(case\b.*|default\s*|(public|private|protected)\s*):$/.test(trimmed);
+    const indentDepth = Math.max(0, depth - scan.leadingCloses - (isLabel ? 1 : 0));
+
+    formatted.push(`${INDENT_UNIT.repeat(indentDepth)}${trimmed}`);
+
+    depth = Math.max(0, depth + scan.delta);
+    inBlockComment = scan.endsInBlockComment;
+  }
+
+  return formatted.join("\n");
+}
+
+/**
+ * Single source of truth for formatting, shared by the Format button and Monaco's own
+ * `formatDocument` (Shift+Alt+F).
+ */
+export async function formatSourceCode(language: ExecutableLanguage, source: string): Promise<string> {
+  if (DEFAULT_FORMATTED_LANGUAGES.has(language)) {
+    const formatted = await formatWithPrettier(language, source);
+    if (formatted !== null) {
+      return formatted;
+    }
+  }
+
+  if (BRACE_INDENTED_LANGUAGES.has(language)) {
+    return reindentBraceLanguage(source);
+  }
+
+  // Python and friends are indentation-sensitive: re-indenting would change what the code means,
+  // so they only get safe whitespace cleanup.
+  return trimTrailingWhitespace(source);
+}
+
+/** True when the language gets a real reformat rather than only whitespace cleanup. */
+export function supportsFullFormatting(language: ExecutableLanguage): boolean {
+  return DEFAULT_FORMATTED_LANGUAGES.has(language) || BRACE_INDENTED_LANGUAGES.has(language);
 }
 
 function createFullModelEdit(
@@ -101,8 +269,7 @@ async function provideExecutableFormattingEdits(
   model: MonacoEditor.editor.ITextModel,
 ): Promise<MonacoEditor.languages.TextEdit[]> {
   const source = model.getValue();
-  const formattedSource = await formatWithPrettier(language, source);
-  const nextValue = formattedSource ?? trimTrailingWhitespace(source);
+  const nextValue = await formatSourceCode(language, source);
 
   if (nextValue === source) {
     return [];
@@ -169,20 +336,27 @@ export function configureCodeEditor(monaco: Monaco): void {
 
   configuredMonaco = true;
 
-  monaco.languages.registerDocumentFormattingEditProvider("javascript", {
-    provideDocumentFormattingEdits: async (model) =>
-      provideExecutableFormattingEdits(monaco, "javascript", model),
-  });
+  // Register a formatter for every language we can format, so Monaco's own formatDocument
+  // (Shift+Alt+F) behaves identically to the Format button. Several ExecutableLanguages map onto the
+  // same Monaco grammar (e.g. arduino -> cpp, kotlin/scala -> java), so register once per grammar.
+  const registered = new Set<string>();
+  const formattableLanguages: ExecutableLanguage[] = [
+    ...DEFAULT_FORMATTED_LANGUAGES,
+    ...BRACE_INDENTED_LANGUAGES,
+  ];
 
-  monaco.languages.registerDocumentFormattingEditProvider("typescript", {
-    provideDocumentFormattingEdits: async (model) =>
-      provideExecutableFormattingEdits(monaco, "typescript", model),
-  });
+  for (const language of formattableLanguages) {
+    const monacoLanguage = getMonacoLanguage(language);
+    if (monacoLanguage === "plaintext" || registered.has(monacoLanguage)) {
+      continue;
+    }
 
-  monaco.languages.registerDocumentFormattingEditProvider("java", {
-    provideDocumentFormattingEdits: async (model) =>
-      provideExecutableFormattingEdits(monaco, "java", model),
-  });
+    registered.add(monacoLanguage);
+    monaco.languages.registerDocumentFormattingEditProvider(monacoLanguage, {
+      provideDocumentFormattingEdits: async (model) =>
+        provideExecutableFormattingEdits(monaco, language, model),
+    });
+  }
 }
 
 /**
@@ -248,29 +422,35 @@ export function lockDownContestEditor(
   };
 }
 
+/**
+ * Formats the editor's content in place. Applies the edit through `executeEdits` so it stays a
+ * single undo step, and never relies on `editor.getAction(...)`, which returns null when an action
+ * is unavailable and previously threw.
+ */
 export async function formatCodeInEditor(
   editor: StandaloneCodeEditor,
   language: ExecutableLanguage,
 ): Promise<void> {
-  if (supportsRichFormatting(language)) {
-    await editor.getAction("editor.action.formatDocument").run();
-    return;
-  }
-
-  await editor.getAction("editor.action.reindentlines").run();
-
   const model = editor.getModel();
   if (!model) {
     return;
   }
 
-  const normalizedValue = trimTrailingWhitespace(model.getValue());
-  if (normalizedValue !== model.getValue()) {
-    editor.executeEdits("tcet-format-fallback", [
-      {
-        range: model.getFullModelRange(),
-        text: normalizedValue,
-      },
-    ]);
+  const source = model.getValue();
+  const formatted = await formatSourceCode(language, source);
+  if (formatted === source) {
+    return;
+  }
+
+  const selection = editor.getSelection();
+  editor.executeEdits("tcet-format", [
+    {
+      range: model.getFullModelRange(),
+      text: formatted,
+    },
+  ]);
+  editor.pushUndoStop();
+  if (selection) {
+    editor.setSelection(selection);
   }
 }

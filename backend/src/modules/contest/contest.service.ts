@@ -512,11 +512,17 @@ async function buildFacultyAttemptReview(
     userEmail: attempt.userEmail,
   });
 
-  const submissionsByQuestionId = new Map(
-    submissions
-      .filter((submission) => submission.contestQuestionId)
-      .map((submission) => [submission.contestQuestionId!, submission]),
-  );
+  // Faculty must see the code the student actually ended on. `list()` returns newest-first, and a
+  // Map built straight from those entries would keep the LAST (i.e. oldest) row per question — which
+  // is why the review used to pair a fresh verdict with the student's very first submission.
+  const submissionsById = new Map(submissions.map((submission) => [submission.id, submission]));
+  const newestSubmissionByQuestionId = new Map<string, (typeof submissions)[number]>();
+  for (const submission of submissions) {
+    const questionId = submission.contestQuestionId;
+    if (questionId && !newestSubmissionByQuestionId.has(questionId)) {
+      newestSubmissionByQuestionId.set(questionId, submission);
+    }
+  }
 
   const questionReviews: FacultyContestAttemptQuestionReview[] = contest.questions.map((question, index) => {
     const state = attempt.questionStates.find((item) => item.questionId === question.id) ?? createDefaultQuestionState(question);
@@ -532,7 +538,12 @@ async function buildFacultyAttemptReview(
     };
 
     if (question.type === "Coding") {
-      const submission = submissionsByQuestionId.get(question.id) ?? null;
+      // lastSubmissionId is the authoritative pointer written by submitCodingQuestion; fall back to
+      // the newest submission for the question if it is somehow missing.
+      const submission =
+        (state.lastSubmissionId ? submissionsById.get(state.lastSubmissionId) : null) ??
+        newestSubmissionByQuestionId.get(question.id) ??
+        null;
       return {
         ...base,
         type: "Coding",

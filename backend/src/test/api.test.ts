@@ -628,6 +628,48 @@ describe("TCET Code Studio backend APIs", () => {
     expect(attemptsResponse.body.items[0].score).toBe(90);
   });
 
+  it("shows faculty the student's latest coding submission, not their first", async () => {
+    const { app, services } = createTestApp();
+    const contest = await createContest(app, { startTime: "2026-05-07T00:00:00.000Z", duration: 60 });
+    await registerForContest(app, contest.id);
+    await request(app).post(`/api/contests/${contest.id}/attempts`);
+
+    const firstCode = "wrong_answer // first attempt";
+    const secondCode = "accepted // second attempt";
+
+    const firstSubmission = await request(app)
+      .post(`/api/contests/${contest.id}/coding-submissions`)
+      .send({ questionId: "q_code_1", code: firstCode, language: "python" });
+    expect(firstSubmission.status).toBe(201);
+    await services.submissionService.processQueuedSubmission(firstSubmission.body.submissionId, "job-first");
+
+    const secondSubmission = await request(app)
+      .post(`/api/contests/${contest.id}/coding-submissions`)
+      .send({ questionId: "q_code_1", code: secondCode, language: "python" });
+    expect(secondSubmission.status).toBe(201);
+    await services.submissionService.processQueuedSubmission(secondSubmission.body.submissionId, "job-second");
+
+    const attemptsResponse = await request(app)
+      .get(`/api/contests/${contest.id}/attempts`)
+      .set(facultyHeaders);
+    expect(attemptsResponse.status).toBe(200);
+    const attemptId = attemptsResponse.body.items[0].id;
+
+    const reviewResponse = await request(app)
+      .get(`/api/contests/${contest.id}/attempts/${attemptId}`)
+      .set(facultyHeaders);
+    expect(reviewResponse.status).toBe(200);
+
+    const codingReview = reviewResponse.body.review.questionReviews.find(
+      (item: { questionId: string }) => item.questionId === "q_code_1",
+    );
+    // The review must follow lastSubmissionId to the newest submission, not the oldest row returned
+    // by the newest-first submission list.
+    expect(codingReview.finalCode).toBe(secondCode);
+    expect(codingReview.finalCode).not.toBe(firstCode);
+    expect(codingReview.finalSubmissionStatus).toBe("ACCEPTED");
+  });
+
   it("shows a department-targeted contest to matching students using their saved profile department", async () => {
     const { app } = createTestApp();
     // student1 is seeded into Computer Engineering, student2 into Information Technology.
