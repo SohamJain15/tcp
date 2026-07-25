@@ -525,6 +525,34 @@ export function calculateAttemptScore(
   return Math.max(0, awardedPoints - computeViolationPenaltyPoints(violationCount));
 }
 
+/**
+ * Turns a judged coding verdict (passedCount / totalCount / finalSubmissionStatus) into the scored
+ * question state: awarded points (proportional to passed test cases), SOLVED/ATTEMPTED status, and
+ * solvedAt. This is the single source of truth for coding scoring — used both by the publish-time
+ * grading pass and by the async judge worker so the two paths can never diverge. Deterministic and
+ * idempotent: re-running it on an already-scored state yields the same result and never clears an
+ * earlier solvedAt.
+ */
+export function scoreCodingQuestionState(
+  state: ContestQuestionAttemptState,
+  points: number,
+  now: Date,
+): ContestQuestionAttemptState {
+  const fullPass =
+    state.totalCount > 0 &&
+    state.passedCount >= state.totalCount &&
+    state.finalSubmissionStatus === "ACCEPTED";
+  const awardedPoints =
+    state.totalCount > 0 ? Math.max(0, Math.round((points * state.passedCount) / state.totalCount)) : 0;
+  return {
+    ...state,
+    status: state.lastSubmissionId ? (fullPass ? "SOLVED" : "ATTEMPTED") : "UNATTEMPTED",
+    awardedPoints,
+    isCorrect: null,
+    solvedAt: fullPass ? (state.solvedAt ?? now) : null,
+  };
+}
+
 export function computeAttemptTimeTakenMs(attempt: ContestAttemptRecord): number | null {
   const terminalTime = attempt.submittedAt ?? attempt.autoSubmittedAt;
   if (!terminalTime) {

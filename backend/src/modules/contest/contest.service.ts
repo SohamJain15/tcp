@@ -39,6 +39,7 @@ import {
   computeContestStatus,
   computeRegistrationStatus,
   computeViolationPenaltyPoints,
+  scoreCodingQuestionState,
   toContestAttemptSummary,
   toContestListItem,
   toContestRegistrationItem,
@@ -373,19 +374,7 @@ function finalizeAttemptScoring(
     }
 
     if (question.type === "Coding") {
-      const fullPass =
-        state.totalCount > 0 &&
-        state.passedCount >= state.totalCount &&
-        state.finalSubmissionStatus === "ACCEPTED";
-      const awardedPoints =
-        state.totalCount > 0 ? Math.max(0, Math.round((question.points * state.passedCount) / state.totalCount)) : 0;
-      return {
-        ...state,
-        status: state.lastSubmissionId ? (fullPass ? "SOLVED" : "ATTEMPTED") : "UNATTEMPTED",
-        awardedPoints,
-        isCorrect: null,
-        solvedAt: fullPass ? state.solvedAt ?? now : null,
-      } satisfies ContestQuestionAttemptState;
+      return scoreCodingQuestionState(state, question.points, now) satisfies ContestQuestionAttemptState;
     }
 
     if (!hasObjectiveAnswer(state.submittedAnswer)) {
@@ -1009,7 +998,7 @@ export function createContestService(dependencies: ContestServiceDependencies): 
 
         // Catch any attempt that ended without its drafts being submitted (e.g. the student simply
         // closed the tab), then wait for the judge so those questions are scored, not zeroed.
-        const pendingIds: string[] = [];
+        const pendingIds = new Set<string>();
         for (const attempt of attempts) {
           const { attempt: withDrafts, submissionIds } = await autoSubmitPendingCodingDrafts(
             contest,
@@ -1019,10 +1008,22 @@ export function createContestService(dependencies: ContestServiceDependencies): 
           );
           if (submissionIds.length > 0) {
             await dependencies.contestAttemptRepository.save(withDrafts);
-            pendingIds.push(...submissionIds);
+            submissionIds.forEach((id) => pendingIds.add(id));
+          }
+          // Also wait for coding submissions that were already submitted during the contest but
+          // whose judging has not finished yet. Without this, the grading pass below would score
+          // them from a stale/zero verdict and the worker's late result would be left uncounted.
+          for (const state of withDrafts.questionStates) {
+            if (
+              state.questionType === "Coding" &&
+              state.lastSubmissionId &&
+              (state.finalSubmissionStatus === "QUEUED" || state.finalSubmissionStatus === "RUNNING")
+            ) {
+              pendingIds.add(state.lastSubmissionId);
+            }
           }
         }
-        await waitForSubmissionsJudged(pendingIds, dependencies);
+        await waitForSubmissionsJudged([...pendingIds], dependencies);
 
         // Re-read so the worker's judged results are included in the grading pass.
         const attemptsToGrade = await dependencies.contestAttemptRepository.listByContest(contestId);

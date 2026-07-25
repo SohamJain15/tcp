@@ -14,6 +14,7 @@ import type { LeaderboardRepository } from "../leaderboard/leaderboard.repositor
 import {
   calculateAttemptScore,
   computeAttemptTimeTakenMs,
+  scoreCodingQuestionState,
   type CodingContestQuestion,
   type ContestAttemptRecord,
 } from "../contest/contest.model";
@@ -570,28 +571,38 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
             );
 
             if (question) {
-              // Record the judged verdict for the student's live feedback and the eventual report,
-              // but do NOT score the attempt here — points and SOLVED are computed only at
-              // finalization/publish. Skip stale results: only the newest submission for the question
-              // may update its state, so an older judged run never clobbers a newer one.
+              // Record the judged verdict for the student's live feedback and the eventual report.
+              // Skip stale results: only the newest submission for the question may update its state,
+              // so an older judged run never clobbers a newer one.
               const state = attempt.questionStates.find((item) => item.questionId === question.id);
               if (state && state.lastSubmissionId === finalizedSubmission.id) {
+                // The freshly judged verdict, with scoring still deferred (awardedPoints/SOLVED are
+                // hidden from students during the live contest and computed only at publish).
+                const verdictState: ContestAttemptRecord["questionStates"][number] = {
+                  ...state,
+                  status: "ATTEMPTED",
+                  awardedPoints: 0,
+                  passedCount: finalizedSubmission.passedCount,
+                  totalCount: finalizedSubmission.totalCount,
+                  lastSubmissionId: finalizedSubmission.id,
+                  finalSubmissionLanguage: finalizedSubmission.language,
+                  finalSubmissionStatus: finalizedSubmission.status,
+                  finalRuntimeMs: finalizedSubmission.runtimeMs,
+                  finalMemoryKb: finalizedSubmission.memoryKb,
+                  solvedAt: null,
+                };
+
+                // Once results are published, grading has already happened. A judge result that lands
+                // after that (slow queue, retry, or a submission that was still running at publish
+                // time) MUST be scored here — otherwise a correct submission is left stuck at zero, or
+                // this write clobbers an already-awarded score back to zero. Before publish, scoring
+                // stays deferred so nothing leaks to students mid-contest.
+                const nextState = contest.resultsPublished
+                  ? scoreCodingQuestionState(verdictState, question.points, dependencies.now())
+                  : verdictState;
+
                 const nextQuestionStates = attempt.questionStates.map((item) =>
-                  item.questionId === question.id
-                    ? {
-                        ...item,
-                        status: "ATTEMPTED" as ContestAttemptRecord["questionStates"][number]["status"],
-                        awardedPoints: 0,
-                        passedCount: finalizedSubmission.passedCount,
-                        totalCount: finalizedSubmission.totalCount,
-                        lastSubmissionId: finalizedSubmission.id,
-                        finalSubmissionLanguage: finalizedSubmission.language,
-                        finalSubmissionStatus: finalizedSubmission.status,
-                        finalRuntimeMs: finalizedSubmission.runtimeMs,
-                        finalMemoryKb: finalizedSubmission.memoryKb,
-                        solvedAt: null,
-                      }
-                    : item,
+                  item.questionId === question.id ? nextState : item,
                 );
 
                 const nextAttempt = withDerivedContestAttemptFields({
