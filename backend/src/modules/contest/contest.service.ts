@@ -119,6 +119,12 @@ export interface ContestService {
   exportStandingsCsv(user: AuthenticatedUser, contestId: string, query?: { department?: Department; year?: StudentYear }): Promise<string>;
   listAttempts(user: AuthenticatedUser, contestId: string): Promise<ContestAttemptSummary[]>;
   getAttemptReview(user: AuthenticatedUser, contestId: string, attemptId: string): Promise<FacultyContestAttemptReview>;
+  /**
+   * Background maintenance: finalise every ACTIVE attempt whose personal deadline has passed, exactly
+   * as the on-access expiry path does (auto-submit drafts, mark AUTO_SUBMITTED as of the deadline).
+   * Runs on a timer so abandoned attempts don't linger ACTIVE until the student returns or publish.
+   */
+  finalizeExpiredAttempts(): Promise<{ finalizedCount: number; finalizedAttemptIds: string[] }>;
 }
 
 interface ContestServiceDependencies {
@@ -1193,6 +1199,57 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       );
       await dependencies.contestAttemptRepository.save(updatedAttempt);
       return updatedAttempt;
+    },
+
+    async finalizeExpiredAttempts() {
+      const now = dependencies.now();
+      const expiredAttempts = await dependencies.contestAttemptRepository.listActiveExpired(now);
+      // Cache contests so a contest shared by many expired attempts is fetched once. `null` is a real
+      // cached value (contest deleted), distinct from "not looked up yet" (undefined).
+      const contestCache = new Map<string, ContestRecord | null>();
+      const finalizedAttemptIds: string[] = [];
+
+      for (const attempt of expiredAttempts) {
+        // Re-check under the freshest snapshot in case another path finalised it since the query.
+        if (attempt.status !== "ACTIVE" || now.getTime() <= attempt.deadlineAt.getTime()) {
+          continue;
+        }
+
+        let contest = contestCache.get(attempt.contestId);
+        if (contest === undefined) {
+          contest = await dependencies.contestRepository.getById(attempt.contestId);
+          contestCache.set(attempt.contestId, contest);
+        }
+
+        // Identical finalisation to the on-access expiry path (resolveAttemptWithinDeadline): mark the
+        // attempt AUTO_SUBMITTED as of its deadline, auto-submit any unsubmitted draft for judging, and
+        // grade. Scoring stays deferred/hidden from students until publish via the student read guard.
+        const expiredAttempt = {
+          ...attempt,
+          status: "AUTO_SUBMITTED" as const,
+          autoSubmittedAt: attempt.deadlineAt,
+          submittedAt: attempt.submittedAt ?? attempt.deadlineAt,
+          updatedAt: now,
+        };
+
+        try {
+          if (contest) {
+            const { attempt: withDrafts } = await autoSubmitPendingCodingDrafts(contest, expiredAttempt, now, dependencies);
+            await dependencies.contestAttemptRepository.save(finalizeAttemptScoring(withDrafts, contest, now));
+          } else {
+            await dependencies.contestAttemptRepository.save(withDerivedAttemptFields(expiredAttempt));
+          }
+          finalizedAttemptIds.push(attempt.id);
+        } catch (error) {
+          // One bad attempt must not stop the batch; the next timer tick retries it (still ACTIVE).
+          console.error(
+            `Failed to finalize expired attempt ${attempt.id}:`,
+            error instanceof Error ? error.message : error,
+          );
+        }
+      }
+
+      return { finalizedCount: finalizedAttemptIds.length, finalizedAttemptIds };
     },
 
     async recordProctorEvent(user, contestId, type, details) {

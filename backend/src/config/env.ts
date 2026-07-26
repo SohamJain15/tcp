@@ -56,6 +56,8 @@ const envSchema = z.object({
   SUBMISSION_QUEUE_NAME: z.string().min(1).default("tcet-code-submissions"),
   SUBMISSION_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(4),
   SUBMISSION_RECOVERY_STALE_MS: z.coerce.number().int().positive().default(30000),
+  // How often the background finaliser sweeps for ACTIVE attempts past their deadline. 0 disables it.
+  ATTEMPT_FINALIZER_INTERVAL_MS: z.coerce.number().int().nonnegative().default(60000),
   EMBED_SUBMISSION_WORKER: z
     .unknown()
     .transform((value) => parseBoolean(value, true)),

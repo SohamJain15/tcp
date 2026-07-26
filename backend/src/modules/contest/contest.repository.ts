@@ -38,6 +38,8 @@ export interface ContestAttemptRepository {
   getByContestAndUser(contestId: string, userEmail: string): Promise<ContestAttemptRecord | null>;
   save(attempt: ContestAttemptRecord): Promise<ContestAttemptRecord>;
   listByContest(contestId: string): Promise<ContestAttemptRecord[]>;
+  /** ACTIVE attempts whose personal deadline has already passed — used by the background finaliser. */
+  listActiveExpired(now: Date): Promise<ContestAttemptRecord[]>;
 }
 
 export interface ContestProctoringRepository {
@@ -294,6 +296,12 @@ export class FirestoreContestAttemptRepository implements ContestAttemptReposito
   }
   async listByContest(contestId: string): Promise<ContestAttemptRecord[]> {
     const documents = await (await getCollection("contest_attempts")).find({ contestId }).toArray();
+    return documents.map((document) => mapContestAttemptRecord(String((document as Record<string, unknown>).id ?? ""), document as Record<string, unknown>));
+  }
+  async listActiveExpired(now: Date): Promise<ContestAttemptRecord[]> {
+    const documents = await (await getCollection("contest_attempts"))
+      .find({ status: "ACTIVE", deadlineAt: { $lte: now } })
+      .toArray();
     return documents.map((document) => mapContestAttemptRecord(String((document as Record<string, unknown>).id ?? ""), document as Record<string, unknown>));
   }
 }

@@ -7,6 +7,7 @@ const port = env.PORT;
 const dependencies = createApplicationDependencies();
 const app = createApp(dependencies);
 const embeddedWorker = env.EMBED_SUBMISSION_WORKER ? createSubmissionWorker(dependencies.submissionService) : null;
+const attemptFinalizerIntervalMs = env.ATTEMPT_FINALIZER_INTERVAL_MS;
 
 const server = app.listen(port, () => {
   console.log(`Server running on port ${port}`);
@@ -28,7 +29,45 @@ const server = app.listen(port, () => {
     .catch((error) => {
       console.error("Failed to recover stale submissions:", error instanceof Error ? error.message : error);
     });
+
+  if (attemptFinalizerIntervalMs > 0) {
+    console.log(`Attempt finaliser enabled (every ${attemptFinalizerIntervalMs}ms).`);
+  }
 });
+
+// Periodically finalise ACTIVE attempts whose personal deadline has passed, so abandoned attempts are
+// submitted and graded near their real deadline instead of lingering until the student returns or the
+// contest is published. Guarded against overlapping runs; disabled when the interval is 0.
+let finalizerRunning = false;
+const attemptFinalizerTimer =
+  attemptFinalizerIntervalMs > 0
+    ? setInterval(() => {
+        if (finalizerRunning) {
+          return;
+        }
+        finalizerRunning = true;
+        void dependencies.contestService
+          .finalizeExpiredAttempts()
+          .then((summary) => {
+            if (summary.finalizedCount > 0) {
+              console.log(
+                `Finalised ${summary.finalizedCount} expired attempt(s): ${summary.finalizedAttemptIds.join(", ")}`,
+              );
+            }
+          })
+          .catch((error) => {
+            console.error("Attempt finaliser failed:", error instanceof Error ? error.message : error);
+          })
+          .finally(() => {
+            finalizerRunning = false;
+          });
+      }, attemptFinalizerIntervalMs)
+    : null;
+
+if (attemptFinalizerTimer) {
+  // Don't keep the process alive solely for this timer.
+  attemptFinalizerTimer.unref();
+}
 
 if (embeddedWorker) {
   embeddedWorker.on("ready", () => {
@@ -57,6 +96,10 @@ async function shutdown(signal: string): Promise<void> {
 
   shuttingDown = true;
   console.log(`Received ${signal}. Closing server...`);
+
+  if (attemptFinalizerTimer) {
+    clearInterval(attemptFinalizerTimer);
+  }
 
   await Promise.allSettled([
     new Promise<void>((resolve, reject) => {

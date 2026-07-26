@@ -347,6 +347,12 @@ export class InMemoryContestAttemptRepository implements ContestAttemptRepositor
       .filter((attempt) => attempt.contestId === contestId)
       .map(cloneContestAttempt);
   }
+
+  async listActiveExpired(now: Date): Promise<ContestAttemptRecord[]> {
+    return Array.from(this.attempts.values())
+      .filter((attempt) => attempt.status === "ACTIVE" && attempt.deadlineAt.getTime() <= now.getTime())
+      .map(cloneContestAttempt);
+  }
 }
 
 export class InMemoryContestProctoringRepository implements ContestProctoringRepository {

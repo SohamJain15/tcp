@@ -666,6 +666,44 @@ describe("TCET Code Studio backend APIs", () => {
     expect(autoSubmission?.sourceType).toBe("contest_coding");
   });
 
+  it("background finaliser closes and auto-submits attempts whose personal deadline has passed", async () => {
+    const { app, repositories, services } = createTestApp();
+    const contest = await createContest(app, { startTime: "2026-05-07T00:00:00.000Z", duration: 60 });
+    await registerForContest(app, contest.id);
+    await request(app).post(`/api/contests/${contest.id}/attempts`);
+
+    const draftCode = "accepted // written but never submitted";
+    await request(app)
+      .post(`/api/contests/${contest.id}/coding-draft`)
+      .send({ questionId: "q_code_1", code: draftCode, language: "python" });
+
+    // A live attempt still inside its deadline must be left untouched.
+    const noopSweep = await services.contestService.finalizeExpiredAttempts();
+    expect(noopSweep.finalizedCount).toBe(0);
+
+    // Force the attempt's personal deadline into the past (student walked away / closed the tab).
+    const [attempt] = await repositories.contestAttemptRepository.listByContest(contest.id);
+    const pastDeadline = new Date("2026-05-06T00:00:00.000Z");
+    await repositories.contestAttemptRepository.save({ ...attempt, deadlineAt: pastDeadline });
+
+    const sweep = await services.contestService.finalizeExpiredAttempts();
+    expect(sweep.finalizedCount).toBe(1);
+    expect(sweep.finalizedAttemptIds).toContain(attempt.id);
+
+    // The attempt is now closed as of its deadline, and the unsubmitted draft was submitted for judging.
+    const finalized = await repositories.contestAttemptRepository.getById(attempt.id);
+    expect(finalized?.status).toBe("AUTO_SUBMITTED");
+    expect(finalized?.autoSubmittedAt?.toISOString()).toBe(pastDeadline.toISOString());
+    const codingState = finalized?.questionStates.find((state) => state.questionId === "q_code_1");
+    expect(codingState?.lastSubmissionId).not.toBeNull();
+    const autoSubmission = await repositories.submissionRepository.getById(codingState!.lastSubmissionId!);
+    expect(autoSubmission?.code).toBe(draftCode);
+
+    // Idempotent: once finalised it is no longer ACTIVE, so a second sweep does nothing.
+    const secondSweep = await services.contestService.finalizeExpiredAttempts();
+    expect(secondSweep.finalizedCount).toBe(0);
+  });
+
   it("does not auto-submit a draft that matches what was already submitted", async () => {
     const { app, repositories } = createTestApp();
     const contest = await createContest(app, { startTime: "2026-05-07T00:00:00.000Z", duration: 60 });
