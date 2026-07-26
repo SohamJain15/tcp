@@ -1,4 +1,5 @@
 require "rubygems/version"
+require "fileutils"
 
 class IsolateJob < ApplicationJob
   retry_on RuntimeError, wait: 0.1.seconds, attempts: 100
@@ -24,6 +25,18 @@ class IsolateJob < ApplicationJob
   STDERR_FILE_NAME = "stderr.txt"
   METADATA_FILE_NAME = "metadata.txt"
   ADDITIONAL_FILES_ARCHIVE_FILE_NAME = "additional_files.zip"
+
+  # isolate only permits sandbox box IDs in the range 0..999. Deriving the box ID from the
+  # ever-increasing submission ID exhausts that range after 1000 submissions and breaks ALL judging
+  # ("Sandbox ID out of range"). Instead we lease a small, recycled box ID from a fixed pool: each run
+  # acquires a currently-free ID (held via an flock so it is unique across this worker's concurrent
+  # jobs) and returns it on cleanup. The pool size only needs to exceed this worker's concurrency, so
+  # it never approaches the 0..999 ceiling and the exhaustion bug can never recur — regardless of how
+  # many submissions are processed over the platform's lifetime. isolate state is per-container, so
+  # the pool (and its locks) are naturally scoped per worker container.
+  BOX_POOL_SIZE = (ENV["JUDGE0_BOX_POOL_SIZE"] || "100").to_i
+  BOX_LOCK_DIR = ENV["JUDGE0_BOX_LOCK_DIR"] || "/tmp/judge0-box-locks"
+  BOX_ACQUIRE_TIMEOUT_SECONDS = 60
 
   attr_reader :submission, :cgroups,
               :box_id, :workdir, :boxdir, :tmpdir,
@@ -68,8 +81,11 @@ class IsolateJob < ApplicationJob
   private
 
   def initialize_workdir
-    @box_id = submission.id % 2147483647
+    @box_id = acquire_box_id
     @cgroups = cgroup_flags_for_submission
+    # A box left behind by a previously crashed run would make --init fail; clear it first so a reused
+    # ID always initialises cleanly.
+    `isolate #{cgroups} -b #{box_id} --cleanup`
     @workdir = `isolate #{cgroups} -b #{box_id} --init`.chomp
     @boxdir = workdir + "/box"
     @tmpdir = workdir + "/tmp"
@@ -88,6 +104,39 @@ class IsolateJob < ApplicationJob
     File.open(stdin_file, "wb") { |f| f.write(submission.stdin) }
 
     extract_archive
+  end
+
+  # Leases the lowest currently-free box ID from the pool. The flock is held for the lifetime of the
+  # run and released by release_box_id during cleanup; if the process dies mid-run the OS drops the
+  # flock automatically, so an ID can never be permanently leaked.
+  def acquire_box_id
+    FileUtils.mkdir_p(BOX_LOCK_DIR)
+    deadline = Time.now + BOX_ACQUIRE_TIMEOUT_SECONDS
+
+    loop do
+      BOX_POOL_SIZE.times do |candidate|
+        lock_file = File.open(File.join(BOX_LOCK_DIR, "box-#{candidate}.lock"), File::RDWR | File::CREAT, 0o644)
+        if lock_file.flock(File::LOCK_EX | File::LOCK_NB)
+          @box_lock = lock_file
+          return candidate
+        end
+        lock_file.close
+      end
+
+      raise "No free isolate sandbox available (pool size #{BOX_POOL_SIZE})." if Time.now >= deadline
+      sleep 0.1
+    end
+  end
+
+  def release_box_id
+    return unless @box_lock
+
+    @box_lock.flock(File::LOCK_UN)
+    @box_lock.close
+  rescue StandardError
+    # Best-effort: the OS releases the flock when the descriptor closes on process exit regardless.
+  ensure
+    @box_lock = nil
   end
 
   def initialize_file(file)
@@ -297,13 +346,25 @@ class IsolateJob < ApplicationJob
   end
 
   def cleanup(raise_exception = true)
-    fix_permissions
-    `sudo rm -rf #{boxdir}/* #{tmpdir}/*`
-    [stdin_file, stdout_file, stderr_file, metadata_file].each do |f|
-      `sudo rm -rf #{f}`
+    # Nothing was leased (e.g. an error before initialize_workdir) — nothing to clean or release.
+    return if box_id.nil?
+
+    # Only touch the sandbox paths when init actually produced a workdir. Otherwise workdir is blank
+    # and boxdir/tmpdir would resolve to "/box"/"/tmp", so the rm below must be skipped.
+    if workdir.present?
+      fix_permissions
+      `sudo rm -rf #{boxdir}/* #{tmpdir}/*`
+      [stdin_file, stdout_file, stderr_file, metadata_file].each do |f|
+        `sudo rm -rf #{f}`
+      end
     end
+
     `isolate #{cgroups} -b #{box_id} --cleanup`
-    raise "Cleanup of sandbox #{box_id} failed." if raise_exception && Dir.exists?(workdir)
+    raise "Cleanup of sandbox #{box_id} failed." if raise_exception && workdir.present? && Dir.exists?(workdir)
+  ensure
+    # Always return the leased box ID to the pool, even if cleanup raised.
+    release_box_id
+    @box_id = nil
   end
 
   def reset_metadata_file
