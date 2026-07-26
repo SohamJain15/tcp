@@ -15,6 +15,7 @@ import StudentLeaderboard from "./pages/student/Leaderboard.tsx";
 import StudentProfile from "./pages/student/Profile.tsx";
 import Contests from "./pages/student/Contests.tsx";
 import ContestDetail from "./pages/student/ContestDetail.tsx";
+import ContestFeedback from "./pages/student/ContestFeedback.tsx";
 import ContestQuestionPage from "./pages/student/ContestQuestionPage.tsx";
 import CompleteProfile from "./pages/student/CompleteProfile.tsx";
 import FacultyDashboard from "./pages/faculty/Dashboard.tsx";
@@ -45,6 +46,7 @@ const App = () => (
             <Route path="/student/problems/:id" element={<RoleRoute allowedRole="STUDENT"><ProblemDetail /></RoleRoute>} />
             <Route path="/student/contests" element={<RoleRoute allowedRole="STUDENT"><Contests /></RoleRoute>} />
             <Route path="/student/contests/:id" element={<RoleRoute allowedRole="STUDENT"><ContestDetail /></RoleRoute>} />
+            <Route path="/student/contests/:id/feedback" element={<RoleRoute allowedRole="STUDENT"><ContestFeedback /></RoleRoute>} />
             <Route path="/student/contests/:id/questions/:questionId" element={<RoleRoute allowedRole="STUDENT"><ContestQuestionPage /></RoleRoute>} />
             <Route path="/student/leaderboard" element={<RoleRoute allowedRole="STUDENT"><StudentLeaderboard /></RoleRoute>} />
             <Route path="/student/profile" element={<RoleRoute allowedRole="STUDENT"><StudentProfile /></RoleRoute>} />

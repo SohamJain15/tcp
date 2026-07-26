@@ -12,6 +12,7 @@ import { StubExecutionProvider } from "../../execution/stub-execution-provider";
 import type { ApplicationDependencies } from "../../bootstrap/dependencies";
 import {
   InMemoryContestAttemptRepository,
+  InMemoryContestFeedbackRepository,
   InMemoryContestProctoringRepository,
   InMemoryContestRegistrationRepository,
   InMemoryContestRepository,
@@ -104,6 +105,7 @@ export function createTestApp() {
   const contestAttemptRepository = new InMemoryContestAttemptRepository();
   const contestProctoringRepository = new InMemoryContestProctoringRepository();
   const contestRegistrationRepository = new InMemoryContestRegistrationRepository();
+  const contestFeedbackRepository = new InMemoryContestFeedbackRepository();
   let tick = 0;
 
   const now = () => {
@@ -169,6 +171,7 @@ export function createTestApp() {
       contestAttemptRepository,
       contestProctoringRepository,
       contestRegistrationRepository,
+      contestFeedbackRepository,
       submissionRepository,
       submissionQueue,
       userRepository,
@@ -198,6 +201,7 @@ export function createTestApp() {
       contestAttemptRepository,
       contestProctoringRepository,
       contestRegistrationRepository,
+      contestFeedbackRepository,
     },
     services: {
       userService: dependencies.userService,

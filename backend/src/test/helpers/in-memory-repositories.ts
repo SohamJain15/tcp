@@ -2,12 +2,14 @@ import type { LeaderboardEntry } from "../../modules/leaderboard/leaderboard.mod
 import type { LeaderboardRepository } from "../../modules/leaderboard/leaderboard.repository";
 import type {
   ContestAttemptRecord,
+  ContestFeedbackRecord,
   ContestProctoringEventRecord,
   ContestRecord,
   ContestRegistrationRecord,
 } from "../../modules/contest/contest.model";
 import type {
   ContestAttemptRepository,
+  ContestFeedbackRepository,
   ContestProctoringRepository,
   ContestRegistrationRepository,
   ContestRepository,
@@ -352,6 +354,27 @@ export class InMemoryContestAttemptRepository implements ContestAttemptRepositor
     return Array.from(this.attempts.values())
       .filter((attempt) => attempt.status === "ACTIVE" && attempt.deadlineAt.getTime() <= now.getTime())
       .map(cloneContestAttempt);
+  }
+}
+
+export class InMemoryContestFeedbackRepository implements ContestFeedbackRepository {
+  private readonly feedback = new Map<string, ContestFeedbackRecord>();
+
+  constructor(seed: ContestFeedbackRecord[] = []) {
+    seed.forEach((record) => this.feedback.set(`${record.contestId}:${record.userEmail}`, { ...record }));
+  }
+
+  async getByContestAndUser(contestId: string, userEmail: string): Promise<ContestFeedbackRecord | null> {
+    const record = this.feedback.get(`${contestId}:${userEmail}`);
+    return record ? { ...record, createdAt: new Date(record.createdAt.getTime()) } : null;
+  }
+
+  async save(record: ContestFeedbackRecord): Promise<ContestFeedbackRecord> {
+    this.feedback.set(`${record.contestId}:${record.userEmail}`, {
+      ...record,
+      createdAt: new Date(record.createdAt.getTime()),
+    });
+    return { ...record };
   }
 }
 

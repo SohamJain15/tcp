@@ -5,10 +5,12 @@ import { createAuthMiddleware } from "../middleware/auth";
 import { createRequireCompleteProfile } from "../middleware/require-complete-profile";
 import {
   FirestoreContestAttemptRepository,
+  FirestoreContestFeedbackRepository,
   FirestoreContestProctoringRepository,
   FirestoreContestRegistrationRepository,
   FirestoreContestRepository,
   type ContestAttemptRepository,
+  type ContestFeedbackRepository,
   type ContestProctoringRepository,
   type ContestRegistrationRepository,
   type ContestRepository,
@@ -43,6 +45,7 @@ export interface RepositoryBundle {
   contestAttemptRepository: ContestAttemptRepository;
   contestProctoringRepository: ContestProctoringRepository;
   contestRegistrationRepository: ContestRegistrationRepository;
+  contestFeedbackRepository: ContestFeedbackRepository;
 }
 
 export interface ServiceBundle {
@@ -81,6 +84,8 @@ function createRepositories(overrides?: Partial<RepositoryBundle>): RepositoryBu
       overrides?.contestProctoringRepository ?? new FirestoreContestProctoringRepository(),
     contestRegistrationRepository:
       overrides?.contestRegistrationRepository ?? new FirestoreContestRegistrationRepository(),
+    contestFeedbackRepository:
+      overrides?.contestFeedbackRepository ?? new FirestoreContestFeedbackRepository(),
   };
 }
 
@@ -125,6 +130,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     contestAttemptRepository: repositories.contestAttemptRepository,
     contestProctoringRepository: repositories.contestProctoringRepository,
     contestRegistrationRepository: repositories.contestRegistrationRepository,
+    contestFeedbackRepository: repositories.contestFeedbackRepository,
     submissionRepository: repositories.submissionRepository,
     submissionQueue,
     userRepository: repositories.userRepository,

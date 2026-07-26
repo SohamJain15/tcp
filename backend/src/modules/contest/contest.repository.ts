@@ -12,12 +12,15 @@ import {
 import type { ExecutableLanguage } from "../../shared/types/domain";
 import type {
   ContestAttemptRecord,
+  ContestFeedbackRecord,
   ContestProctoringEventRecord,
   ContestQuestion,
   ContestQuestionAttemptState,
   ContestRecord,
   ContestRegistrationRecord,
   ContestTestCase,
+  InterfaceReadabilityAnswer,
+  ProblemStatementClarityAnswer,
 } from "./contest.model";
 
 export interface ContestRepository {
@@ -45,6 +48,11 @@ export interface ContestAttemptRepository {
 export interface ContestProctoringRepository {
   create(event: ContestProctoringEventRecord): Promise<ContestProctoringEventRecord>;
   listByAttempt(attemptId: string): Promise<ContestProctoringEventRecord[]>;
+}
+
+export interface ContestFeedbackRepository {
+  getByContestAndUser(contestId: string, userEmail: string): Promise<ContestFeedbackRecord | null>;
+  save(record: ContestFeedbackRecord): Promise<ContestFeedbackRecord>;
 }
 
 function mapTestCase(value: unknown): ContestTestCase | null {
@@ -223,6 +231,39 @@ function mapContestRegistrationRecord(
   };
 }
 
+function normalizeInterfaceReadability(value: unknown): InterfaceReadabilityAnswer {
+  return value === "No" ? "No" : value === "Need improvement" ? "Need improvement" : "Yes";
+}
+
+function normalizeProblemStatementClarity(value: unknown): ProblemStatementClarityAnswer {
+  return value === "No" ? "No" : value === "Needs improvement" ? "Needs improvement" : "Yes";
+}
+
+function mapContestFeedbackRecord(feedbackId: string, data: Record<string, unknown>): ContestFeedbackRecord {
+  return {
+    id: typeof data.id === "string" ? data.id : feedbackId,
+    contestId: typeof data.contestId === "string" ? data.contestId : "",
+    userEmail: typeof data.userEmail === "string" ? data.userEmail : "",
+    name: typeof data.name === "string" ? data.name : "",
+    uid: typeof data.uid === "string" ? data.uid : "",
+    navigationEase: normalizeNumber(data.navigationEase, 0),
+    visualDesignRating: normalizeNumber(data.visualDesignRating, 0),
+    interfaceReadability: normalizeInterfaceReadability(data.interfaceReadability),
+    editorResponsiveness: normalizeNumber(data.editorResponsiveness, 0),
+    compilationLag: normalizeNumber(data.compilationLag, 0),
+    errorMessageClarity: normalizeNumber(data.errorMessageClarity, 0),
+    problemStatementClarity: normalizeProblemStatementClarity(data.problemStatementClarity),
+    bugsOrBrokenLinks: typeof data.bugsOrBrokenLinks === "string" ? data.bugsOrBrokenLinks : "",
+    oneNewFeature: typeof data.oneNewFeature === "string" ? data.oneNewFeature : "",
+    recommendLikelihood: normalizeNumber(data.recommendLikelihood, 0),
+    overallRating:
+      data.overallRating === null || data.overallRating === undefined
+        ? null
+        : normalizeNumber(data.overallRating, 0),
+    createdAt: toDate(data.createdAt) ?? new Date(),
+  };
+}
+
 function mapProctoringEventRecord(eventId: string, data: Record<string, unknown>): ContestProctoringEventRecord {
   return {
     id: typeof data.id === "string" ? data.id : eventId,
@@ -303,6 +344,23 @@ export class FirestoreContestAttemptRepository implements ContestAttemptReposito
       .find({ status: "ACTIVE", deadlineAt: { $lte: now } })
       .toArray();
     return documents.map((document) => mapContestAttemptRecord(String((document as Record<string, unknown>).id ?? ""), document as Record<string, unknown>));
+  }
+}
+
+export class FirestoreContestFeedbackRepository implements ContestFeedbackRepository {
+  async getByContestAndUser(contestId: string, userEmail: string): Promise<ContestFeedbackRecord | null> {
+    const document = await (await getCollection("contest_feedback")).findOne({ contestId, userEmail });
+    return document
+      ? mapContestFeedbackRecord(String((document as Record<string, unknown>).id ?? ""), document as Record<string, unknown>)
+      : null;
+  }
+  async save(record: ContestFeedbackRecord): Promise<ContestFeedbackRecord> {
+    await (await getCollection("contest_feedback")).updateOne(
+      { id: record.id },
+      { $set: record },
+      { upsert: true },
+    );
+    return record;
   }
 }
 

@@ -16,6 +16,7 @@ import type {
   ContestAttemptStatus,
   ContestAttemptSummary,
   ContestComputedStatus,
+  ContestFeedbackRecord,
   ContestListItem,
   ContestProctoringEventRecord,
   ContestQuestion,
@@ -50,6 +51,7 @@ import {
 } from "./contest.model";
 import type {
   ContestAttemptRepository,
+  ContestFeedbackRepository,
   ContestProctoringRepository,
   ContestRegistrationRepository,
   ContestRepository,
@@ -60,6 +62,7 @@ import {
   type contestCodingDraftSchema,
   type contestCodingRunSchema,
   type contestCodingSubmissionSchema,
+  type contestFeedbackSchema,
   type contestResultsSchema,
   type createContestSchema,
   type updateContestSchema,
@@ -72,6 +75,7 @@ type ContestCodingSubmissionInput = import("zod").infer<typeof contestCodingSubm
 type ContestCodingRunInput = import("zod").infer<typeof contestCodingRunSchema>;
 type ContestCodingDraftInput = import("zod").infer<typeof contestCodingDraftSchema>;
 type ContestResultsInput = import("zod").infer<typeof contestResultsSchema>;
+type ContestFeedbackInput = import("zod").infer<typeof contestFeedbackSchema>;
 
 export interface ContestService {
   listContests(
@@ -119,6 +123,10 @@ export interface ContestService {
   exportStandingsCsv(user: AuthenticatedUser, contestId: string, query?: { department?: Department; year?: StudentYear }): Promise<string>;
   listAttempts(user: AuthenticatedUser, contestId: string): Promise<ContestAttemptSummary[]>;
   getAttemptReview(user: AuthenticatedUser, contestId: string, attemptId: string): Promise<FacultyContestAttemptReview>;
+  /** Persist a student's one-per-contest feedback, unlocking the published report and standings. Idempotent. */
+  submitContestFeedback(user: AuthenticatedUser, contestId: string, input: ContestFeedbackInput): Promise<ContestFeedbackRecord>;
+  /** Whether this student already submitted feedback for a contest, with the stored record if so. */
+  getContestFeedbackStatus(user: AuthenticatedUser, contestId: string): Promise<{ submitted: boolean; feedback: ContestFeedbackRecord | null }>;
   /**
    * Background maintenance: finalise every ACTIVE attempt whose personal deadline has passed, exactly
    * as the on-access expiry path does (auto-submit drafts, mark AUTO_SUBMITTED as of the deadline).
@@ -132,6 +140,7 @@ interface ContestServiceDependencies {
   contestAttemptRepository: ContestAttemptRepository;
   contestProctoringRepository: ContestProctoringRepository;
   contestRegistrationRepository: ContestRegistrationRepository;
+  contestFeedbackRepository: ContestFeedbackRepository;
   submissionRepository: SubmissionRepository;
   submissionQueue: SubmissionQueue;
   userRepository: UserRepository;
@@ -302,9 +311,14 @@ function isViolationEvent(type: ContestProctoringEventRecord["type"]): boolean {
   );
 }
 
-function ensureStudentCanViewStandings(contest: ContestRecord): void {
+function ensureStudentCanViewStandings(contest: ContestRecord, feedbackSubmitted: boolean): void {
   if (!contest.resultsPublished) {
     throw new AppError(403, "Standings are not available yet");
+  }
+
+  // Published results stay withheld until the student has given feedback for this contest.
+  if (!feedbackSubmitted) {
+    throw new AppError(403, "Submit contest feedback to view the standings");
   }
 }
 
@@ -913,17 +927,23 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         contest,
         await resolveStudentDepartment(user, dependencies),
       );
-      const [attempt, registrations] = await Promise.all([
+      const [attempt, registrations, feedback] = await Promise.all([
         dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email),
         dependencies.contestRegistrationRepository.listByContest(contestId),
+        dependencies.contestFeedbackRepository.getByContestAndUser(contestId, user.email),
       ]);
+      const feedbackSubmitted = Boolean(feedback);
+      // Once results are published, the report and standings are withheld until this student submits
+      // feedback for the contest. Before publish nothing changes — feedback is only required to view
+      // published results.
+      const resultsUnlocked = visibleContest.resultsPublished && feedbackSubmitted;
       const standings =
-        visibleContest.resultsPublished
+        resultsUnlocked
           ? (await dependencies.contestAttemptRepository.listByContest(contestId)).sort(sortStandings).map((item, index) => toContestStandingItem(item, index + 1))
           : [];
       // The report — scores, correctness, correct answers, rank — is revealed only once faculty
-      // publishes, never merely because the contest ended.
-      const report = visibleContest.resultsPublished ? buildStudentReport(visibleContest, attempt, standings) : null;
+      // publishes AND the student has given feedback for this contest.
+      const report = resultsUnlocked ? buildStudentReport(visibleContest, attempt, standings) : null;
       return toStudentContestDetailResponse(
         visibleContest,
         attempt,
@@ -931,6 +951,7 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         report,
         registrations.some((registration) => registration.userEmail === user.email),
         registrations.length,
+        feedbackSubmitted,
       );
     },
 
@@ -1481,7 +1502,8 @@ export function createContestService(dependencies: ContestServiceDependencies): 
           contest,
           await resolveStudentDepartment(user, dependencies),
         );
-        ensureStudentCanViewStandings(visibleContest);
+        const feedback = await dependencies.contestFeedbackRepository.getByContestAndUser(contestId, user.email);
+        ensureStudentCanViewStandings(visibleContest, Boolean(feedback));
       }
 
       const attempts = await dependencies.contestAttemptRepository.listByContest(contestId);
@@ -1572,6 +1594,53 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       }
 
       return buildFacultyAttemptReview(contest, attempt, dependencies.submissionRepository);
+    },
+
+    async getContestFeedbackStatus(user, contestId) {
+      const contest = await dependencies.contestRepository.getById(contestId);
+      ensureStudentCanAccessContest(contest, await resolveStudentDepartment(user, dependencies));
+      const feedback = await dependencies.contestFeedbackRepository.getByContestAndUser(contestId, user.email);
+      return { submitted: Boolean(feedback), feedback };
+    },
+
+    async submitContestFeedback(user, contestId, input) {
+      const contest = ensureStudentCanAccessContest(
+        await dependencies.contestRepository.getById(contestId),
+        await resolveStudentDepartment(user, dependencies),
+      );
+
+      // Feedback is only collected as the gate to published results — refuse it before publish.
+      if (!contest.resultsPublished) {
+        throw new AppError(409, "Feedback opens once results are published");
+      }
+
+      // One record per (contestId, userEmail): a repeat submit returns the stored feedback untouched.
+      const existing = await dependencies.contestFeedbackRepository.getByContestAndUser(contestId, user.email);
+      if (existing) {
+        return existing;
+      }
+
+      const record: ContestFeedbackRecord = {
+        id: `feedback_${randomUUID()}`,
+        contestId,
+        userEmail: user.email,
+        name: input.name.trim(),
+        uid: input.uid.trim(),
+        navigationEase: input.navigationEase,
+        visualDesignRating: input.visualDesignRating,
+        interfaceReadability: input.interfaceReadability,
+        editorResponsiveness: input.editorResponsiveness,
+        compilationLag: input.compilationLag,
+        errorMessageClarity: input.errorMessageClarity,
+        problemStatementClarity: input.problemStatementClarity,
+        bugsOrBrokenLinks: input.bugsOrBrokenLinks.trim(),
+        oneNewFeature: input.oneNewFeature.trim(),
+        recommendLikelihood: input.recommendLikelihood,
+        overallRating: input.overallRating ?? null,
+        createdAt: dependencies.now(),
+      };
+
+      return dependencies.contestFeedbackRepository.save(record);
     },
   };
 }

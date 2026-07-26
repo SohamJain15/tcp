@@ -164,6 +164,34 @@ export interface ContestProctoringEventRecord {
   details: string | null;
 }
 
+export type InterfaceReadabilityAnswer = "Yes" | "No" | "Need improvement";
+export type ProblemStatementClarityAnswer = "Yes" | "No" | "Needs improvement";
+
+/**
+ * One student's feedback for one contest, collected once per unique (contestId, userEmail) before
+ * that contest's published results are released to them. Persisted in the `contest_feedback`
+ * collection; the presence of a record is what unlocks the report and standings.
+ */
+export interface ContestFeedbackRecord {
+  id: string;
+  contestId: string;
+  userEmail: string;
+  name: string;
+  uid: string;
+  navigationEase: number;
+  visualDesignRating: number;
+  interfaceReadability: InterfaceReadabilityAnswer;
+  editorResponsiveness: number;
+  compilationLag: number;
+  errorMessageClarity: number;
+  problemStatementClarity: ProblemStatementClarityAnswer;
+  bugsOrBrokenLinks: string;
+  oneNewFeature: string;
+  recommendLikelihood: number;
+  overallRating: number | null;
+  createdAt: Date;
+}
+
 export interface ContestListItem {
   id: string;
   title: string;
@@ -284,6 +312,8 @@ export interface StudentContestDetailResponse {
   attempt: ContestAttemptRecord | null;
   questions: StudentContestQuestionSummary[];
   report: StudentContestReport | null;
+  /** Whether this student has already submitted feedback for this contest. Gates the report/standings. */
+  feedbackSubmitted: boolean;
 }
 
 export interface FacultyContestDetailResponse {
@@ -648,6 +678,7 @@ export function toStudentContestDetailResponse(
   report: StudentContestReport | null = null,
   isRegistered = false,
   registeredCount = 0,
+  feedbackSubmitted = false,
 ): StudentContestDetailResponse {
   const computedStatus = computeContestStatus(contest, now);
   // Questions are visible while actively attempting, or after results are published for review.
@@ -719,6 +750,7 @@ export function toStudentContestDetailResponse(
         })
       : [],
     report,
+    feedbackSubmitted,
   };
 }
 

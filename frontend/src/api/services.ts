@@ -6,6 +6,9 @@ import type {
   ContestCodingSubmissionPayload,
   ContestCodingSubmissionReceipt,
   ContestEnvelope,
+  ContestFeedbackEnvelope,
+  ContestFeedbackPayload,
+  ContestFeedbackStatus,
   ContestListItem,
   ContestAttemptsEnvelope,
   FacultyContestAttemptReviewEnvelope,
@@ -187,6 +190,14 @@ export const contestsApi = {
   updateResultsVisibility: (contestId: string, payload: ContestResultsVisibilityPayload, pathname?: string) =>
     apiRequest<ContestEnvelope<FacultyContestDetail>>(`/api/contests/${contestId}/results`, {
       method: "PATCH",
+      body: payload,
+      pathname,
+    }),
+  getFeedbackStatus: (contestId: string, pathname?: string) =>
+    apiRequest<ContestFeedbackStatus>(`/api/contests/${contestId}/feedback`, { pathname }),
+  submitFeedback: (contestId: string, payload: ContestFeedbackPayload, pathname?: string) =>
+    apiRequest<ContestFeedbackEnvelope>(`/api/contests/${contestId}/feedback`, {
+      method: "POST",
       body: payload,
       pathname,
     }),

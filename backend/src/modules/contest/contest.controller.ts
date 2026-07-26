@@ -8,6 +8,7 @@ import {
   contestCodingDraftSchema,
   contestCodingRunSchema,
   contestCodingSubmissionSchema,
+  contestFeedbackSchema,
   contestProctoringEventSchema,
   contestResultsSchema,
   createContestSchema,
@@ -65,6 +66,19 @@ export function createContestController(contestService: ContestService) {
         payload,
       );
       res.json({ contest });
+    },
+
+    async getFeedbackStatus(req: Request, res: Response): Promise<void> {
+      const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
+      const status = await contestService.getContestFeedbackStatus(req.user!, contestId);
+      res.json(status);
+    },
+
+    async submitFeedback(req: Request, res: Response): Promise<void> {
+      const payload = contestFeedbackSchema.parse(req.body);
+      const contestId = routeIdSchema.parse(getRouteParam(req.params.contestId));
+      const feedback = await contestService.submitContestFeedback(req.user!, contestId, payload);
+      res.status(201).json({ feedback });
     },
 
     async registerForContest(req: Request, res: Response): Promise<void> {

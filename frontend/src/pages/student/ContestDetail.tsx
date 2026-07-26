@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ListChecks,
+  Lock,
   Maximize,
   Timer,
   Trophy,
@@ -160,6 +161,49 @@ function attemptStatusLabel(status: "NOT_ATTEMPTED" | "NOT_STARTED" | "ACTIVE" |
   }
 }
 
+/**
+ * Placeholder shown when results are published but this student has not submitted feedback yet.
+ * The blurred, inert content sits behind a centred overlay that routes to the feedback form. The
+ * backend returns no real report/standings data while locked, so nothing sensitive is rendered here.
+ */
+function LockedResults({ contestId }: { contestId: string }) {
+  return (
+    <div className="relative overflow-hidden rounded border border-border">
+      <div aria-hidden className="pointer-events-none select-none space-y-4 p-4 blur-sm sm:p-5">
+        <div className="flex items-center gap-2">
+          <div className="h-6 w-40 rounded bg-secondary" />
+          <div className="h-5 w-20 rounded bg-secondary/70" />
+        </div>
+        <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="h-20 rounded border border-border bg-secondary/40" />
+          ))}
+        </div>
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div key={index} className="h-24 rounded border border-border bg-secondary/30" />
+          ))}
+        </div>
+      </div>
+
+      <div className="absolute inset-0 flex items-center justify-center bg-background/40 p-4">
+        <Card className="max-w-sm animate-fade-in border border-border bg-background/95 p-6 text-center shadow-card motion-reduce:animate-none">
+          <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-accent/15 text-accent">
+            <Lock className="h-5 w-5" />
+          </div>
+          <h3 className="mt-3 font-display text-lg font-bold">Submit feedback to unlock your results</h3>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            A quick one-minute form stands between you and your Report Card and standings.
+          </p>
+          <Button asChild className="mt-4 bg-accent text-accent-foreground hover:bg-accent/90">
+            <Link to={`/student/contests/${contestId}/feedback`}>Give feedback</Link>
+          </Button>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 export default function ContestDetail() {
   const { id = "" } = useParams();
   const pathname = `/student/contests/${id}`;
@@ -186,7 +230,9 @@ export default function ContestDetail() {
     [id, queryClient],
   );
 
-  const standingsEnabled = Boolean(contest?.resultsPublished);
+  // Published results stay locked behind the feedback gate: only fetch/show standings once the
+  // student has submitted feedback for this contest.
+  const standingsEnabled = Boolean(contest?.resultsPublished) && Boolean(contest?.feedbackSubmitted);
 
   const { data: standingsData } = useQuery({
     queryKey: ["contest-standings", id],
@@ -274,8 +320,12 @@ export default function ContestDetail() {
   const contestEnded = contest.computedStatus === "Ended";
   const attemptIsActive = attempt?.status === "ACTIVE";
   const attemptIsLocked = Boolean(attempt && attempt.status !== "ACTIVE");
-  // The report — scores, correct answers, rank — appears only once faculty publishes results.
-  const showReport = Boolean(report) && contest.resultsPublished;
+  const feedbackSubmitted = Boolean(contest.feedbackSubmitted);
+  // Published results are withheld until the student submits feedback for this contest.
+  const resultsLocked = contest.resultsPublished && !feedbackSubmitted;
+  // The report — scores, correct answers, rank — appears only once faculty publishes results AND
+  // the student has given feedback (the backend returns no report until both hold).
+  const showReport = Boolean(report) && contest.resultsPublished && feedbackSubmitted;
   // Ended but not yet published: a strict blackout, no questions or answers shown.
   const resultsPending = contestEnded && !contest.resultsPublished;
   // The pre-flight screen: contest is live, the student has not started, and there is nothing
@@ -546,6 +596,8 @@ export default function ContestDetail() {
             </div>
           </Card>
         )}
+
+        {resultsLocked && <LockedResults contestId={id} />}
 
         {contest.computedStatus === "Upcoming" && (
           <Card className="border border-border bg-background p-5 shadow-none">

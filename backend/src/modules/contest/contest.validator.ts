@@ -200,6 +200,24 @@ export const contestResultsSchema = z.object({
   resultsPublished: z.boolean(),
 });
 
+const ratingSchema = z.number().int().min(1).max(5);
+
+export const contestFeedbackSchema = z.object({
+  name: z.string().trim().min(1, "Name is required"),
+  uid: z.string().trim().min(1, "UID is required"),
+  navigationEase: ratingSchema,
+  visualDesignRating: ratingSchema,
+  interfaceReadability: z.enum(["Yes", "No", "Need improvement"]),
+  editorResponsiveness: ratingSchema,
+  compilationLag: ratingSchema,
+  errorMessageClarity: ratingSchema,
+  problemStatementClarity: z.enum(["Yes", "No", "Needs improvement"]),
+  bugsOrBrokenLinks: z.string().trim().min(1, "This field is required"),
+  oneNewFeature: z.string().trim().min(1, "This field is required"),
+  recommendLikelihood: ratingSchema,
+  overallRating: ratingSchema.nullish(),
+});
+
 export const contestAnswerSchema = z.object({
   questionId: z.string().min(1),
   answer: z.union([z.string(), z.array(z.string())]),

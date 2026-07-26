@@ -550,6 +550,39 @@ export interface StudentContestDetail {
   questions: StudentContestQuestionSummary[];
   attempt: ContestAttempt | null;
   report: StudentContestReport | null;
+  feedbackSubmitted: boolean;
+}
+
+export interface ContestFeedbackPayload {
+  name: string;
+  uid: string;
+  navigationEase: number;
+  visualDesignRating: number;
+  interfaceReadability: "Yes" | "No" | "Need improvement";
+  editorResponsiveness: number;
+  compilationLag: number;
+  errorMessageClarity: number;
+  problemStatementClarity: "Yes" | "No" | "Needs improvement";
+  bugsOrBrokenLinks: string;
+  oneNewFeature: string;
+  recommendLikelihood: number;
+  overallRating: number | null;
+}
+
+export interface ContestFeedbackRecord extends ContestFeedbackPayload {
+  id: string;
+  contestId: string;
+  userEmail: string;
+  createdAt: string;
+}
+
+export interface ContestFeedbackStatus {
+  submitted: boolean;
+  feedback: ContestFeedbackRecord | null;
+}
+
+export interface ContestFeedbackEnvelope {
+  feedback: ContestFeedbackRecord;
 }
 
 export interface FacultyContestDetail {

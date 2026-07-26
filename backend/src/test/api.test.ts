@@ -89,6 +89,32 @@ async function registerForContest(app: Parameters<typeof request>[0], contestId:
   return response.body.registration;
 }
 
+const feedbackPayload = {
+  name: "Student One",
+  uid: "TCET-REAL-001",
+  navigationEase: 4,
+  visualDesignRating: 5,
+  interfaceReadability: "Yes",
+  editorResponsiveness: 4,
+  compilationLag: 3,
+  errorMessageClarity: 4,
+  problemStatementClarity: "Yes",
+  bugsOrBrokenLinks: "None",
+  oneNewFeature: "Dark mode for the editor",
+  recommendLikelihood: 5,
+  overallRating: 5,
+};
+
+function submitFeedback(
+  app: Parameters<typeof request>[0],
+  contestId: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return request(app)
+    .post(`/api/contests/${contestId}/feedback`)
+    .send({ ...feedbackPayload, ...overrides });
+}
+
 describe("TCET Code Studio backend APIs", () => {
   it("auto-provisions users through CoE auth and preserves the legacy profile route", async () => {
     const { app } = createTestApp();
@@ -443,13 +469,87 @@ describe("TCET Code Studio backend APIs", () => {
     expect(publishResultsResponse.status).toBe(200);
     expect(publishResultsResponse.body.contest.resultsPublished).toBe(true);
 
-    // Only after publishing do the questions, correct answers and standings become visible.
+    // Publishing reveals the questions and correct answers, but the report and standings stay gated
+    // behind the mandatory per-contest feedback until the student submits it.
     const publishedDetailResponse = await request(app).get(`/api/contests/${contest.id}`);
     expect(publishedDetailResponse.body.contest.questions).toHaveLength(2);
     expect(publishedDetailResponse.body.contest.questions[0].correctAnswer).toBe("B");
+    expect(publishedDetailResponse.body.contest.report).toBeNull();
+    expect(publishedDetailResponse.body.contest.feedbackSubmitted).toBe(false);
+
+    const gatedStandingsResponse = await request(app).get(`/api/contests/${contest.id}/standings`);
+    expect(gatedStandingsResponse.status).toBe(403);
+
+    // After feedback the report and standings unlock.
+    const feedbackResponse = await submitFeedback(app, contest.id);
+    expect(feedbackResponse.status).toBe(201);
+
+    const unlockedDetailResponse = await request(app).get(`/api/contests/${contest.id}`);
+    expect(unlockedDetailResponse.body.contest.feedbackSubmitted).toBe(true);
+    expect(unlockedDetailResponse.body.contest.report).not.toBeNull();
 
     const visibleStandingsResponse = await request(app).get(`/api/contests/${contest.id}/standings`);
     expect(visibleStandingsResponse.status).toBe(200);
+  });
+
+  it("gates published results behind mandatory per-contest feedback, once per contest", async () => {
+    const { app, repositories } = createTestApp();
+    const contest = await createContest(app, {
+      startTime: "2026-05-06T23:00:00.000Z",
+      duration: 30,
+      lifecycleState: "Published",
+    });
+
+    await request(app)
+      .patch(`/api/contests/${contest.id}/results`)
+      .set(facultyHeaders)
+      .send({ resultsPublished: true })
+      .expect(200);
+
+    // Published but no feedback: report withheld, standings 403, status endpoint reports unsubmitted.
+    const lockedDetail = await request(app).get(`/api/contests/${contest.id}`);
+    expect(lockedDetail.body.contest.resultsPublished).toBe(true);
+    expect(lockedDetail.body.contest.report).toBeNull();
+    expect(lockedDetail.body.contest.feedbackSubmitted).toBe(false);
+    expect((await request(app).get(`/api/contests/${contest.id}/standings`)).status).toBe(403);
+
+    const statusBefore = await request(app).get(`/api/contests/${contest.id}/feedback`);
+    expect(statusBefore.status).toBe(200);
+    expect(statusBefore.body.submitted).toBe(false);
+
+    // Submitting feedback unlocks the report and standings and persists exactly one document.
+    const firstSubmit = await submitFeedback(app, contest.id);
+    expect(firstSubmit.status).toBe(201);
+    expect(firstSubmit.body.feedback.id).toBeTruthy();
+
+    const unlockedDetail = await request(app).get(`/api/contests/${contest.id}`);
+    expect(unlockedDetail.body.contest.feedbackSubmitted).toBe(true);
+    expect(unlockedDetail.body.contest.report).not.toBeNull();
+    expect((await request(app).get(`/api/contests/${contest.id}/standings`)).status).toBe(200);
+
+    // A second submit is idempotent: it returns the same record, creating no duplicate.
+    const secondSubmit = await submitFeedback(app, contest.id, { oneNewFeature: "Something else" });
+    expect(secondSubmit.status).toBe(201);
+    expect(secondSubmit.body.feedback.id).toBe(firstSubmit.body.feedback.id);
+    expect(secondSubmit.body.feedback.oneNewFeature).toBe("Dark mode for the editor");
+
+    const stored = await repositories.contestFeedbackRepository.getByContestAndUser(
+      contest.id,
+      "student1@tcetmumbai.in",
+    );
+    expect(stored?.id).toBe(firstSubmit.body.feedback.id);
+  });
+
+  it("refuses contest feedback before results are published", async () => {
+    const { app } = createTestApp();
+    const contest = await createContest(app, {
+      startTime: "2026-05-06T23:00:00.000Z",
+      duration: 30,
+      lifecycleState: "Published",
+    });
+
+    const response = await submitFeedback(app, contest.id);
+    expect(response.status).toBe(409);
   });
 
   it("blocks faculty from publishing contest results before the deadline", async () => {
