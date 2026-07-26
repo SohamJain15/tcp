@@ -211,6 +211,43 @@ resources are bounded, and each run is isolated, so even deliberately malicious
 code is confined to a disposable sandbox.
 \end{callout}
 
+\section{Sandbox Box-ID Pooling}
+Each judged run executes inside a numbered \code{isolate} sandbox (a ``box''),
+identified by a small integer that the sandbox engine restricts to the range
+0--999. To assign that identifier safely and reusably, the platform maintains a
+\textbf{fixed pool of recycled box identifiers} rather than deriving the box
+identifier from an ever-increasing value.
+
+\begin{callout}{Why pooling, not derivation}
+Deriving the box identifier from the continuously growing submission identifier
+eventually pushes it past the engine's 0--999 ceiling, at which point sandbox
+initialization fails and \emph{every} submission is rejected with an internal
+error. Leasing from a small pool keeps the identifier permanently within range,
+so that exhaustion can never occur regardless of how many submissions the
+platform processes over its lifetime.
+\end{callout}
+
+\subsection{Leasing Model}
+\begin{longtable}{@{}p{0.30\linewidth} p{0.62\linewidth}@{}}
+\toprule
+\textbf{Aspect} & \textbf{Behaviour}\\
+\midrule
+\endhead
+Pool size & A fixed number of box identifiers (default 100, configurable), which only needs to exceed a worker's concurrency.\\
+Acquire & A run leases the lowest currently-free identifier, claiming it with an exclusive file lock so that concurrent jobs on the same worker never collide on one box.\\
+Pre-init cleanup & Before initializing, any stale box left by a previously crashed run is cleared, so a reused identifier always initializes cleanly.\\
+Release & On cleanup the identifier is returned to the pool; if a process dies mid-run the operating system drops the lock automatically, so an identifier can never be permanently leaked.\\
+Acquire timeout & If no identifier is free within a bounded wait, the run fails fast with a clear ``no free sandbox'' error rather than hanging.\\
+Scope & Sandbox state is per worker container, so the pool and its locks are naturally scoped to each worker.\\
+\bottomrule
+\end{longtable}
+
+\note{This pooling model replaced an earlier scheme that derived the box
+identifier from the submission identifier. That earlier scheme exhausted the
+engine's identifier range after enough submissions and caused sandbox
+initialization to fail for all subsequent runs; the recycled pool removes that
+failure mode entirely.}
+
 \section{Language Resolution}
 The provider resolves the concrete language runtime dynamically: it queries the
 live language list and selects a preferred version by name, then by name hints,

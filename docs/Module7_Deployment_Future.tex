@@ -169,6 +169,8 @@ Embedded worker toggle & Whether the API hosts a worker (disabled in production)
 Execution provider & Judge0 or the stub provider.\\
 Judge0 endpoint & Base URL and optional cloud credentials.\\
 Poll cadence & Result polling interval and timeout.\\
+Sandbox pool size & Number of recycled isolate box identifiers leased per worker container (default 100; only needs to exceed worker concurrency). See Module~4.\\
+Sandbox lock directory & Filesystem location of the per-box lock files used to lease sandbox identifiers.\\
 \bottomrule
 \end{xltabular}
 
