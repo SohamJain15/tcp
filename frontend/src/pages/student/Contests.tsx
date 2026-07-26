@@ -52,6 +52,13 @@ function ContestCard({
   const hasSubmitted = contest.attemptStatus === "SUBMITTED" || contest.attemptStatus === "AUTO_SUBMITTED";
   const canRegister = !contest.isRegistered && contest.registrationStatus === "OPEN";
   const registrationShut = !contest.isRegistered && contest.registrationStatus !== "OPEN";
+  const isPast = !isLive && !isUpcoming;
+  // "View Report" on a published contest routes through the mandatory feedback form first; the form
+  // auto-forwards to the report if this student already submitted feedback for the contest.
+  const viewReportGoesToFeedback = isPast && contest.hasAttempted && contest.resultsPublished;
+  const primaryTo = viewReportGoesToFeedback
+    ? `/student/contests/${contest.id}/feedback`
+    : `/student/contests/${contest.id}`;
 
   return (
     <Card
@@ -139,7 +146,7 @@ function ContestCard({
           </>
         ) : (
           <Button asChild size="sm" className="w-full bg-accent text-accent-foreground hover:bg-accent/90">
-            <Link to={`/student/contests/${contest.id}`}>
+            <Link to={primaryTo}>
               {isLive ? "Enter Contest" : isUpcoming ? "View Contest" : contest.hasAttempted ? "View Report & Practice" : "Practice Contest"}
             </Link>
           </Button>
