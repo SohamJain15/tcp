@@ -144,10 +144,14 @@ function ContestCard({
                 : "You did not register for this contest."}
             </p>
           </>
+        ) : isPast && !contest.hasAttempted ? (
+          <Button size="sm" variant="outline" className="w-full" disabled>
+            Not Attempted
+          </Button>
         ) : (
           <Button asChild size="sm" className="w-full bg-accent text-accent-foreground hover:bg-accent/90">
             <Link to={primaryTo}>
-              {isLive ? "Enter Contest" : isUpcoming ? "View Contest" : contest.hasAttempted ? "View Report & Practice" : "Practice Contest"}
+              {isLive ? "Enter Contest" : isUpcoming ? "View Contest" : "View Report"}
             </Link>
           </Button>
         )}

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import {
@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
+  ChevronRight,
   ListChecks,
   Lock,
   Maximize,
@@ -93,14 +94,30 @@ function PreflightStat({
   );
 }
 
-function ReportStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="border border-border bg-secondary/30 p-3">
+function ReportStat({ label, value, sub, to }: { label: string; value: string; sub?: string; to?: string }) {
+  const body = (
+    <>
       <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{label}</div>
       <div className="mt-1 font-display text-xl font-bold leading-none">{value}</div>
       {sub && <div className="mt-1 text-xs text-muted-foreground">{sub}</div>}
-    </div>
+    </>
   );
+
+  if (to) {
+    return (
+      <Link
+        to={to}
+        className="group block border border-border bg-secondary/30 p-3 transition-colors hover:border-accent/60 hover:bg-accent/10"
+      >
+        {body}
+        <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-widest text-accent">
+          Leaderboard <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+        </div>
+      </Link>
+    );
+  }
+
+  return <div className="border border-border bg-secondary/30 p-3">{body}</div>;
 }
 
 function SubmittedCode({ item, pathname }: { item: CodingContestQuestionReportItem; pathname: string }) {
@@ -230,16 +247,6 @@ export default function ContestDetail() {
     [id, queryClient],
   );
 
-  // Published results stay locked behind the feedback gate: only fetch/show standings once the
-  // student has submitted feedback for this contest.
-  const standingsEnabled = Boolean(contest?.resultsPublished) && Boolean(contest?.feedbackSubmitted);
-
-  const { data: standingsData } = useQuery({
-    queryKey: ["contest-standings", id],
-    queryFn: () => contestsApi.getStandings(id, pathname),
-    enabled: Boolean(id) && standingsEnabled,
-  });
-
   const registerMutation = useMutation({
     mutationFn: () => contestsApi.register(id, pathname),
     onSuccess: async () => {
@@ -293,8 +300,6 @@ export default function ContestDetail() {
       toast.error((mutationError as Error)?.message || "Failed to start contest");
     },
   });
-
-  const standings = useMemo(() => standingsData?.items ?? [], [standingsData?.items]);
 
   if (!id) {
     return <Navigate to="/student/contests" replace />;
@@ -504,7 +509,11 @@ export default function ContestDetail() {
             </div>
 
             <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
-              <ReportStat label="Rank" value={report.rank ? `#${report.rank}` : "-"} />
+              <ReportStat
+                label="Rank"
+                value={report.rank ? `#${report.rank}` : "-"}
+                to={`/student/leaderboard?mode=contest&contestId=${id}`}
+              />
               <ReportStat label="Score" value={String(report.score)} sub={`${report.solvedCount} solved`} />
               <ReportStat label="Time Taken" value={formatTimeTaken(report.timeTakenMs)} />
               <ReportStat label="Violation Penalty" value={`${report.violationPenaltyPoints} pts`} />
@@ -645,26 +654,6 @@ export default function ContestDetail() {
           </Card>
         )}
 
-        {standingsEnabled && (
-          <Card className="border border-border bg-background p-6 shadow-none">
-            <h2 className="mb-4 font-display text-xl font-semibold">Published Standings</h2>
-            <div className="space-y-3">
-              {standings.length === 0 && <p className="text-sm text-muted-foreground">No standings available yet.</p>}
-              {standings.map((entry) => (
-                <div key={entry.attemptId} className="flex items-center justify-between rounded border border-border p-3">
-                  <div>
-                    <div className="font-medium">#{entry.rank} {entry.userName ?? entry.userEmail}</div>
-                    <div className="text-xs text-muted-foreground">{entry.userUid ?? entry.userEmail}</div>
-                  </div>
-                  <div className="text-right text-sm">
-                    <div>{entry.solvedCount} solved</div>
-                    <div className="text-muted-foreground">{entry.score} pts • {entry.timeTakenMs !== null ? `${Math.ceil(entry.timeTakenMs / 1000)} sec` : "-"}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
       </div>
     </AppLayout>
   );

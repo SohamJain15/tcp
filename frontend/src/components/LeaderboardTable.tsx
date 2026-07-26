@@ -26,6 +26,10 @@ interface LeaderboardTableProps {
   /** Faculty only — links each student through to their profile. */
   linkToProfile?: boolean;
   emptyMessage?: string;
+  /** Email of the signed-in student, whose row is highlighted (and pinned if beyond the cap). */
+  currentEmail?: string | null;
+  /** Cap the number of ranked rows shown; the current user is appended below the cap if outside it. */
+  maxVisible?: number;
 }
 
 /**
@@ -37,11 +41,21 @@ export function LeaderboardTable({
   mode,
   linkToProfile = false,
   emptyMessage = "No leaderboard data yet.",
+  currentEmail = null,
+  maxVisible,
 }: LeaderboardTableProps) {
   const isContest = mode === "contest";
-  const top3 = rows.slice(0, 3);
-  const rest = rows.slice(3);
+  // Only the top `maxVisible` entries are shown at once; the podium (top 3) counts toward that cap.
+  const visibleRows = maxVisible ? rows.slice(0, maxVisible) : rows;
+  const top3 = visibleRows.slice(0, 3);
+  const rest = visibleRows.slice(3);
   const yearRanks = buildYearRanks(rows);
+  const isCurrent = (row: LeaderboardRow) => Boolean(currentEmail) && row.email === currentEmail;
+  // The signed-in student's row, pinned to the bottom when their rank falls outside the visible cap.
+  const currentRow = currentEmail ? rows.find((row) => row.email === currentEmail) ?? null : null;
+  const currentPinned = Boolean(
+    currentRow && !visibleRows.some((row) => row.key === currentRow.key),
+  );
   // Rank + Student + Solved + Score, plus Year/Time/Violations (contest) or Accuracy (problem).
   const columnCount = isContest ? 7 : 5;
 
@@ -53,6 +67,50 @@ export function LeaderboardTable({
     ) : (
       <div className={className}>{children}</div>
     );
+
+  const renderRow = (row: LeaderboardRow) => (
+    <tr
+      key={row.key}
+      className={cn(
+        "border-t border-border hover:bg-secondary/50",
+        isContest && row.year && (yearRanks.get(row.key) ?? 0) <= 2 && "bg-accent/10",
+        isCurrent(row) && "bg-accent/20 hover:bg-accent/20 ring-1 ring-inset ring-accent/60",
+      )}
+    >
+      <td className="px-4 py-3 font-display font-bold">
+        #{row.rank}
+        {isCurrent(row) && <span className="ml-1.5 text-[10px] uppercase tracking-wider text-accent">You</span>}
+      </td>
+      <td className="px-4 py-3">
+        {withProfileLink(
+          row,
+          <>
+            <div className="font-medium">{row.name ?? row.email}</div>
+            <div className="font-mono-code text-xs text-muted-foreground">{row.uid ?? row.email}</div>
+          </>,
+          linkToProfile ? "block hover:text-accent" : undefined,
+        )}
+      </td>
+      {isContest && <td className="px-4 py-3">{row.year ? getYearLabel(row.year) : "-"}</td>}
+      <td className="px-4 py-3 text-right font-mono-code">{row.solved}</td>
+      <td className="px-4 py-3 text-right font-mono-code font-semibold">{row.score}</td>
+      {isContest ? (
+        <>
+          <td className="px-4 py-3 text-right font-mono-code">{formatLeaderboardDuration(row.timeTakenMs)}</td>
+          <td
+            className={cn(
+              "px-4 py-3 text-right font-mono-code",
+              (row.violationCount ?? 0) > 0 && "text-destructive",
+            )}
+          >
+            {row.violationCount ?? 0}
+          </td>
+        </>
+      ) : (
+        <td className="px-4 py-3 text-right font-mono-code">{row.accuracy ?? 0}%</td>
+      )}
+    </tr>
+  );
 
   return (
     <>
@@ -69,6 +127,7 @@ export function LeaderboardTable({
                     className={cn(
                       "relative h-full overflow-hidden p-6 shadow-elevated",
                       linkToProfile && "card-interactive",
+                      isCurrent(row) && "ring-2 ring-accent",
                     )}
                   >
                     <div
@@ -136,51 +195,17 @@ export function LeaderboardTable({
               </tr>
             </thead>
             <tbody>
-              {rest.map((row) => (
-                <tr
-                  key={row.key}
-                  className={cn(
-                    "border-t border-border hover:bg-secondary/50",
-                    isContest && row.year && (yearRanks.get(row.key) ?? 0) <= 2 && "bg-accent/10",
-                  )}
-                >
-                  <td className="px-4 py-3 font-display font-bold">#{row.rank}</td>
-                  <td className="px-4 py-3">
-                    {withProfileLink(
-                      row,
-                      <>
-                        <div className="font-medium">{row.name ?? row.email}</div>
-                        <div className="font-mono-code text-xs text-muted-foreground">
-                          {row.uid ?? row.email}
-                        </div>
-                      </>,
-                      linkToProfile ? "block hover:text-accent" : undefined,
-                    )}
-                  </td>
-                  {isContest && (
-                    <td className="px-4 py-3">{row.year ? getYearLabel(row.year) : "-"}</td>
-                  )}
-                  <td className="px-4 py-3 text-right font-mono-code">{row.solved}</td>
-                  <td className="px-4 py-3 text-right font-mono-code font-semibold">{row.score}</td>
-                  {isContest ? (
-                    <>
-                      <td className="px-4 py-3 text-right font-mono-code">
-                        {formatLeaderboardDuration(row.timeTakenMs)}
-                      </td>
-                      <td
-                        className={cn(
-                          "px-4 py-3 text-right font-mono-code",
-                          (row.violationCount ?? 0) > 0 && "text-destructive",
-                        )}
-                      >
-                        {row.violationCount ?? 0}
-                      </td>
-                    </>
-                  ) : (
-                    <td className="px-4 py-3 text-right font-mono-code">{row.accuracy ?? 0}%</td>
-                  )}
-                </tr>
-              ))}
+              {rest.map(renderRow)}
+              {currentPinned && currentRow && (
+                <>
+                  <tr aria-hidden>
+                    <td colSpan={columnCount} className="border-t border-border bg-secondary/40 px-4 py-1.5 text-center text-xs text-muted-foreground">
+                      • • •
+                    </td>
+                  </tr>
+                  {renderRow(currentRow)}
+                </>
+              )}
               {rows.length === 0 && (
                 <tr>
                   <td colSpan={columnCount} className="px-4 py-12 text-center text-muted-foreground">

@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 
 import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
 import { LeaderboardTable } from "@/components/LeaderboardTable";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { contestsApi, leaderboardApi } from "@/api/services";
+import { contestsApi, leaderboardApi, userApi } from "@/api/services";
 import { DEPARTMENTS, type Department } from "@/api/types";
 import {
   toContestLeaderboardRows,
@@ -17,11 +18,24 @@ import {
 const YEAR_OPTIONS = [1, 2, 3, 4] as const;
 const pathname = "/student/leaderboard";
 
+// Top N students shown at once; the signed-in student is pinned below if their rank falls outside it.
+const MAX_VISIBLE = 50;
+
 export default function StudentLeaderboard() {
+  const [searchParams] = useSearchParams();
   const [department, setDepartment] = useState<Department | "All">("All");
   const [year, setYear] = useState<1 | 2 | 3 | 4 | "All">("All");
-  const [viewMode, setViewMode] = useState<LeaderboardMode>("problem");
-  const [contestId, setContestId] = useState<string>("");
+  // Deep-link support: a contest's Report Card links here with ?mode=contest&contestId=...
+  const [viewMode, setViewMode] = useState<LeaderboardMode>(
+    searchParams.get("mode") === "contest" ? "contest" : "problem",
+  );
+  const [contestId, setContestId] = useState<string>(searchParams.get("contestId") ?? "");
+
+  const meQuery = useQuery({
+    queryKey: ["auth", "me"],
+    queryFn: () => userApi.me(pathname),
+  });
+  const currentEmail = meQuery.data?.user.email ?? null;
 
   const contestsQuery = useQuery({
     queryKey: ["student-leaderboard-contests"],
@@ -180,6 +194,8 @@ export default function StudentLeaderboard() {
           <LeaderboardTable
             rows={rows}
             mode={viewMode}
+            currentEmail={currentEmail}
+            maxVisible={MAX_VISIBLE}
             emptyMessage={
               viewMode === "contest" ? "No standings for this contest yet." : "No leaderboard data yet."
             }
