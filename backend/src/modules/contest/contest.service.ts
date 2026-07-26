@@ -360,7 +360,7 @@ function hasObjectiveAnswer(submittedAnswer: string | string[] | null): submitte
  * points come from the latest judged submission's pass count (the worker keeps those fields current).
  * Deterministic and idempotent, so it can safely run at submit, at auto-submit, and again at publish.
  */
-function finalizeAttemptScoring(
+export function finalizeAttemptScoring(
   attempt: ContestAttemptRecord,
   contest: ContestRecord,
   now: Date,

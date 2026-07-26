@@ -621,6 +621,26 @@ export function toContestListItem(
   };
 }
 
+/**
+ * Returns a student-safe copy of an attempt with every scoring outcome neutralised: awarded points,
+ * correctness flags, solved status/timestamps, and the aggregate score. Used whenever results are
+ * unpublished so scores that were graded onto the record (by publish, the worker, or a faculty
+ * preview) never leak to the student. Does not mutate the stored attempt.
+ */
+function redactAttemptScoringForStudent(attempt: ContestAttemptRecord): ContestAttemptRecord {
+  return {
+    ...attempt,
+    score: 0,
+    questionStates: attempt.questionStates.map((state) => ({
+      ...state,
+      awardedPoints: 0,
+      isCorrect: null,
+      solvedAt: null,
+      status: state.status === "SOLVED" ? "ATTEMPTED" : state.status,
+    })),
+  };
+}
+
 export function toStudentContestDetailResponse(
   contest: ContestRecord,
   attempt: ContestAttemptRecord | null,
@@ -635,6 +655,11 @@ export function toStudentContestDetailResponse(
   const includeQuestions = (computedStatus === "Live" && attempt?.status === "ACTIVE") || contest.resultsPublished;
   // Correct answers are never revealed until faculty publishes results.
   const revealSolutions = contest.resultsPublished;
+  // Scores may be graded onto the attempt (by publish, the judge worker, or an out-of-band faculty
+  // preview) before results are published. Students must never see any scoring outcome until then,
+  // so the copy returned to them is redacted while unpublished. Live-contest fields (drafts,
+  // submitted answers, per-test pass counts, judged verdict) are preserved so resume keeps working.
+  const visibleAttempt = attempt && !contest.resultsPublished ? redactAttemptScoringForStudent(attempt) : attempt;
 
   return {
     id: contest.id,
@@ -656,7 +681,7 @@ export function toStudentContestDetailResponse(
     studentListStatus: deriveStudentListStatus(contest, attempt, now),
     attemptStatus: attempt?.status ?? "NOT_ATTEMPTED",
     hasAttempted: Boolean(attempt),
-    attempt,
+    attempt: visibleAttempt,
     questions: includeQuestions
       ? contest.questions.map((question, index) => {
           if (question.type === "Coding") {
