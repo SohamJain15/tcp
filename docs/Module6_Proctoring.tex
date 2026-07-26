@@ -1,0 +1,271 @@
+% =====================================================================
+%  TCET CODING PLATFORM -- Official Technical Documentation
+%  MODULE 6 of 7 : Proctoring & Academic Integrity
+%  STANDALONE FILE.  Compile: pdflatex Module6_Proctoring.tex  (twice)
+% =====================================================================
+\documentclass[12pt,a4paper,oneside]{report}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{mathptmx}\usepackage{microtype}\usepackage{graphicx}\usepackage{xcolor}
+\usepackage{tabularx}\usepackage{booktabs}\usepackage{longtable}\usepackage{xltabular}
+\usepackage{array}\usepackage{enumitem}\usepackage{listings}\usepackage{titlesec}
+\usepackage{fancyhdr}\usepackage{parskip}\usepackage[hidelinks]{hyperref}
+\definecolor{tcetblue}{RGB}{0,0,0}\definecolor{tcetaccent}{RGB}{0,0,0}
+\definecolor{codebg}{RGB}{245,246,248}\definecolor{codeframe}{RGB}{215,219,225}
+\definecolor{codekw}{RGB}{0,0,0}\definecolor{codecomment}{RGB}{0,0,0}
+\definecolor{codestr}{RGB}{0,0,0}\definecolor{boxframe}{RGB}{0,0,0}
+\hypersetup{colorlinks=true,linkcolor=tcetblue,urlcolor=tcetaccent,citecolor=tcetblue,
+  pdftitle={TCET Coding Platform -- Module 6: Proctoring},pdfauthor={Centre of Excellence, TCET}}
+\lstdefinestyle{tcp}{backgroundcolor=\color{codebg},basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{codekw}\bfseries,commentstyle=\color{codecomment}\itshape,
+  stringstyle=\color{codestr},numberstyle=\tiny\color{gray},frame=single,
+  rulecolor=\color{codeframe},breaklines=true,showstringspaces=false,tabsize=2,
+  columns=fullflexible,keepspaces=true,xleftmargin=0.6em,framexleftmargin=0.6em}
+\lstset{style=tcp}
+\newcommand{\code}[1]{\texttt{#1}}
+\newenvironment{callout}[1]{\par\vspace{4pt}\noindent
+  \begin{tabular}{@{}p{0.014\linewidth}@{\hspace{0.6em}}p{0.93\linewidth}@{}}
+  \textcolor{boxframe}{\rule{2pt}{\baselineskip}} & \textbf{\textcolor{tcetblue}{#1}}\\[2pt] & }{\end{tabular}\par\vspace{6pt}}
+\titleformat{\chapter}[display]{\bfseries\fontsize{18}{22}\selectfont}{\bfseries\fontsize{14}{17}\selectfont Chapter \thechapter}{0.2em}{}
+\titlespacing*{\chapter}{0pt}{6pt}{22pt}
+\titleformat{\section}{\bfseries\fontsize{16}{19}\selectfont}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\bfseries\fontsize{14}{17}\selectfont}{\thesubsection}{0.5em}{}
+\pagestyle{fancy}\fancyhf{}\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[L]{\small\itshape TCET Coding Platform}\fancyhead[R]{\small\itshape Module 6 \textbullet\ Proctoring}
+\fancyfoot[C]{\thepage}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}}
+\newcommand{\note}[1]{\par\vspace{3pt}\noindent{\color{tcetaccent}\textbf{Note.}}~#1\par\vspace{3pt}}
+\begin{document}
+\begin{titlepage}\centering
+\vspace*{1.4cm}{\color{tcetaccent}\rule{\linewidth}{1.2pt}}\\[0.5cm]
+{\LARGE\bfseries TCET Coding Platform\par}
+\vspace{0.4cm}{\Large Official Technical Documentation\par}{\large Draft~1 \textemdash\ Testing Phase\par}
+{\color{tcetaccent}\rule{\linewidth}{1.2pt}}\\[1.4cm]
+{\Huge\bfseries\color{tcetblue} Module 6\par}\vspace{0.3cm}
+{\Huge Proctoring \& Academic Integrity\par}\vspace{2.2cm}
+{\large\bfseries Powered by\par}{\Large\color{tcetblue} Centre of Excellence (CoE), TCET\par}\vfill
+\begin{tabular}{rl}\textbf{Module} & 6 of 7\\[3pt]
+\textbf{Scope} & Client enforcement, server scoring, integrity guarantees\\[3pt]
+\textbf{Status} & Draft~1 (living document until Stage~2)\\[3pt]
+\textbf{Audience} & Officials, Security reviewers, Faculty\\\end{tabular}
+\vspace{0.8cm}{\small\itshape \today\par}\end{titlepage}
+\pagenumbering{roman}\tableofcontents\clearpage\pagenumbering{arabic}
+
+% =====================================================================
+\chapter{Overview \& Philosophy}
+% =====================================================================
+\section{Scope of this Module}
+Live contests are protected by a layered proctoring and academic-integrity
+subsystem that combines browser-level enforcement, server-side event logging, and
+scoring penalties. This module specifies what is prevented, what is detected and
+penalized, how enforcement is made authoritative on the server, and \textemdash\
+in the interest of an honest official record \textemdash\ what browser-based
+proctoring can and cannot guarantee.
+
+\section{Threat Model}
+The design accepts that a web page cannot fully control the operating system and
+therefore adopts a two-tier philosophy.
+\begin{description}[leftmargin=1.6em,style=nextline]
+  \item[Prevent what the browser can prevent] Actions the browser can block
+        outright (copy / cut / paste, right-click, text selection, dangerous
+        shortcuts) are suppressed and cost the student nothing, because the
+        action never succeeded.
+  \item[Detect and penalize what it cannot] Actions the browser cannot hard-block
+        (leaving the tab, leaving fullscreen, taking a screenshot) are detected,
+        logged for faculty review, and scored as violations.
+\end{description}
+
+\begin{callout}{A deliberate distinction}
+Only unpreventable evasions move the violation counter. Blocking a copy already
+protects the content, so charging a penalty for it would punish a failed action.
+Leaving the tab cannot be blocked, so it is detected and penalized. The scoring
+model reflects this distinction precisely.
+\end{callout}
+
+% =====================================================================
+\chapter{Client-Side Enforcement}
+% =====================================================================
+\section{Activation}
+A frontend proctoring controller activates for the duration of an active attempt
+and installs a coordinated set of controls, removing them cleanly when the
+attempt ends or the student leaves the workspace.
+
+\section{Fullscreen Lock}
+The contest is intended to run in fullscreen. Leaving fullscreen is recorded as a
+violation and immediately triggers an attempt to re-enter fullscreen. While the
+page is not in fullscreen, a lock overlay covers the contest, and the very next
+user interaction anywhere on the page is used as the gesture the browser requires
+to restore fullscreen \textemdash\ so the student is returned to fullscreen
+without having to find a button.
+
+\section{Focus, Tab \& Visibility Detection}
+Losing window focus or tab visibility (switching apps, minimizing, or moving to
+another tab) is detected, the contest surface is \emph{blanked} instantly so a
+capture taken while the browser is in the background contains nothing readable,
+and the event is recorded as a violation.
+
+\section{Screenshot Mitigation}
+A screenshot key press is intercepted (on both key-down and key-up, since
+platforms differ in which they deliver), recorded as a violation, and the system
+clipboard is immediately overwritten \textemdash\ the only lever a web page has
+over a screenshot that has already been taken.
+
+\section{Blocked Shortcuts \& Actions}
+The controller suppresses shortcuts that would open another surface, leave the
+page, or reveal developer tools \textemdash\ refresh, fullscreen toggle,
+developer tools, and new-tab / new-window / print / save / view-source
+combinations. It also blocks the right-click context menu, copy / cut / paste,
+and selection or dragging of question text (the code editor manages its own
+selection and is exempt). A leave-page guard warns against accidental navigation
+away from a live attempt.
+
+\section{Debounced Reporting}
+A single physical action often fires several browser events (one key can emit
+both a fullscreen change and a focus loss). Events sharing a logical bucket
+within a short cooldown are reported once, so one student action costs exactly one
+violation \textemdash\ never several.
+
+\section{Visual Deterrents}
+The contest interface additionally displays a candidate watermark and a screen
+guard overlay, discouraging photography of the screen and making any leaked
+capture traceable.
+
+\section{Summary of Client Controls}
+\begin{longtable}{@{}p{0.30\linewidth} p{0.30\linewidth} p{0.30\linewidth}@{}}
+\toprule
+\textbf{Control} & \textbf{Mechanism} & \textbf{Effect}\\
+\midrule
+\endhead
+Fullscreen lock & Fullscreen API + overlay & Re-enters fullscreen; penalizes exit.\\
+Focus/visibility blanking & Focus \& visibility events & Blanks contest; penalizes leaving.\\
+Screenshot mitigation & Key interception + clipboard wipe & Penalizes and neutralizes capture.\\
+Shortcut suppression & Key handling & Prevents escape/devtools/print.\\
+Clipboard \& menu block & Event prevention & Prevents extraction of content.\\
+Watermark \& screen guard & Overlay & Deters and traces photography.\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{Server-Side Recording \& Enforcement}
+% =====================================================================
+\section{The Server is Authoritative}
+Client-side controls are advisory; the server is authoritative. Every proctoring
+event is sent to the backend, which persists an immutable record for faculty
+review, determines whether the event is scored, applies the penalty, and, if the
+maximum-violations threshold is reached, ends the attempt as auto-submitted
+\textemdash\ auto-submitting any pending draft for judging, exactly like a manual
+submit.
+
+\begin{callout}{Why server-side matters}
+Tampering with the client cannot award a student points or hide a completed
+attempt: scoring, the violation count, and the auto-submit threshold are all
+computed on the backend from persisted state. The client can only make the
+experience smoother; it cannot change the outcome.
+\end{callout}
+
+\section{Scored vs. Logged Events}
+\begin{longtable}{@{}p{0.28\linewidth} p{0.14\linewidth} p{0.48\linewidth}@{}}
+\toprule
+\textbf{Event} & \textbf{Scored?} & \textbf{Meaning}\\
+\midrule
+\endhead
+Tab switch & Yes & Window lost focus / switched away.\\
+Visibility loss & Yes & Document became hidden.\\
+Fullscreen exit & Yes & Left fullscreen mode.\\
+Screenshot & Yes & Screenshot key detected.\\
+Copy / Cut / Paste & No & Clipboard action blocked (logged only).\\
+Context menu & No & Right-click blocked (logged only).\\
+\bottomrule
+\end{longtable}
+
+\section{The Event Log}
+Proctoring events are stored immutably with the event type, the attempt and
+contest, the student, a timestamp, and a human-readable detail. The log gives
+faculty an auditable trail of what happened during any attempt, independent of
+the scoring outcome.
+
+% =====================================================================
+\chapter{Integrity Guarantees}
+% =====================================================================
+\section{Guarantees During a Live Contest}
+Taken together with the deferred-grading model of Module~5, the subsystem
+provides the following guarantees during a live contest.
+\begin{longtable}{@{}p{0.34\linewidth} p{0.58\linewidth}@{}}
+\toprule
+\textbf{Guarantee} & \textbf{Basis}\\
+\midrule
+\endhead
+No answer leakage & Nothing is graded until faculty publishes.\\
+No clipboard exfiltration & Copy / cut / paste and context menu are blocked.\\
+Screen-capture resistance & Leaving the window blanks the contest; screenshots wipe the clipboard and are penalized.\\
+Enforced focus & Leaving fullscreen or the tab is penalized and auto-corrected; repeated evasion ends the attempt.\\
+Complete, fair grading & Even a disconnected student is finalized at their real deadline with their last work judged.\\
+Auditable trail & Every event is recorded immutably for review.\\
+\bottomrule
+\end{longtable}
+
+\section{Interaction with Scoring}
+Violations reduce the attempt score by a fixed penalty each and, at the
+threshold, end and grade the attempt. Because scoring is deferred and
+server-side, a student never learns during the contest how a violation affected
+their score, preserving the integrity of the examination.
+
+% =====================================================================
+\chapter{Known Limitations}
+% =====================================================================
+\section{What Browser Proctoring Cannot Do}
+In the interest of an honest official record, the platform documents the inherent
+limits of any purely browser-based proctor.
+\begin{itemize}[leftmargin=1.5em]
+  \item It cannot prevent an external camera from photographing the screen
+        (mitigated, not prevented, by the watermark and screen guard).
+  \item It cannot control a second physical device or a second computer.
+  \item It cannot defeat operating-system screen capture that bypasses the
+        browser entirely; it can detect the standard key path and blank on focus
+        loss, but not all capture routes.
+\end{itemize}
+
+\section{Compensating Controls}
+\begin{longtable}{@{}p{0.34\linewidth} p{0.58\linewidth}@{}}
+\toprule
+\textbf{Limitation} & \textbf{Compensating control}\\
+\midrule
+\endhead
+External camera / photography & Candidate watermark and screen guard; physical invigilation.\\
+Second device & Invigilated laboratory conduct; future integrations.\\
+OS-level capture & Focus-loss blanking; penalty on the standard key path.\\
+\bottomrule
+\end{longtable}
+These limitations motivate the future-scope items \textemdash\ invigilated /
+lockdown environments and, where policy permits, webcam-assisted proctoring
+\textemdash\ discussed in Module~7.
+
+% =====================================================================
+\chapter{Faculty Perspective \& Summary}
+% =====================================================================
+\section{What Faculty See}
+Faculty can review, for any attempt, the full sequence of proctoring events, the
+resulting violation count and penalty, and whether the attempt ended by manual
+submit, deadline, or violation limit \textemdash\ alongside the graded outcome
+and the student's final code.
+
+\section{Recommended Conduct}
+Because browser proctoring is strong but not absolute, the platform is designed
+to be used within \emph{invigilated laboratory sessions}: the technical controls
+raise the cost and detectability of evasion, while human invigilation covers the
+physical channels the browser cannot. This combination is what makes the
+examinations trustworthy at scale.
+
+\section{Module Summary}
+The proctoring subsystem prevents what the browser can prevent and detects and
+penalizes what it cannot, records every event immutably, and enforces all scoring
+consequences on the server. Combined with deferred grading, it gives fair,
+auditable, tamper-resistant examinations, within clearly stated limits that
+physical invigilation and future integrations are intended to close.
+
+\vspace{0.6cm}
+\begin{center}
+\textit{--- End of Module 6. Continued in Module 7: Deployment, Infrastructure, Operations \& Future Scope. ---}
+\end{center}
+\end{document}

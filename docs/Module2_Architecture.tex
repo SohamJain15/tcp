@@ -1,0 +1,680 @@
+% =====================================================================
+%  TCET CODING PLATFORM -- Official Technical Documentation
+%  MODULE 2 of 7 : System Architecture & Technology Stack
+%  STANDALONE FILE.  Compile: pdflatex Module2_Architecture.tex  (twice)
+% =====================================================================
+\documentclass[12pt,a4paper,oneside]{report}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{mathptmx}\usepackage{microtype}\usepackage{graphicx}\usepackage{xcolor}
+\usepackage{tabularx}\usepackage{booktabs}\usepackage{longtable}\usepackage{xltabular}
+\usepackage{array}\usepackage{enumitem}\usepackage{listings}\usepackage{titlesec}
+\usepackage{fancyhdr}\usepackage{parskip}\usepackage[hidelinks]{hyperref}
+\definecolor{tcetblue}{RGB}{0,0,0}\definecolor{tcetaccent}{RGB}{0,0,0}
+\definecolor{codebg}{RGB}{245,246,248}\definecolor{codeframe}{RGB}{215,219,225}
+\definecolor{codekw}{RGB}{0,0,0}\definecolor{codecomment}{RGB}{0,0,0}
+\definecolor{codestr}{RGB}{0,0,0}\definecolor{boxframe}{RGB}{0,0,0}
+\hypersetup{colorlinks=true,linkcolor=tcetblue,urlcolor=tcetaccent,citecolor=tcetblue,
+  pdftitle={TCET Coding Platform -- Module 2: Architecture},pdfauthor={Centre of Excellence, TCET}}
+\lstdefinestyle{tcp}{backgroundcolor=\color{codebg},basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{codekw}\bfseries,commentstyle=\color{codecomment}\itshape,
+  stringstyle=\color{codestr},numberstyle=\tiny\color{gray},frame=single,
+  rulecolor=\color{codeframe},breaklines=true,showstringspaces=false,tabsize=2,
+  columns=fullflexible,keepspaces=true,xleftmargin=0.6em,framexleftmargin=0.6em}
+\lstset{style=tcp}
+\newcommand{\code}[1]{\texttt{#1}}
+\newenvironment{callout}[1]{\par\vspace{4pt}\noindent
+  \begin{tabular}{@{}p{0.014\linewidth}@{\hspace{0.6em}}p{0.93\linewidth}@{}}
+  \textcolor{boxframe}{\rule{2pt}{\baselineskip}} & \textbf{\textcolor{tcetblue}{#1}}\\[2pt] & }{\end{tabular}\par\vspace{6pt}}
+\titleformat{\chapter}[display]{\bfseries\fontsize{18}{22}\selectfont}{\bfseries\fontsize{14}{17}\selectfont Chapter \thechapter}{0.2em}{}
+\titlespacing*{\chapter}{0pt}{6pt}{22pt}
+\titleformat{\section}{\bfseries\fontsize{16}{19}\selectfont}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\bfseries\fontsize{14}{17}\selectfont}{\thesubsection}{0.5em}{}
+\pagestyle{fancy}\fancyhf{}\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[L]{\small\itshape TCET Coding Platform}\fancyhead[R]{\small\itshape Module 2 \textbullet\ Architecture}
+\fancyfoot[C]{\thepage}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}}
+\newcommand{\note}[1]{\par\vspace{3pt}\noindent{\color{tcetaccent}\textbf{Note.}}~#1\par\vspace{3pt}}
+\begin{document}
+\begin{titlepage}\centering
+\vspace*{1.4cm}{\color{tcetaccent}\rule{\linewidth}{1.2pt}}\\[0.5cm]
+{\LARGE\bfseries TCET Coding Platform\par}
+\vspace{0.4cm}{\Large Official Technical Documentation\par}{\large Draft~1 \textemdash\ Testing Phase\par}
+{\color{tcetaccent}\rule{\linewidth}{1.2pt}}\\[1.4cm]
+{\Huge\bfseries\color{tcetblue} Module 2\par}\vspace{0.3cm}
+{\Huge System Architecture \&\\[0.2cm] Technology Stack\par}\vspace{2.2cm}
+{\large\bfseries Powered by\par}{\Large\color{tcetblue} Centre of Excellence (CoE), TCET\par}\vfill
+\begin{tabular}{rl}\textbf{Module} & 2 of 7\\[3pt]
+\textbf{Scope} & Architecture, topology, request lifecycle, technology\\[3pt]
+\textbf{Status} & Draft~1 (living document until Stage~2)\\[3pt]
+\textbf{Audience} & Officials, Architects, Engineering\\\end{tabular}
+\vspace{0.8cm}{\small\itshape \today\par}\end{titlepage}
+\pagenumbering{roman}\tableofcontents\clearpage\pagenumbering{arabic}
+
+% =====================================================================
+\chapter{Architectural Overview}
+% =====================================================================
+\section{Purpose and Scope of this Module}
+This module specifies the architecture of the TCET Coding Platform:
+its structural decomposition, the way requests flow through it, the topology of
+the running processes, and the technologies chosen at each layer together with
+the reasoning behind them. It is the structural companion to Module~1's
+functional overview and the foundation on which the security, execution,
+contest, proctoring, and operations modules build.
+
+\section{Architectural Style}
+The platform is a full-stack web application built in a \textbf{layered,
+service-oriented} style with an \textbf{asynchronous execution subsystem}. Four
+architectural commitments shape everything that follows:
+
+\begin{description}[leftmargin=1.6em,style=nextline]
+  \item[Separation of request handling from code execution] User requests are
+        served synchronously and quickly; the expensive, untrusted work of
+        compiling and running submitted code is pushed onto a queue and handled
+        by background workers. This single decision is what lets the platform
+        absorb mass-submission bursts without collapsing.
+  \item[A hard trust boundary at the edge] Authentication is performed upstream
+        by the CoE Single Sign-On; the backend trusts a reverse proxy to forward
+        a verified identity and refuses traffic that does not arrive through it.
+  \item[Layering with dependency inversion] Each domain is organized into
+        routes, controllers, validators, services, repositories, and models.
+        Business logic depends on interfaces, never on concrete infrastructure,
+        so storage and execution engines are swappable and independently
+        testable.
+  \item[Deterministic, self-healing behaviour] Time-dependent logic uses an
+        injected clock; finalization and scoring are idempotent; and background
+        schedulers recover stranded work, so the system degrades gracefully.
+\end{description}
+
+\begin{callout}{The central idea}
+A student's click on ``Submit'' does not wait for a compiler. It records a
+submission, drops a job on a queue, and returns immediately. Somewhere else, a
+worker picks up that job, runs the code inside a sandbox, and writes back the
+verdict. Everything about the platform's ability to scale follows from this
+separation.
+\end{callout}
+
+\section{Quality Attributes Addressed}
+\begin{longtable}{@{}p{0.26\linewidth} p{0.66\linewidth}@{}}
+\toprule
+\textbf{Attribute} & \textbf{How the architecture addresses it}\\
+\midrule
+\endhead
+Scalability & Queue-based buffering; horizontally scalable stateless workers.\\
+Performance & Asynchronous submission keeps request latency independent of judging.\\
+Security & Edge trust boundary; layered hardening; sandboxed execution.\\
+Reliability & Idempotent finalization; stale recovery; process supervision.\\
+Testability & Interface-based layers; injected clock; in-memory and stub doubles.\\
+Maintainability & Uniform per-module layering; a single composition root.\\
+Portability & Pluggable execution provider and repository implementations.\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{System Context \& Container View}
+% =====================================================================
+This chapter presents the architecture at two zoom levels: the \emph{context}
+(the platform and the external systems it interacts with) and the
+\emph{containers} (the major deployable/runtime units inside the platform).
+
+\section{Context View}
+\begin{lstlisting}[language={}]
+                      +-------------------------+
+    Student / Faculty |   Web browser (SPA)     |
+        (human)  <--->|   React single-page app |
+                      +-----------+-------------+
+                                  | HTTPS
+                                  v
+                      +-------------------------+       +------------------+
+                      | Reverse proxy / edge    |<----->| CoE SSO          |
+                      | (Cloudflare Tunnel)     | auth  | (identity issuer)|
+                      +-----------+-------------+       +------------------+
+                                  | trusted source IP + signed identity
+                                  v
+                      +-------------------------+
+                      |   TCET Coding Platform  |
+                      |   (this system)         |
+                      +-----------+-------------+
+                        |         |          |
+                        v         v          v
+                   +--------+ +--------+ +-----------+
+                   | MongoDB| | Redis  | | Judge0    |
+                   | (data) | | (queue)| | (sandbox) |
+                   +--------+ +--------+ +-----------+
+\end{lstlisting}
+
+\begin{longtable}{@{}p{0.24\linewidth} p{0.68\linewidth}@{}}
+\toprule
+\textbf{External entity} & \textbf{Relationship to the platform}\\
+\midrule
+\endhead
+Web browser (SPA) & The user's client; renders the app and enforces client-side proctoring.\\
+Reverse proxy / edge & Terminates public routing; forwards authenticated requests with identity headers.\\
+CoE SSO & Authenticates users upstream; the sole source of identity.\\
+MongoDB & System of record for all persistent state.\\
+Redis & Backing store for the submission queue.\\
+Judge0 & Sandboxed multi-language execution engine.\\
+\bottomrule
+\end{longtable}
+
+\section{Container View}
+Within the platform boundary, the following runtime containers cooperate:
+
+\begin{longtable}{@{}p{0.24\linewidth} p{0.68\linewidth}@{}}
+\toprule
+\textbf{Container} & \textbf{Responsibility}\\
+\midrule
+\endhead
+Frontend SPA & Serves and runs the React application (routing, editor, contest UI).\\
+Backend API & The Express service: validation, authorization, business logic, persistence, enqueueing.\\
+Submission worker & A background process that consumes the queue and drives judging and finalization.\\
+Background schedulers & In-process timers (inside the API) for stale-submission recovery and expired-attempt finalization.\\
+Datastore & MongoDB collections holding users, problems, submissions, contests, attempts, and more.\\
+Queue & Redis-backed BullMQ queue of pending submissions.\\
+Execution engine & Judge0 running the \code{isolate} sandbox.\\
+\bottomrule
+\end{longtable}
+
+\note{The submission worker may run \emph{embedded} inside the API process (a
+configuration switch) or as a \emph{separate} process. Production uses a separate
+worker so judging load cannot affect request latency; see Chapter~7 and
+Module~7.}
+
+% =====================================================================
+\chapter{Logical Components}
+% =====================================================================
+Zooming into the backend container, the platform is composed of the following
+logical components. Each is described by its responsibility and its collaborators.
+
+\section{Component Catalogue}
+\begin{longtable}{@{}p{0.26\linewidth} p{0.66\linewidth}@{}}
+\toprule
+\textbf{Component} & \textbf{Responsibility \& collaborators}\\
+\midrule
+\endhead
+HTTP application & Wires global middleware (security headers, CORS, guards, rate limiting) and mounts the domain routers.\\
+Auth middleware & Verifies the trusted-proxy source and the forwarded identity; establishes the request user.\\
+Domain routers & Bind endpoints to controllers and apply role/rate-limit middleware per route.\\
+Controllers & Translate HTTP requests into service calls and shape responses.\\
+Validators & Zod schemas that validate and type every inbound payload.\\
+Services & The seat of business logic: users, problems, submissions, contests, leaderboard.\\
+Repositories & The only components that talk to MongoDB; expose interfaces to services.\\
+Domain models & Pure types and transformation/scoring functions with no I/O.\\
+Execution provider & Abstraction over Judge0 (or a stub) for running code.\\
+Submission queue & Abstraction over BullMQ for enqueueing submissions.\\
+Schedulers & Timers that recover stale submissions and finalize expired attempts.\\
+\bottomrule
+\end{longtable}
+
+\section{Component Interaction (submission path)}
+\begin{lstlisting}[language={}]
+Controller ---> SubmissionService.createSubmission()
+                    |  validate problem visibility
+                    |  ensure user record
+                    |  persist submission (QUEUED)
+                    |  SubmissionQueue.enqueue(id)  ----> Redis
+                    v
+                (returns receipt to client)
+
+Worker ------> SubmissionService.processQueuedSubmission(id)
+                    |  mark RUNNING
+                    |  ExecutionProvider.executeSubmission()  ----> Judge0
+                    |  finalizeSubmission(verdict)
+                    |     update user + problem aggregates
+                    |     update leaderboard
+                    v
+                (verdict persisted; client polling observes it)
+\end{lstlisting}
+
+\section{Dependency Rule}
+Dependencies point inward: controllers depend on services; services depend on
+repository, queue, and execution-provider \emph{interfaces}; models depend on
+nothing. No inner layer imports an outer layer, and no business logic imports the
+database driver. This is what makes the domain logic unit-testable with
+in-memory doubles.
+
+% =====================================================================
+\chapter{Request Lifecycle \& Middleware Pipeline}
+% =====================================================================
+Every API request passes through an ordered pipeline before it reaches domain
+logic. The order is deliberate: cheap, security-critical checks run first.
+
+\section{The Pipeline in Order}
+\begin{longtable}{@{}p{0.05\linewidth} p{0.28\linewidth} p{0.55\linewidth}@{}}
+\toprule
+\textbf{\#} & \textbf{Stage} & \textbf{Purpose}\\
+\midrule
+\endhead
+1 & Security headers (Helmet) & Set safe response headers; disable \code{x-powered-by}.\\
+2 & CORS & Admit only allowlisted origins; handle preflight.\\
+3 & Cookie parsing & Make federated cookies available for identity.\\
+4 & Body parsing (capped) & Parse JSON up to a 100\,kb limit.\\
+5 & Global rate limiter & Throttle by identity or IP.\\
+6 & Frontend-pathname guard & Validate the optional client pathname header.\\
+7 & Mutation-origin guard & Require an allowlisted Origin/Referer on state-changing calls.\\
+8 & Auth middleware (per router) & Verify trusted proxy + identity; attach the user.\\
+9 & Role / profile guards (per route) & Enforce role and profile-completion requirements.\\
+10 & Controller $\to$ service & Execute domain logic.\\
+11 & Error handler & Convert errors into consistent HTTP responses.\\
+\bottomrule
+\end{longtable}
+
+\section{Request Walkthrough (authenticated GET)}
+\begin{lstlisting}[language={}]
+GET /api/problems
+  -> Helmet sets headers
+  -> CORS: Origin allowlisted? yes
+  -> rate limiter: under limit? yes
+  -> pathname guard: header valid/absent? yes
+  -> mutation guard: method is GET (safe) -> skip
+  -> auth: source IP trusted? identity valid? status ACTIVE? -> attach user
+  -> controller: ProblemService.listProblems(user, query)
+  -> service: filter by visibility (published + department) and paginate
+  -> 200 OK with the page of problems
+\end{lstlisting}
+
+\section{Error Handling Strategy}
+Domain code throws typed application errors carrying an HTTP status and message.
+A single terminal error handler converts these into consistent JSON responses,
+so controllers never assemble error bodies themselves and unexpected exceptions
+never leak stack traces to clients. A not-found handler returns a uniform 404 for
+unmapped routes.
+
+% =====================================================================
+\chapter{Backend Layered Architecture}
+% =====================================================================
+The backend is organized so that every domain module has the same internal
+shape. This uniformity is a maintainability feature: a reader who understands one
+module understands them all.
+
+\section{The Six Layers}
+\begin{longtable}{@{}p{0.22\linewidth} p{0.70\linewidth}@{}}
+\toprule
+\textbf{Layer} & \textbf{Responsibility}\\
+\midrule
+\endhead
+Routes & Declare endpoints; attach auth, role, and rate-limit middleware; delegate to controllers.\\
+Controllers & Adapt HTTP to the service API; read validated input; write HTTP responses.\\
+Validators & Define Zod schemas; validation produces both a runtime guarantee and a static type.\\
+Services & Hold all business rules; orchestrate repositories, the queue, and the execution provider.\\
+Repositories & Encapsulate persistence; map between documents and domain records; the only MongoDB callers.\\
+Models & Pure domain types and functions (e.g. scoring), free of I/O and framework concerns.\\
+\bottomrule
+\end{longtable}
+
+\section{Domain Modules}
+\begin{longtable}{@{}p{0.20\linewidth} p{0.72\linewidth}@{}}
+\toprule
+\textbf{Module} & \textbf{Responsibility}\\
+\midrule
+\endhead
+User & Identity synchronization, profile, and profile analytics.\\
+Problem & Problem authoring, lifecycle, visibility, and aggregates.\\
+Submission & The run/submit pipeline, judging orchestration, and finalization.\\
+Contest & The full contest engine: attempts, scoring, standings, feedback.\\
+Leaderboard & Denormalized ranking derived from user statistics.\\
+\bottomrule
+\end{longtable}
+
+\section{Why Layering Pays Off Here}
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Testability.} Because services depend on repository interfaces,
+        tests substitute in-memory repositories and a stub execution provider and
+        exercise real business logic deterministically.
+  \item \textbf{Swappability.} The datastore or execution engine can change
+        behind its interface without touching business logic.
+  \item \textbf{Locality of change.} A change to validation, HTTP shape, or a
+        business rule lives in exactly one layer.
+\end{itemize}
+
+% =====================================================================
+\chapter{Dependency Injection \& Composition}
+% =====================================================================
+\section{The Composition Root}
+All concrete dependencies are assembled in one place \textemdash\ a composition
+root that constructs the repositories, the execution provider, the submission
+queue, and every service, wires them together, and returns a single
+application-dependencies object that both the API and the worker consume.
+
+\section{Overrides for Testing}
+The composition root accepts overrides for the auth middleware, execution
+provider, submission queue, repositories, and the clock. This is the mechanism
+that makes the whole system testable without production infrastructure: a test
+builds the application with in-memory repositories, a stub execution provider,
+and a fixed clock, and then exercises the real routes and services end to end.
+
+\begin{callout}{The injected clock}
+Time is a dependency, not a global. Services obtain ``now'' from an injected
+function. In production it returns the wall clock; in tests it returns a fixed
+instant. This is why contest windows, personal deadlines, stale-recovery
+thresholds, and finalization are all deterministically testable.
+\end{callout}
+
+\section{Startup Sequence}
+\begin{lstlisting}[language={}]
+1. Load & validate configuration (fail fast on invalid config).
+2. Build application dependencies (repositories, services, provider, queue).
+3. Create the Express app (mount middleware + routers).
+4. Optionally create an embedded submission worker.
+5. Start listening; run stale-submission recovery once.
+6. Start the expired-attempt finalizer timer (unless disabled).
+7. Register graceful-shutdown handlers.
+\end{lstlisting}
+
+% =====================================================================
+\chapter{Process Topology}
+% =====================================================================
+\section{Runtime Processes}
+\begin{longtable}{@{}p{0.24\linewidth} p{0.68\linewidth}@{}}
+\toprule
+\textbf{Process} & \textbf{Role}\\
+\midrule
+\endhead
+API server & Serves the REST API; runs the background schedulers; may embed a worker.\\
+Submission worker & Dedicated queue consumer; recommended as a separate process in production.\\
+Frontend & Serves the built single-page application.\\
+\bottomrule
+\end{longtable}
+
+\section{Embedded vs. Separate Worker}
+The API can host a worker in-process for simple deployments, or delegate all
+judging to one or more standalone worker processes. Production separates them so
+that a surge of judging work \textemdash\ CPU-heavy and bursty \textemdash\
+cannot degrade API responsiveness. The two topologies are shown below.
+
+\begin{lstlisting}[language={}]
+Simple (single process):        Production (separated):
++---------------------+         +-------------+   +-----------------+
+| API + embedded      |         | API server  |   | Worker process  |
+| worker              |         | (schedulers)|   | (concurrency N) |
++----------+----------+         +------+------+   +--------+--------+
+           |                           |                   |
+        Redis                        Redis  <------------- Redis
+\end{lstlisting}
+
+\section{Graceful Shutdown}
+On receiving a termination signal the API stops accepting connections, clears the
+finalizer timer, and closes the embedded worker (if any) before exiting, so
+in-flight work is not abruptly severed.
+
+% =====================================================================
+\chapter{The Asynchronous Execution Subsystem}
+% =====================================================================
+\section{Why a Queue}
+Compiling and running untrusted code is slow and resource-intensive relative to a
+typical web request, and examination load is bursty. Executing on the request
+path would tie up connections and collapse under a mass submit. A queue converts
+a synchronous, unbounded demand into an asynchronous, bounded one: submissions
+are accepted instantly and drained at a controlled rate.
+
+\section{Queue Semantics}
+\begin{longtable}{@{}p{0.28\linewidth} p{0.64\linewidth}@{}}
+\toprule
+\textbf{Property} & \textbf{Behaviour}\\
+\midrule
+\endhead
+Job identity & Each submission is enqueued under its own identifier.\\
+Retries & A bounded number of automatic attempts with exponential backoff.\\
+Concurrency & Workers process several jobs in parallel, tunable and capped.\\
+Completion retention & Completed jobs are retained briefly for observability.\\
+Idempotency & Finalization is guarded so a re-delivered job cannot double-apply a verdict.\\
+\bottomrule
+\end{longtable}
+
+\section{Backpressure \& Draining}
+When submissions arrive faster than they can be judged, they accumulate in Redis
+rather than failing. Throughput is governed by the number of worker processes and
+their concurrency, which are matched to what the Judge0 stack can sustain. Adding
+workers increases drain rate horizontally.
+
+\section{Self-Healing}
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Stale-submission recovery} re-enqueues submissions left in a
+        pending state past a staleness threshold, protecting against a worker
+        that died mid-judging.
+  \item \textbf{Expired-attempt finalization} finalizes contest attempts whose
+        deadline has passed, so abandoned attempts are graded near their real
+        deadline. Both are covered in Modules~4 and~5.
+\end{itemize}
+
+% =====================================================================
+\chapter{Frontend Architecture}
+% =====================================================================
+\section{Application Shape}
+The frontend is a Vite-built React single-page application in TypeScript. It is
+organized into pages (per role), reusable components, hooks, a typed API client,
+and small pure libraries for formatting and domain helpers.
+
+\section{Routing \& Role Gating}
+All routes are declared centrally. Authenticated routes are wrapped in a role
+guard that admits only the permitted role(s), producing cleanly separated Student
+and Faculty areas. A representative route map:
+
+\begin{longtable}{@{}p{0.52\linewidth} p{0.36\linewidth}@{}}
+\toprule
+\textbf{Route} & \textbf{Role}\\
+\midrule
+\endhead
+\code{/} & Public entry / login\\
+\code{/complete-profile} & Student \& Faculty\\
+\code{/student/dashboard}, \code{/student/problems} & Student\\
+\code{/student/problems/:id} & Student\\
+\code{/student/contests}, \code{/student/contests/:id} & Student\\
+\code{/student/contests/:id/questions/:qid} & Student\\
+\code{/student/contests/:id/feedback} & Student\\
+\code{/student/leaderboard}, \code{/student/profile} & Student\\
+\code{/faculty/dashboard}, \code{/faculty/problems} & Faculty\\
+\code{/faculty/create-problem}, \code{/faculty/create-contest} & Faculty\\
+\code{/faculty/contests}, \code{/faculty/contests/:id} & Faculty\\
+\code{/faculty/submissions}, \code{/faculty/leaderboard} & Faculty\\
+\bottomrule
+\end{longtable}
+
+\section{Server State \& Data Fetching}
+Server state is managed with a query library that caches responses, deduplicates
+requests, and refetches in the background, keeping the UI responsive and
+consistent. A single typed API client centralizes every backend call and maps
+responses into view models, so components never construct URLs or parse raw
+responses directly.
+
+\section{UI System \& Editor}
+The interface uses a utility-first CSS framework with an accessible component
+library, supporting light and dark themes. The in-browser Monaco editor provides
+the coding experience with per-language syntax support. Dedicated contest
+components enforce the examination environment (timer, question navigation,
+watermark, screen guard, lock overlay) and integrate with the proctoring hook
+described in Module~6.
+
+\section{Client-Side Resilience}
+The client polls for asynchronous submission results, shows optimistic and
+loading states, and guards contest navigation. Route-level error boundaries
+contain rendering failures so a single faulty view does not blank the whole app.
+
+% =====================================================================
+\chapter{Data Flow \& Sequence Walkthroughs}
+% =====================================================================
+This chapter traces three representative flows end to end.
+
+\section{Sequence: Practice Submission}
+\begin{lstlisting}[language={}]
+Student        Frontend        API            Queue     Worker     Judge0
+  |   write code   |             |              |          |          |
+  |--------------->|             |              |          |          |
+  |   Submit       |             |              |          |          |
+  |--------------->| POST submit |              |          |          |
+  |               |------------>| persist QUEUED|         |          |
+  |               |             |---- enqueue ->|         |          |
+  |               |<- receipt --|              |          |          |
+  |   poll status  |             |              |          |          |
+  |--------------->|-- GET ----->|              |          |          |
+  |               |             |              |-- job -->|          |
+  |               |             |              |          |-- run -->|
+  |               |             |              |          |<- verdict|
+  |               |             |<-- finalize (persist verdict) -----|
+  |<- ACCEPTED ----|<- status ---|              |          |          |
+\end{lstlisting}
+
+\section{Sequence: Authenticated Access}
+\begin{lstlisting}[language={}]
+Browser -> Edge/SSO: request (with session)
+Edge/SSO -> API:     forward + x-coe-* identity  (from trusted source IP)
+API auth:            source trusted? identity valid? status ACTIVE?
+API:                 sync user record; attach req.user
+API -> Browser:      role-appropriate response
+\end{lstlisting}
+
+\section{Sequence: Contest Attempt (high level)}
+\begin{lstlisting}[language={}]
+register -> start attempt (freeze deadline) -> answer/save/submit (no scoring)
+   -> end (submit | deadline | violation) -> auto-submit drafts
+   -> faculty publish (authoritative re-grade) -> feedback gate -> report/standings
+\end{lstlisting}
+
+% =====================================================================
+\chapter{Technology Stack Deep-Dive}
+% =====================================================================
+\section{Backend Technologies}
+\begin{longtable}{@{}p{0.22\linewidth} p{0.70\linewidth}@{}}
+\toprule
+\textbf{Technology} & \textbf{Role \& rationale}\\
+\midrule
+\endhead
+Node.js & Event-driven runtime well suited to I/O-bound API and queue work.\\
+Express~5 & Minimal, mature HTTP framework; explicit middleware model.\\
+TypeScript & Static typing across the whole domain reduces defects and documents contracts.\\
+Zod & Runtime validation that also yields static types; one schema secures and types a payload.\\
+Helmet & Secure HTTP headers with minimal configuration.\\
+Rate limiter & Protects the API from floods; keyed by identity or IP.\\
+MongoDB driver & Direct, efficient access to the document store.\\
+BullMQ & Robust Redis-backed job queue with retries and concurrency.\\
+\bottomrule
+\end{longtable}
+
+\section{Frontend Technologies}
+\begin{longtable}{@{}p{0.22\linewidth} p{0.70\linewidth}@{}}
+\toprule
+\textbf{Technology} & \textbf{Role \& rationale}\\
+\midrule
+\endhead
+React~18 & Component model for a complex, stateful UI.\\
+Vite~5 & Fast build and dev tooling.\\
+TypeScript & End-to-end typing shared with API view models.\\
+React Router & Declarative routing and role gating.\\
+TanStack Query & Server-state caching, deduplication, and background refetch.\\
+Tailwind + component library & Consistent, accessible, themeable design system.\\
+Monaco editor & Professional in-browser code editing.\\
+\bottomrule
+\end{longtable}
+
+\section{Data \& Execution Technologies}
+\begin{longtable}{@{}p{0.22\linewidth} p{0.70\linewidth}@{}}
+\toprule
+\textbf{Technology} & \textbf{Role \& rationale}\\
+\midrule
+\endhead
+MongoDB & Flexible document model fits nested, snapshot-heavy records (attempts embed per-question state); server-side JSON Schema validation adds a safety net.\\
+Redis & Low-latency backing store for the queue and buffering.\\
+Judge0 + \code{isolate} & Purpose-built sandboxed execution for many languages; runs untrusted code safely.\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{Cross-Cutting Concerns}
+% =====================================================================
+\section{Configuration}
+All configuration is centralized and validated at startup against a schema, so
+the process fails fast rather than starting in a partially-configured or insecure
+state (for example, an over-short signing secret is rejected before the server
+listens). The full variable reference is in Module~7.
+
+\section{Logging \& Observability}
+Security-relevant events (authentication rejections) and background-scheduler
+outcomes (recovered submissions, finalized attempts) are logged to the process
+console for aggregation. Health endpoints are restricted to trusted internal
+sources. Richer structured logging and metrics are identified as future work in
+Module~7.
+
+\section{Error Handling}
+A uniform error model (typed errors with HTTP status) and a single terminal
+handler ensure consistent responses and prevent leakage of internal detail.
+
+\section{Resilience}
+Idempotent finalization, stale-submission recovery, and the expired-attempt
+finalizer combine to make the platform tolerant of worker failure, queue
+backpressure, and student disconnection.
+
+% =====================================================================
+\chapter{Network, Ports \& Environments}
+% =====================================================================
+\section{Ports}
+\begin{longtable}{@{}p{0.24\linewidth} p{0.16\linewidth} p{0.50\linewidth}@{}}
+\toprule
+\textbf{Service} & \textbf{Port} & \textbf{Notes}\\
+\midrule
+\endhead
+Frontend & 5173 & Dev / preview server.\\
+Backend API & 3000 / 3001 & Configurable; local dev often 3001.\\
+Mock CoE SSO & 4000 & Local development identity stub only.\\
+Judge0 & 2358 & Local sandboxed execution API.\\
+Redis & 6379 & Submission queue.\\
+MongoDB & 27017 & Datastore.\\
+\bottomrule
+\end{longtable}
+
+\section{Environments}
+\begin{longtable}{@{}p{0.20\linewidth} p{0.72\linewidth}@{}}
+\toprule
+\textbf{Environment} & \textbf{Characteristics}\\
+\midrule
+\endhead
+Development & Local services; a mock SSO; a stub or local Judge0; embedded worker acceptable.\\
+Test & In-memory repositories, stub execution, fixed clock; deterministic.\\
+Production & Reverse proxy + real SSO; MongoDB, Redis, and Judge0; separated worker; PM2 supervision.\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{Architecture Decision Records}
+% =====================================================================
+The following condensed ADRs record the principal architectural decisions, the
+context that motivated them, and their consequences.
+
+\section{ADR-1: Asynchronous submission via a queue}
+\textbf{Context:} mass, bursty submission load; slow, untrusted execution.
+\textbf{Decision:} accept submissions synchronously and judge them on a queue.
+\textbf{Consequences:} request latency is decoupled from judging; the system
+scales by adding workers; clients poll for results; finalization must be
+idempotent.
+
+\section{ADR-2: Trusted reverse-proxy identity}
+\textbf{Context:} the institution already operates a centralized SSO.
+\textbf{Decision:} delegate authentication upstream and trust forwarded identity
+from an allowlisted proxy. \textbf{Consequences:} no credential storage; a hard
+requirement never to expose the backend directly; a source-IP allowlist becomes
+security-critical.
+
+\section{ADR-3: Layered architecture with dependency inversion}
+\textbf{Context:} a need for testable, maintainable domain logic.
+\textbf{Decision:} uniform routes/controller/validator/service/repository/model
+layering with interface-based dependencies and an injected clock.
+\textbf{Consequences:} high testability and swappability; a small amount of
+boilerplate per module.
+
+\section{ADR-4: MongoDB with snapshots}
+\textbf{Context:} nested, history-sensitive records. \textbf{Decision:} a
+document store with denormalized snapshots and server-side schema validation.
+\textbf{Consequences:} cheap reads and stable history; aggregates must be
+recomputed on finalization.
+
+\section{ADR-5: Pluggable execution provider}
+\textbf{Context:} the need to test without Judge0 and to support local/cloud
+engines. \textbf{Decision:} an execution-provider interface with Judge0 and stub
+implementations. \textbf{Consequences:} deterministic tests; portability across
+execution backends.
+
+\vspace{0.6cm}
+\begin{center}
+\textit{--- End of Module 2. Continued in Module 3: Authentication, Authorization, Security \& Data Persistence. ---}
+\end{center}
+\end{document}

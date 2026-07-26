@@ -1,0 +1,777 @@
+% =====================================================================
+%  TCET CODING PLATFORM
+%  Official Technical Documentation -- Draft 1 (valid until Stage 2)
+%  MODULE 1 of 7 : Introduction & System Overview
+%
+%  STANDALONE FILE. Compile on its own with:
+%     pdflatex Module1_Introduction.tex   (run twice for the TOC)
+%  Powered by the Centre of Excellence (CoE), TCET.
+% =====================================================================
+\documentclass[12pt,a4paper,oneside]{report}
+
+% ---------------------------------------------------------------------
+%  Packages (self-contained; identical preamble across all 7 modules)
+% ---------------------------------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{mathptmx}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{xltabular}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{parskip}
+\usepackage[hidelinks]{hyperref}
+
+\definecolor{tcetblue}{RGB}{0,0,0}
+\definecolor{tcetaccent}{RGB}{0,0,0}
+\definecolor{codebg}{RGB}{245,246,248}
+\definecolor{codeframe}{RGB}{215,219,225}
+\definecolor{codekw}{RGB}{0,0,0}
+\definecolor{codecomment}{RGB}{0,0,0}
+\definecolor{codestr}{RGB}{0,0,0}
+\definecolor{boxbg}{RGB}{239,246,250}
+\definecolor{boxframe}{RGB}{0,0,0}
+
+\hypersetup{
+  colorlinks=true, linkcolor=tcetblue, urlcolor=tcetaccent, citecolor=tcetblue,
+  pdftitle={TCET Coding Platform -- Module 1: Introduction \& System Overview},
+  pdfauthor={Centre of Excellence, TCET}
+}
+
+\lstdefinestyle{tcp}{
+  backgroundcolor=\color{codebg}, basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{codekw}\bfseries, commentstyle=\color{codecomment}\itshape,
+  stringstyle=\color{codestr}, numberstyle=\tiny\color{gray},
+  frame=single, rulecolor=\color{codeframe}, breaklines=true,
+  breakatwhitespace=false, showstringspaces=false, tabsize=2,
+  columns=fullflexible, keepspaces=true, xleftmargin=0.6em, framexleftmargin=0.6em,
+}
+\lstset{style=tcp}
+
+\newcommand{\code}[1]{\texttt{#1}}
+
+% Lightweight callout box (no external packages)
+\newenvironment{callout}[1]{%
+  \par\vspace{4pt}\noindent
+  \begin{tabular}{@{}p{0.014\linewidth}@{\hspace{0.6em}}p{0.93\linewidth}@{}}
+  \textcolor{boxframe}{\rule{2pt}{\baselineskip}} &
+  \textbf{\textcolor{tcetblue}{#1}}\\[2pt]
+  & }{\end{tabular}\par\vspace{6pt}}
+
+\titleformat{\chapter}[display]{\bfseries\fontsize{18}{22}\selectfont}{\bfseries\fontsize{14}{17}\selectfont Chapter \thechapter}{0.2em}{}
+\titlespacing*{\chapter}{0pt}{6pt}{22pt}
+\titleformat{\section}{\bfseries\fontsize{16}{19}\selectfont}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\bfseries\fontsize{14}{17}\selectfont}{\thesubsection}{0.5em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[L]{\small\itshape TCET Coding Platform}
+\fancyhead[R]{\small\itshape Module 1 \textbullet\ Introduction}
+\fancyfoot[C]{\thepage}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}}
+
+\newcommand{\note}[1]{\par\vspace{3pt}\noindent{\color{tcetaccent}\textbf{Note.}}~#1\par\vspace{3pt}}
+
+% =====================================================================
+\begin{document}
+
+% ----------------------------- TITLE ---------------------------------
+\begin{titlepage}
+\centering
+\vspace*{1.4cm}
+{\color{tcetaccent}\rule{\linewidth}{1.2pt}}\\[0.5cm]
+{\LARGE\bfseries TCET Coding Platform\par}
+\vspace{0.4cm}
+{\Large Official Technical Documentation\par}
+{\large Draft~1 \textemdash\ Testing Phase\par}
+{\color{tcetaccent}\rule{\linewidth}{1.2pt}}\\[1.4cm]
+{\Huge\bfseries\color{tcetblue} Module 1\par}
+\vspace{0.3cm}
+{\Huge Introduction \&\\[0.2cm] System Overview\par}
+\vspace{2.2cm}
+{\large\bfseries Powered by\par}
+{\Large\color{tcetblue} Centre of Excellence (CoE), TCET\par}
+\vfill
+\begin{tabular}{rl}
+\textbf{Module} & 1 of 7\\[3pt]
+\textbf{Scope} & Vision, scope, stakeholders, requirements, glossary\\[3pt]
+\textbf{Status} & Draft~1 (living document until Stage~2)\\[3pt]
+\textbf{Audience} & TCET Officials, CoE Review Committee, Engineering\\
+\end{tabular}
+\vspace{0.8cm}
+{\small\itshape \today\par}
+\end{titlepage}
+
+\pagenumbering{roman}
+\tableofcontents
+\clearpage
+\pagenumbering{arabic}
+
+% =====================================================================
+\chapter{Document Purpose \& Context}
+% =====================================================================
+
+\section{About this Module}
+This is the first of seven modules that together constitute the official
+technical documentation of the \textbf{TCET Coding Platform}. The platform is
+developed and operated under
+the \textbf{Centre of Excellence (CoE)} at Thakur College of Engineering and
+Technology (TCET). This module establishes the shared context that the remaining
+six modules build upon: what the platform is, why it exists, who it serves, the
+boundaries of the current build, the requirements it is held to, and the
+vocabulary used throughout the documentation set.
+
+The documentation is deliberately partitioned into seven self-contained modules
+so that distinct concerns can be reviewed, approved, versioned, and extended
+independently by different readers \textemdash\ officials, security reviewers,
+and engineers \textemdash\ without any one of them needing to read the entire
+corpus to obtain the information relevant to their role.
+
+\begin{callout}{Document set at a glance}
+Module~1 Introduction \& System Overview \textbullet\ Module~2 System
+Architecture \& Technology Stack \textbullet\ Module~3 Authentication,
+Authorization, Security \& Data Persistence \textbullet\ Module~4 Problems,
+Submissions \& Code Execution Engine \textbullet\ Module~5 Contest \& Assessment
+Engine \textbullet\ Module~6 Proctoring \& Academic Integrity \textbullet\
+Module~7 Deployment, Infrastructure, Operations \& Future Scope.
+\end{callout}
+
+\section{Status of this Document}
+This is \textbf{Draft~1}. It is an authoritative but living record: it captures
+the platform as it exists at the time of writing and is expected to be revised
+at the Stage~2 review. Where this document and older, ad-hoc notes or README
+files disagree, this document is the governing reference. Any figure, limit, or
+behaviour stated here reflects the implemented system and is traceable to the
+codebase; forward-looking items are explicitly confined to the Future Scope
+material in Module~7 and are labelled as candidate, not committed, work.
+
+\section{Intended Audience}
+The documentation is written for three overlapping audiences:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{TCET Officials and the CoE Review Committee}, who require a clear,
+        non-implementation view of what the platform does, how it protects
+        examination integrity, how it scales to institutional load, and how it
+        is operated.
+  \item \textbf{Security and compliance reviewers}, who require precise detail on
+        identity federation, the trust boundary, authorization, data handling,
+        and the academic-integrity controls.
+  \item \textbf{Engineers}, who require the internal contracts, data models,
+        execution pipeline, and operational procedures needed to maintain and
+        extend the platform.
+\end{itemize}
+
+\section{How to Read this Document Set}
+\begin{longtable}{@{}p{0.32\linewidth} p{0.60\linewidth}@{}}
+\toprule
+\textbf{If you are\ldots} & \textbf{Read\ldots}\\
+\midrule
+\endhead
+An official seeking an overview & Module~1 in full; the introductions of Modules~2, 5, 6, and 7.\\
+Assessing examination integrity & Module~5 (contest engine) and Module~6 (proctoring), plus the security controls in Module~3.\\
+Assessing security posture & Module~3 in full, plus Module~2's trust-boundary discussion.\\
+Assessing scalability / operations & Module~2 (architecture) and Module~7 (deployment, scaling, runbooks).\\
+Engineering / maintaining the code & All modules; Modules~3--6 carry the internal contracts and data models.\\
+\bottomrule
+\end{longtable}
+
+\section{Document Conventions}
+\begin{itemize}[leftmargin=1.5em]
+  \item Fixed-width text such as \code{x-coe-email} or \code{contest\_attempts}
+        denotes an identifier, header, field name, endpoint, environment
+        variable, or file path taken from the implementation.
+  \item Roles are written in small capitals of meaning: a \emph{Student} and a
+        \emph{Faculty} member are the two internal roles; the upstream identity
+        provider additionally issues \emph{Admin} and \emph{Industry} roles that
+        the platform maps onto Faculty.
+  \item ``The platform'' and ``the system'' are used
+        interchangeably.
+  \item Time-relative statements are avoided; where a date matters it is stated
+        absolutely.
+\end{itemize}
+
+% =====================================================================
+\chapter{Product Vision \& Objectives}
+% =====================================================================
+
+\section{The Problem being Solved}
+Engineering education at scale requires frequent, hands-on programming practice
+and assessment. Conducting these activities with general-purpose tools
+(spreadsheets for marks, email or shared drives for submissions, individual
+laboratory machines for compilation) does not scale to an institution running
+mass laboratory sessions, and it provides weak guarantees of academic integrity
+during timed examinations. Three structural problems recur:
+
+\begin{enumerate}[leftmargin=1.6em]
+  \item \textbf{Throughput.} When thousands of students submit code within the
+        same short window, any system that compiles and runs code
+        \emph{synchronously} on the request path collapses under the load.
+  \item \textbf{Integrity.} Timed coding examinations conducted in an ordinary
+        browser are trivially undermined by tab-switching, copy/paste, external
+        lookups, and screenshots, and by any design that reveals correctness
+        during the examination.
+  \item \textbf{Fragmentation and ownership.} Identity, problem banks, results,
+        and analytics scattered across third-party tools are hard to govern,
+        hard to audit, and not owned by the institution.
+\end{enumerate}
+
+\section{The Vision}
+The TCET Coding Platform is a single, institution-owned environment in which faculty author
+programming problems and timed contests, and students solve them with immediate,
+sandboxed code execution \textemdash\ engineered from the outset for mass
+laboratory use, strong examination integrity, and institutional ownership of
+identity and data. The platform is built on three guiding principles.
+
+\begin{callout}{Guiding principles}
+\textbf{Scale} \textemdash\ absorb bursts of thousands of concurrent submissions
+by decoupling request handling from code execution through an asynchronous
+queue. \quad \textbf{Integrity} \textemdash\ enforce a browser-level proctoring
+regime and a deferred-grading model so no student can learn or leak answers
+during a live examination. \quad \textbf{Institutional ownership} \textemdash\
+federate identity through the CoE's centralized Single Sign-On and never expose
+the backend directly to the public internet.
+\end{callout}
+
+\section{Objectives \& Success Criteria}
+\begin{longtable}{@{}p{0.30\linewidth} p{0.62\linewidth}@{}}
+\toprule
+\textbf{Objective} & \textbf{Success criterion}\\
+\midrule
+\endhead
+Mass-scale practice \& assessment & The system sustains large concurrent
+submission bursts without loss of submissions or request-path failure, by
+buffering work on a queue and draining it at worker capacity.\\
+Trustworthy examinations & During a live contest no score, correctness, or
+correct answer is revealed to a student; integrity violations are detected,
+recorded, and penalized; abandoned attempts are still graded fairly.\\
+Institution-owned identity & All authentication is federated from the CoE SSO;
+the platform stores no passwords and exposes no public authentication surface.\\
+Multi-language reach & Students may solve in 20+ programming languages with a
+consistent editor and judging experience.\\
+Actionable analytics & Faculty and students obtain ratings, accuracy, activity
+heatmaps, standings, and exportable results.\\
+Operational resilience & The platform self-heals from worker crashes, queue
+backpressure, and students disconnecting mid-contest.\\
+\bottomrule
+\end{longtable}
+
+\section{Design Values}
+Beyond the headline objectives, the platform embodies a set of engineering
+values that recur throughout the later modules and explain many of its design
+choices:
+
+\begin{description}[leftmargin=1.6em,style=nextline]
+  \item[Defence in depth] Security and correctness are enforced at multiple
+        independent layers (proxy trust, identity verification, role checks,
+        ownership checks, schema validation), so no single failure is
+        catastrophic.
+  \item[Determinism] Time-dependent and scoring logic is written to be
+        deterministic and idempotent, so the same inputs always produce the same
+        result and operations can be safely retried.
+  \item[Fail-safe over fail-open] When something goes wrong (a queue failure, a
+        judging error, a disconnect), the system defaults to the safe outcome
+        (mark the submission errored, finalize the attempt) rather than leaving
+        state ambiguous.
+  \item[Snapshots over joins] Historical records embed the values they depend on
+        at the time they were created, so history stays stable and reads stay
+        cheap.
+  \item[Testability] Every layer depends on interfaces and an injected clock, so
+        the whole system can be exercised deterministically without production
+        infrastructure.
+\end{description}
+
+% =====================================================================
+\chapter{Scope}
+% =====================================================================
+
+\section{In Scope (current build)}
+The following capabilities are implemented and are documented across Modules~2--7:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item Role-based access for \textbf{Students} and \textbf{Faculty}, federated
+        via the CoE SSO, including profile completion.
+  \item A \textbf{problem bank} with lifecycle management (Draft / Published /
+        Archived), difficulty tiers, tags, per-department targeting, resource
+        limits, and both sample and hidden test cases.
+  \item An asynchronous \textbf{submission and judging pipeline} backed by a
+        Redis queue and Judge0 sandboxed execution, supporting 20+ executable
+        languages and three editor-only languages.
+  \item A full \textbf{contest and assessment engine} supporting MCQ, MSQ, and
+        Coding questions, per-student attempt windows, deferred grading,
+        automatic finalization, standings, faculty review, and CSV export.
+  \item A \textbf{proctoring and academic-integrity subsystem} for live contests.
+  \item A \textbf{post-contest feedback} mechanism that gates the release of a
+        student's published results behind a usability questionnaire.
+  \item \textbf{Analytics}: per-user ratings, accuracy, submission heatmaps,
+        difficulty and language breakdowns, and leaderboards.
+\end{itemize}
+
+\section{Out of Scope (this draft)}
+\begin{itemize}[leftmargin=1.5em]
+  \item The CoE SSO identity provider itself, which is owned and operated
+        upstream; the platform only consumes its signed identity.
+  \item Public or unauthenticated access; the backend is designed to sit behind a
+        trusted reverse proxy at all times.
+  \item Native mobile applications; the frontend is a responsive web application.
+  \item The forward-looking learning environments (AI-assisted analysis,
+        practical labs, DBMS/SQL, Linux terminal) described as Future Scope in
+        Module~7, which are candidate work, not part of the current build.
+\end{itemize}
+
+\section{Assumptions}
+\begin{longtable}{@{}p{0.05\linewidth} p{0.87\linewidth}@{}}
+\toprule
+\textbf{\#} & \textbf{Assumption}\\
+\midrule
+\endhead
+A1 & A trusted reverse proxy (Cloudflare Tunnel) terminates CoE authentication upstream and forwards a signed identity; the backend is never exposed directly to the public internet.\\
+A2 & The reverse proxy strips any client-supplied \code{x-coe-*} headers so identity cannot be spoofed by clients.\\
+A3 & MongoDB, Redis, and a Judge0 execution environment are reachable from the backend host.\\
+A4 & Students take examinations in a modern desktop browser that supports the Fullscreen and Clipboard APIs used by the proctoring subsystem.\\
+A5 & The CoE SSO issues one of the recognized roles (Admin, Faculty, Industry, Student) and an account status.\\
+\bottomrule
+\end{longtable}
+
+\section{Constraints}
+\begin{longtable}{@{}p{0.05\linewidth} p{0.87\linewidth}@{}}
+\toprule
+\textbf{\#} & \textbf{Constraint}\\
+\midrule
+\endhead
+C1 & The platform does not manage passwords or credentials; it must rely entirely on the CoE SSO for authentication.\\
+C2 & Untrusted student code must be executed only inside a sandbox; it must never run with network access or outside resource limits.\\
+C3 & Request bodies are capped (100\,kb) and API calls are rate limited, so clients must operate within those limits.\\
+C4 & Browser-based proctoring cannot control the operating system or external devices; integrity guarantees are bounded accordingly (see Module~6).\\
+C5 & Editor-only languages (HTML, CSS, React) are never executed by the judge and exist for authoring/preview contexts only.\\
+\bottomrule
+\end{longtable}
+
+\section{External Dependencies}
+\begin{longtable}{@{}p{0.24\linewidth} p{0.68\linewidth}@{}}
+\toprule
+\textbf{Dependency} & \textbf{Role and consequence if unavailable}\\
+\midrule
+\endhead
+CoE SSO & Federated identity. Without it, users cannot authenticate; the platform has no fallback credential store by design.\\
+Reverse proxy (Cloudflare Tunnel) & Public routing and identity injection. Without it, the backend has no safe public entry point.\\
+MongoDB & System of record. Without it, no persistence; the platform cannot serve.\\
+Redis & Submission queue and buffering. Without it, submissions cannot be enqueued and are failed fast.\\
+Judge0 & Sandboxed code execution. Without it, code cannot be run or judged; runs return an execution error.\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{Stakeholders \& Actors}
+% =====================================================================
+
+\section{Stakeholder Register}
+\begin{longtable}{@{}p{0.24\linewidth} p{0.32\linewidth} p{0.32\linewidth}@{}}
+\toprule
+\textbf{Stakeholder} & \textbf{Primary interest} & \textbf{Interaction with the platform}\\
+\midrule
+\endhead
+Centre of Excellence (CoE) & Ownership, identity federation, governance. & Operates the platform and the upstream SSO.\\
+TCET Officials & Governance, approval, Stage-gate review. & Review documentation; authorize progression.\\
+Faculty & Authoring, assessment, integrity, review. & Create problems and contests; proctor; review and export results.\\
+Students & Practice and assessment. & Solve problems; register for and attempt contests; view analytics.\\
+Platform / DevOps team & Reliability, scaling, operations. & Deploy, monitor, scale, and maintain the system.\\
+Security reviewers & Confidentiality, integrity, auditability. & Assess the trust boundary and integrity controls.\\
+\bottomrule
+\end{longtable}
+
+\section{System Actors}
+An \emph{actor} is any entity that interacts with the platform's boundary.
+
+\begin{longtable}{@{}p{0.24\linewidth} p{0.68\linewidth}@{}}
+\toprule
+\textbf{Actor} & \textbf{Description}\\
+\midrule
+\endhead
+Student (human) & Authenticated learner who solves problems and attempts contests under the Student role.\\
+Faculty (human) & Authenticated educator who authors and administers content under the Faculty role (also the mapping target for Admin and Industry).\\
+CoE SSO (system) & Upstream identity provider that authenticates users and issues signed identity.\\
+Reverse proxy (system) & Trusted intermediary that forwards authenticated requests with identity headers.\\
+Judge0 (system) & Sandboxed execution engine invoked by the submission worker.\\
+Submission worker (system) & Background process that consumes the queue and drives judging.\\
+Background schedulers (system) & In-process timers that recover stale submissions and finalize expired attempts.\\
+\bottomrule
+\end{longtable}
+
+\section{Role Capability Matrix}
+The table summarizes, at a glance, what each human role may do. Precise
+authorization rules are in Module~3.
+
+\begin{longtable}{@{}p{0.50\linewidth} c c@{}}
+\toprule
+\textbf{Capability} & \textbf{Student} & \textbf{Faculty}\\
+\midrule
+\endhead
+Solve published problems (run / submit) & Yes & --\\
+View own submissions and analytics & Yes & Yes\\
+Register for and attempt contests & Yes & --\\
+Submit post-contest feedback & Yes & --\\
+Author / edit / archive problems & -- & Yes\\
+Create / edit contests and questions & -- & Yes\\
+View any submission for owned resources & -- & Yes\\
+Review contest attempts (incl. final code) & -- & Yes\\
+Publish contest results & -- & Yes\\
+Export standings / registrations / leaderboard (CSV) & -- & Yes\\
+View another student's profile analytics & -- & Yes\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{Functional Capability Catalogue}
+% =====================================================================
+This chapter enumerates the platform's functional capabilities at a level
+suitable for officials, with a one-line pointer to the module that specifies
+each in depth.
+
+\section{Identity \& Access}
+\begin{longtable}{@{}p{0.26\linewidth} p{0.52\linewidth} p{0.12\linewidth}@{}}
+\toprule
+\textbf{Capability} & \textbf{Description} & \textbf{Module}\\
+\midrule
+\endhead
+Federated login & Authenticate via CoE SSO using signed identity headers or a JWT; establish a Student or Faculty session. & 3\\
+Profile completion & Capture department, semester, roll number, and profile links required for eligibility and analytics. & 3\\
+Role-based routing & Serve distinct Student and Faculty application areas gated by role. & 2, 3\\
+Session termination & Clear federated cookies and return to an allowlisted frontend origin. & 3\\
+\bottomrule
+\end{longtable}
+
+\section{Problem Bank \& Practice}
+\begin{longtable}{@{}p{0.26\linewidth} p{0.52\linewidth} p{0.12\linewidth}@{}}
+\toprule
+\textbf{Capability} & \textbf{Description} & \textbf{Module}\\
+\midrule
+\endhead
+Problem authoring & Rich statements, constraints, formats, tags, difficulty, resource limits, sample \& hidden tests. & 4\\
+Lifecycle control & Move problems through Draft, Published, and Archived states. & 4\\
+Department targeting & Restrict a problem's visibility to a department, or leave it open to all. & 4\\
+Run (samples) & Execute code against sample tests for immediate, unscored feedback. & 4\\
+Submit (all tests) & Queue a submission judged against all tests; award first-solve rating. & 4\\
+Auto-wrapping & Accept LeetCode-style Solution classes and synthesize a runnable entry point. & 4\\
+\bottomrule
+\end{longtable}
+
+\section{Contests \& Assessment}
+\begin{longtable}{@{}p{0.26\linewidth} p{0.52\linewidth} p{0.12\linewidth}@{}}
+\toprule
+\textbf{Capability} & \textbf{Description} & \textbf{Module}\\
+\midrule
+\endhead
+Contest authoring & Define window, per-attempt duration, registration window, type, targeting, violation limit, and questions. & 5\\
+Question types & MCQ, MSQ, and Coding questions in a single contest. & 5\\
+Registration \& attempts & Register within the window; start a single attempt with a frozen personal deadline. & 5\\
+Deferred grading & Score nothing live; grade at submit, auto-submit, and publish. & 5\\
+Auto-submission & Submit unsubmitted drafts when an attempt ends by any route. & 5\\
+Standings \& review & Ranked standings; faculty attempt review including final code. & 5\\
+Feedback gate & Require a usability questionnaire before releasing a student's published results. & 5\\
+\bottomrule
+\end{longtable}
+
+\section{Integrity \& Analytics}
+\begin{longtable}{@{}p{0.26\linewidth} p{0.52\linewidth} p{0.12\linewidth}@{}}
+\toprule
+\textbf{Capability} & \textbf{Description} & \textbf{Module}\\
+\midrule
+\endhead
+Proctoring enforcement & Fullscreen lock, focus / tab / screenshot detection, shortcut and clipboard blocking, watermark, screen guard. & 6\\
+Violation scoring & Penalize unpreventable evasions; auto-submit at the violation threshold. & 5, 6\\
+Event logging & Persist an immutable log of proctoring events for faculty review. & 6\\
+Ratings \& accuracy & Difficulty-weighted first-solve rating, accuracy, problems solved. & 4\\
+Leaderboards & Denormalized ranking of users. & 4\\
+Profile analytics & Difficulty and language breakdowns, activity heatmap, recent activity. & 4\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{Non-Functional Requirements}
+% =====================================================================
+Non-functional requirements (NFRs) express the qualities the platform must
+exhibit. Each is stated with the mechanism that satisfies it and the module that
+elaborates it.
+
+\section{Performance \& Scalability}
+\begin{longtable}{@{}p{0.10\linewidth} p{0.50\linewidth} p{0.28\linewidth}@{}}
+\toprule
+\textbf{Ref} & \textbf{Requirement} & \textbf{Mechanism}\\
+\midrule
+\endhead
+NFR-P1 & Sustain large concurrent submission bursts without dropping work. & Redis/BullMQ queue buffers submissions; workers drain at capacity (M2, M4).\\
+NFR-P2 & Keep request latency independent of judging latency. & Submit is asynchronous; a dedicated worker process handles execution (M2, M7).\\
+NFR-P3 & Judge fairly across fast and slow runtimes. & Per-language CPU-time and memory multipliers, capped by a ceiling (M4).\\
+NFR-P4 & Scale judging throughput horizontally. & Multiple worker processes/hosts against one queue; tunable concurrency (M7).\\
+\bottomrule
+\end{longtable}
+
+\section{Security}
+\begin{longtable}{@{}p{0.10\linewidth} p{0.50\linewidth} p{0.28\linewidth}@{}}
+\toprule
+\textbf{Ref} & \textbf{Requirement} & \textbf{Mechanism}\\
+\midrule
+\endhead
+NFR-S1 & Only authenticated, trusted-proxy traffic may reach the API. & Trusted-proxy source-IP allowlist; identity verification (M3).\\
+NFR-S2 & No credential storage. & Federated identity via CoE SSO (M3).\\
+NFR-S3 & Prevent cross-site request forgery on mutations. & Mutation-origin guard against an allowlist (M3).\\
+NFR-S4 & Contain untrusted code execution. & Judge0 \code{isolate} sandbox, no network, resource-limited (M4).\\
+NFR-S5 & Protect against request floods. & Global and per-user rate limiting; payload cap (M3).\\
+\bottomrule
+\end{longtable}
+
+\section{Reliability \& Availability}
+\begin{longtable}{@{}p{0.10\linewidth} p{0.50\linewidth} p{0.28\linewidth}@{}}
+\toprule
+\textbf{Ref} & \textbf{Requirement} & \textbf{Mechanism}\\
+\midrule
+\endhead
+NFR-R1 & No submission is permanently stranded by a worker crash. & Stale-submission recovery re-enqueues stuck work (M2, M4).\\
+NFR-R2 & Abandoned attempts are graded near their real deadline. & Background attempt finalizer (M2, M5).\\
+NFR-R3 & Operations are safe to retry. & Idempotent finalization and scoring (M4, M5).\\
+NFR-R4 & Processes recover from failure automatically. & PM2 autorestart with memory ceilings (M7).\\
+\bottomrule
+\end{longtable}
+
+\section{Integrity, Usability, Maintainability \& Portability}
+\begin{longtable}{@{}p{0.10\linewidth} p{0.50\linewidth} p{0.28\linewidth}@{}}
+\toprule
+\textbf{Ref} & \textbf{Requirement} & \textbf{Mechanism}\\
+\midrule
+\endhead
+NFR-I1 & No answer leakage during a live contest. & Deferred grading; results revealed only at publish (M5).\\
+NFR-I2 & Detect and penalize examination evasion. & Browser proctoring with server-side scoring (M6).\\
+NFR-U1 & Consistent, accessible, themeable UI. & Tailwind + accessible component library; light/dark themes (M2).\\
+NFR-U2 & Immediate feedback while coding. & In-browser editor with Run mode (M2, M4).\\
+NFR-M1 & Storage-agnostic, testable business logic. & Layered architecture; repository interfaces; injected clock (M2).\\
+NFR-M2 & Fail-fast on misconfiguration. & Startup-time schema validation of configuration (M2, M7).\\
+NFR-Po1 & Portable execution across deployments. & Pluggable execution provider (Judge0 or stub) (M4).\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{Representative Use Cases}
+% =====================================================================
+The following use cases illustrate the principal end-to-end flows. Each names the
+actor, preconditions, the main flow, and notable alternate outcomes. Detailed
+behaviour is specified in the referenced modules.
+
+\section{UC-1: Student Solves a Practice Problem}
+\textbf{Actor:} Student. \quad \textbf{Precondition:} Authenticated; problem is
+Published and visible to the student's department.
+\begin{enumerate}[leftmargin=1.6em]
+  \item The student opens a problem and writes a solution in the editor.
+  \item The student presses \emph{Run}; the code executes against sample tests
+        and returns immediate, unscored feedback.
+  \item The student presses \emph{Submit}; a submission is persisted and queued,
+        and a receipt is returned.
+  \item A worker judges the submission against all tests; the verdict is stored.
+  \item On first acceptance, difficulty-weighted rating is awarded and the
+        student's analytics and the leaderboard are updated.
+\end{enumerate}
+\textbf{Alternates:} enqueue failure marks the submission errored immediately; a
+non-accepted verdict awards no rating; re-solving awards nothing further.
+
+\section{UC-2: Faculty Authors and Publishes a Problem}
+\textbf{Actor:} Faculty. \quad \textbf{Precondition:} Authenticated as Faculty.
+\begin{enumerate}[leftmargin=1.6em]
+  \item The faculty member creates a problem in Draft with statement,
+        constraints, limits, and sample and hidden tests.
+  \item The problem is optionally targeted to a department.
+  \item The faculty member publishes the problem, making it visible to eligible
+        students; it may later be archived.
+\end{enumerate}
+
+\section{UC-3: Student Takes a Proctored Contest}
+\textbf{Actor:} Student. \quad \textbf{Precondition:} Registered within the
+registration window; contest is Live.
+\begin{enumerate}[leftmargin=1.6em]
+  \item The student starts an attempt; a personal deadline is frozen as the
+        lesser of the per-attempt duration and the contest end.
+  \item The proctoring subsystem enforces fullscreen, blanks the contest on focus
+        loss, and records violations.
+  \item The student answers objective questions and writes/submits code; nothing
+        is scored, and drafts are auto-saved.
+  \item The attempt ends by manual submit, deadline expiry, or reaching the
+        violation limit; unsubmitted drafts are auto-submitted.
+  \item After faculty publishes results, the student submits the feedback
+        questionnaire and then views their report and standings.
+\end{enumerate}
+\textbf{Alternates:} disconnecting is handled by the background finalizer, which
+grades the attempt at its deadline.
+
+\section{UC-4: Faculty Runs and Reviews a Contest}
+\textbf{Actor:} Faculty.
+\begin{enumerate}[leftmargin=1.6em]
+  \item The faculty member creates a contest with a window, duration,
+        registration window, questions, and violation limit.
+  \item Students register and attempt within the window.
+  \item After the contest ends, the faculty member publishes results, triggering
+        an authoritative re-grade of every attempt.
+  \item The faculty member reviews individual attempts (including final code) and
+        exports standings as CSV.
+\end{enumerate}
+
+% =====================================================================
+\chapter{Technology Overview \& Deployment in Brief}
+% =====================================================================
+
+\section{Technology Stack}
+A detailed treatment with rationale appears in Module~2; the overview orients the
+reader.
+
+\begin{longtable}{@{}p{0.22\linewidth} p{0.70\linewidth}@{}}
+\toprule
+\textbf{Layer} & \textbf{Technology}\\
+\midrule
+\endhead
+Frontend & React~18, Vite~5, TypeScript, React Router, TanStack Query, Tailwind CSS, an accessible component library, and the Monaco editor.\\
+Backend & Node.js, Express~5, TypeScript, Zod validation, Helmet, rate limiting.\\
+Data store & MongoDB (official driver) with server-side JSON Schema validation.\\
+Queue \& cache & Redis with BullMQ for the submission queue.\\
+Execution & Judge0 (sandboxed via \code{isolate}) with an optional cloud fallback and a stub provider for tests.\\
+Identity & CoE centralized SSO consumed through trusted proxy headers / JWT.\\
+Infrastructure & Cloudflare Tunnels, Tailscale, PM2, and Docker (for Judge0).\\
+\bottomrule
+\end{longtable}
+
+\begin{callout}{On persistence naming}
+Some backend repository classes carry a \code{Firestore}-prefixed name for
+historical reasons, and an early note referenced ``Firebase / Firestore.'' The
+authoritative and only datastore is \textbf{MongoDB}; the prefix is a legacy
+artefact and does not indicate a second datastore. This is stated explicitly so
+the naming is never mistaken for a Firestore dependency.
+\end{callout}
+
+\section{Deployment Model in Brief}
+Production places the backend behind a trusted reverse proxy (Cloudflare Tunnel),
+with the CoE SSO terminating authentication upstream and forwarding a signed
+identity. Administrative access to the host is restricted to a Tailscale network.
+Application processes (API, submission worker, frontend) are supervised by PM2,
+and the Judge0 execution stack runs as a Docker deployment. Full topology,
+configuration, and runbooks are in Module~7.
+
+\section{Logical Component Summary}
+\begin{lstlisting}[language={}]
+Browser (SPA)
+   |  HTTPS
+   v
+Reverse proxy / CoE SSO edge   (adds signed x-coe-* identity)
+   |  trusted source IP
+   v
+Express API  --(persist)-->  MongoDB
+   |  (enqueue submissions)
+   v
+Redis queue  -->  Submission worker  -->  Judge0 (isolate sandbox)
+                        |
+                        v
+                 verdict persisted; aggregates + leaderboard updated
+\end{lstlisting}
+
+% =====================================================================
+\chapter{Risks, Assumptions \& Mitigations}
+% =====================================================================
+This risk register records the principal risks to the platform's objectives, a
+qualitative severity, and the mitigation in place or planned.
+
+\begin{longtable}{@{}p{0.05\linewidth} p{0.42\linewidth} c p{0.30\linewidth}@{}}
+\toprule
+\textbf{ID} & \textbf{Risk} & \textbf{Sev.} & \textbf{Mitigation}\\
+\midrule
+\endhead
+RK1 & Backend exposed directly to the internet, allowing header spoofing. & High & Trusted-proxy source-IP allowlist; proxy strips client \code{x-coe-*} (M3).\\
+RK2 & Submission spike overwhelms execution. & High & Asynchronous queue buffering; horizontal workers (M2, M4, M7).\\
+RK3 & Untrusted code harms the host. & High & \code{isolate} sandbox; no network; resource limits (M4).\\
+RK4 & Answer leakage during examinations. & High & Deferred grading; results withheld until publish (M5).\\
+RK5 & Examination evasion via tab-switch / screenshot. & Medium & Browser proctoring with server-side scoring; auto-submit at threshold (M6).\\
+RK6 & Student disconnects mid-contest, losing work. & Medium & Draft auto-save and auto-submission; background finalizer (M5).\\
+RK7 & Worker crash strands submissions. & Medium & Stale-submission recovery (M4).\\
+RK8 & Misconfiguration starts the system in an insecure state. & Medium & Startup-time configuration validation; fail fast (M2, M7).\\
+RK9 & Browser proctoring cannot stop external cameras / second devices. & Accepted & Watermark and screen guard deter; invigilation and future integrations (M6, M7).\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{Glossary \& Abbreviations}
+% =====================================================================
+
+\section{Terms}
+\begin{longtable}{@{}p{0.26\linewidth} p{0.66\linewidth}@{}}
+\toprule
+\textbf{Term} & \textbf{Definition}\\
+\midrule
+\endhead
+Attempt & A single student's run of a contest, with its own frozen deadline and per-question state.\\
+Contest & A timed assessment of MCQ / MSQ / Coding questions authored by faculty.\\
+Deferred grading & The model in which nothing is scored during a live contest; grading happens at submit, auto-submit, and publish.\\
+Editor-only language & A language (HTML, CSS, React) that is never executed by the judge.\\
+Feedback gate & The requirement that a student submit a usability questionnaire before their published contest results are released.\\
+Finalization & The one-time application of a judged verdict to a submission, and the grading of an attempt.\\
+Hidden test case & A test case used for judging but never shown to students.\\
+Judge0 & The sandboxed, multi-language code-execution engine.\\
+Lifecycle state & The Draft / Published / Archived status of a problem.\\
+Proctoring event & A recorded integrity event raised during an attempt.\\
+Rating & A difficulty-weighted score awarded for the first acceptance of a problem.\\
+Sample test case & A visible test case shown to students and used by Run.\\
+Snapshot & A denormalized copy of a value stored on a record to keep history stable.\\
+Trusted proxy & The reverse proxy whose source IP the backend trusts to have authenticated the request.\\
+\bottomrule
+\end{longtable}
+
+\section{Abbreviations}
+\begin{longtable}{@{}p{0.18\linewidth} p{0.74\linewidth}@{}}
+\toprule
+\textbf{Abbrev.} & \textbf{Expansion}\\
+\midrule
+\endhead
+API & Application Programming Interface.\\
+CoE & Centre of Excellence (TCET).\\
+CORS & Cross-Origin Resource Sharing.\\
+CSRF & Cross-Site Request Forgery.\\
+CSV & Comma-Separated Values.\\
+JWT & JSON Web Token.\\
+MCQ / MSQ & Multiple-Choice / Multiple-Select Question.\\
+NFR & Non-Functional Requirement.\\
+SPA & Single-Page Application.\\
+SSO & Single Sign-On.\\
+TCET & Thakur College of Engineering and Technology.\\
+TLE & Time-Limit Exceeded.\\
+UC & Use Case.\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{Module Roadmap}
+% =====================================================================
+The remaining modules develop the summary given here into full specifications.
+
+\begin{longtable}{@{}p{0.06\linewidth} p{0.30\linewidth} p{0.54\linewidth}@{}}
+\toprule
+\textbf{Mod.} & \textbf{Title} & \textbf{Focus}\\
+\midrule
+\endhead
+2 & System Architecture \& Technology Stack & Layered architecture, process topology, request lifecycle, technology rationale.\\
+3 & Authentication, Authorization, Security \& Data Persistence & Trusted-proxy identity, RBAC, hardening, and the full data model.\\
+4 & Problems, Submissions \& Code Execution Engine & Problem lifecycle, the judging pipeline, the sandbox, and code wrapping.\\
+5 & Contest \& Assessment Engine & The contest lifecycle, deferred grading, auto-submission, feedback gate, and standings.\\
+6 & Proctoring \& Academic Integrity & Client enforcement, server-side scoring, and integrity guarantees.\\
+7 & Deployment, Infrastructure, Operations \& Future Scope & Topology, configuration, scaling, runbooks, and the roadmap.\\
+\bottomrule
+\end{longtable}
+
+\vspace{0.6cm}
+\begin{center}
+\textit{--- End of Module 1. Continued in Module 2: System Architecture \& Technology Stack. ---}
+\end{center}
+
+\end{document}

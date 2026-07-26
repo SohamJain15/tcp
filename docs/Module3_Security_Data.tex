@@ -1,0 +1,525 @@
+% =====================================================================
+%  TCET CODING PLATFORM -- Official Technical Documentation
+%  MODULE 3 of 7 : Authentication, Authorization, Security & Data Persistence
+%  STANDALONE FILE.  Compile: pdflatex Module3_Security_Data.tex  (twice)
+% =====================================================================
+\documentclass[12pt,a4paper,oneside]{report}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{mathptmx}\usepackage{microtype}\usepackage{graphicx}\usepackage{xcolor}
+\usepackage{tabularx}\usepackage{booktabs}\usepackage{longtable}\usepackage{xltabular}
+\usepackage{array}\usepackage{enumitem}\usepackage{listings}\usepackage{titlesec}
+\usepackage{fancyhdr}\usepackage{parskip}\usepackage[hidelinks]{hyperref}
+\definecolor{tcetblue}{RGB}{0,0,0}\definecolor{tcetaccent}{RGB}{0,0,0}
+\definecolor{codebg}{RGB}{245,246,248}\definecolor{codeframe}{RGB}{215,219,225}
+\definecolor{codekw}{RGB}{0,0,0}\definecolor{codecomment}{RGB}{0,0,0}
+\definecolor{codestr}{RGB}{0,0,0}\definecolor{boxframe}{RGB}{0,0,0}
+\hypersetup{colorlinks=true,linkcolor=tcetblue,urlcolor=tcetaccent,citecolor=tcetblue,
+  pdftitle={TCET Coding Platform -- Module 3: Security \& Data},pdfauthor={Centre of Excellence, TCET}}
+\lstdefinestyle{tcp}{backgroundcolor=\color{codebg},basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{codekw}\bfseries,commentstyle=\color{codecomment}\itshape,
+  stringstyle=\color{codestr},numberstyle=\tiny\color{gray},frame=single,
+  rulecolor=\color{codeframe},breaklines=true,showstringspaces=false,tabsize=2,
+  columns=fullflexible,keepspaces=true,xleftmargin=0.6em,framexleftmargin=0.6em}
+\lstset{style=tcp}
+\newcommand{\code}[1]{\texttt{#1}}
+\newenvironment{callout}[1]{\par\vspace{4pt}\noindent
+  \begin{tabular}{@{}p{0.014\linewidth}@{\hspace{0.6em}}p{0.93\linewidth}@{}}
+  \textcolor{boxframe}{\rule{2pt}{\baselineskip}} & \textbf{\textcolor{tcetblue}{#1}}\\[2pt] & }{\end{tabular}\par\vspace{6pt}}
+\titleformat{\chapter}[display]{\bfseries\fontsize{18}{22}\selectfont}{\bfseries\fontsize{14}{17}\selectfont Chapter \thechapter}{0.2em}{}
+\titlespacing*{\chapter}{0pt}{6pt}{22pt}
+\titleformat{\section}{\bfseries\fontsize{16}{19}\selectfont}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\bfseries\fontsize{14}{17}\selectfont}{\thesubsection}{0.5em}{}
+\pagestyle{fancy}\fancyhf{}\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[L]{\small\itshape TCET Coding Platform}\fancyhead[R]{\small\itshape Module 3 \textbullet\ Security \& Data}
+\fancyfoot[C]{\thepage}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}}
+\newcommand{\note}[1]{\par\vspace{3pt}\noindent{\color{tcetaccent}\textbf{Note.}}~#1\par\vspace{3pt}}
+\begin{document}
+\begin{titlepage}\centering
+\vspace*{1.4cm}{\color{tcetaccent}\rule{\linewidth}{1.2pt}}\\[0.5cm]
+{\LARGE\bfseries TCET Coding Platform\par}
+\vspace{0.4cm}{\Large Official Technical Documentation\par}{\large Draft~1 \textemdash\ Testing Phase\par}
+{\color{tcetaccent}\rule{\linewidth}{1.2pt}}\\[1.4cm]
+{\Huge\bfseries\color{tcetblue} Module 3\par}\vspace{0.3cm}
+{\Huge Authentication, Authorization,\\[0.2cm] Security \& Data Persistence\par}\vspace{2.0cm}
+{\large\bfseries Powered by\par}{\Large\color{tcetblue} Centre of Excellence (CoE), TCET\par}\vfill
+\begin{tabular}{rl}\textbf{Module} & 3 of 7\\[3pt]
+\textbf{Scope} & Identity, RBAC, hardening, data model\\[3pt]
+\textbf{Status} & Draft~1 (living document until Stage~2)\\[3pt]
+\textbf{Audience} & Security reviewers, Officials, Engineering\\\end{tabular}
+\vspace{0.8cm}{\small\itshape \today\par}\end{titlepage}
+\pagenumbering{roman}\tableofcontents\clearpage\pagenumbering{arabic}
+
+% =====================================================================
+\chapter{Overview \& Security Objectives}
+% =====================================================================
+\section{Scope of this Module}
+This module specifies how the platform establishes \emph{who} a caller is
+(authentication), what they are permitted to do (authorization), how the attack
+surface is hardened (security controls), and how all state is persisted (the data
+layer). Together these constitute the platform's confidentiality, integrity, and
+availability posture at the identity and data tiers.
+
+\section{Security Objectives}
+\begin{longtable}{@{}p{0.28\linewidth} p{0.64\linewidth}@{}}
+\toprule
+\textbf{Objective} & \textbf{Statement}\\
+\midrule
+\endhead
+Authenticated access only & No request reaches domain logic without a verified, active identity forwarded by a trusted proxy.\\
+No credential custody & The platform stores no passwords; identity is federated from the CoE SSO.\\
+Least privilege & Each role can perform only what its function requires, enforced at multiple layers.\\
+Tamper resistance & Scoring, violation counts, and results are computed server-side from persisted state.\\
+Data integrity & Persisted documents conform to a validated schema; history is stable via snapshots.\\
+Abuse resistance & Rate limiting, payload caps, and origin checks blunt floods and cross-site abuse.\\
+\bottomrule
+\end{longtable}
+
+\section{Security Design Principles}
+\begin{description}[leftmargin=1.6em,style=nextline]
+  \item[Defence in depth] Independent controls at the proxy, identity,
+        authorization, and data layers.
+  \item[Fail closed] Ambiguous or unverifiable requests are rejected, not
+        admitted.
+  \item[Server-side authority] The client is never trusted for anything that
+        affects scoring, eligibility, or results.
+  \item[Minimal exposure] Internal and diagnostic endpoints are restricted to
+        trusted sources; sensitive data never appears in URLs.
+\end{description}
+
+% =====================================================================
+\chapter{Identity \& the Trusted-Proxy Model}
+% =====================================================================
+\section{No Local Credentials}
+The platform does not manage passwords or credentials. Authentication is
+performed upstream by the CoE centralized SSO. The backend consumes a
+\emph{verified} identity rather than verifying credentials itself.
+
+\section{The Trust Boundary}
+The architecture is a \textbf{trusted reverse-proxy model}:
+\begin{enumerate}[leftmargin=1.6em]
+  \item The user authenticates against the CoE SSO at the edge.
+  \item The proxy forwards only authenticated requests to the backend, attaching
+        a signed identity as headers and/or a token cookie.
+  \item The backend verifies that the request arrived from a trusted proxy source
+        and then trusts the forwarded identity.
+\end{enumerate}
+
+\begin{callout}{Why the source-IP check is load-bearing}
+Header-based identity is safe \emph{only} because the backend independently
+verifies that the request came from an allowlisted proxy source address. If the
+backend were exposed directly to the internet, a client could fabricate identity
+headers. The source check is therefore the single control that makes the whole
+model sound, and it runs on every request.
+\end{callout}
+
+\section{Identity Signals}
+\begin{longtable}{@{}p{0.26\linewidth} p{0.66\linewidth}@{}}
+\toprule
+\textbf{Signal} & \textbf{Description}\\
+\midrule
+\endhead
+Identity headers & \code{x-coe-email}, \code{x-coe-name}, \code{x-coe-role}, \code{x-coe-status} injected by the trusted proxy.\\
+Signed token (fallback) & A CoE JWT taken from a dedicated header, a bearer authorization header, or one of several federated cookies, verified with a strong algorithm against a configured secret.\\
+\bottomrule
+\end{longtable}
+
+When the required headers are present they are used directly; otherwise the
+middleware verifies the signed token. Either way, the resolved identity must
+carry a valid email, a recognized role, and an active status.
+
+\section{Authentication Decision Flow}
+\begin{lstlisting}[language={}]
+1. Is the request source IP in the trusted-proxy allowlist?
+      no  -> 401 "Unauthorized source"  (+ security log)
+2. Are all identity headers present?
+      yes -> validate email format and role value
+      no  -> verify the signed token; reject if invalid -> 401
+3. Is the resolved role recognized?
+      no  -> 401 "invalid authentication token"
+4. Is the account status ACTIVE?
+      no  -> 403 "Account is <STATUS>"
+5. Synchronize the user record; attach the request user
+6. -> continue to the route
+\end{lstlisting}
+
+\section{Proxy Source Verification}
+The allowlist supports both explicit addresses and CIDR subnets, for IPv4 and
+IPv6, and always trusts loopback so local development and internal health checks
+work. Invalid entries are ignored with a warning rather than failing the whole
+service. Rejections are logged with a masked email and forwarded-chain
+diagnostics to aid investigation without exposing personal data.
+
+\section{Session Termination}
+Logout clears the federated cookies directly (rather than depending on an
+upstream logout page), across the host-only and domain-wide cookie variants, and
+redirects to a validated, allowlisted frontend origin.
+
+% =====================================================================
+\chapter{Authorization \& Access Control}
+% =====================================================================
+\section{Role Model}
+The CoE issues four roles, which the platform collapses into two internal roles.
+
+\begin{longtable}{@{}p{0.20\linewidth} p{0.22\linewidth} p{0.48\linewidth}@{}}
+\toprule
+\textbf{CoE role} & \textbf{Platform role} & \textbf{Meaning}\\
+\midrule
+\endhead
+Student & Student & Solves problems; attempts contests.\\
+Faculty & Faculty & Authors content; reviews; exports.\\
+Admin & Faculty & Treated as faculty in the platform.\\
+Industry & Faculty & Treated as faculty in the platform.\\
+\bottomrule
+\end{longtable}
+
+\section{Layers of Authorization}
+\begin{description}[leftmargin=1.6em,style=nextline]
+  \item[Route-level role guards] Faculty-only endpoints (problem management,
+        standings export, attempt review) are gated by a role requirement.
+  \item[Profile-completion guard] Certain actions require a completed profile.
+  \item[Ownership \& visibility checks in services] Beyond the role, services
+        verify that the specific record belongs to, or is visible to, the caller:
+        faculty may only view submissions for resources they own; a student may
+        only see published problems for their department; contest access is
+        filtered by department.
+\end{description}
+
+\begin{callout}{Preventing horizontal escalation}
+A passing role check is never sufficient by itself. Even a valid faculty user is
+re-checked at the service layer for ownership of the specific resource, so one
+faculty member cannot read another's submissions by guessing an identifier, and a
+student cannot read another student's data.
+\end{callout}
+
+\section{Authorization Matrix (selected endpoints)}
+\begin{longtable}{@{}p{0.46\linewidth} p{0.44\linewidth}@{}}
+\toprule
+\textbf{Action} & \textbf{Permitted to}\\
+\midrule
+\endhead
+List / view published problems & Any authenticated user (student view filtered by department).\\
+Create / edit / archive problems & Faculty (owner).\\
+Run / submit code & Student.\\
+View a submission & The submitting student, or the faculty owner of the resource.\\
+Create / edit contests & Faculty (owner).\\
+Start / submit a contest attempt & Student (registered).\\
+View standings (student) & Student, after publish and feedback.\\
+Publish results, review attempts, export CSV & Faculty (owner).\\
+View another user's analytics & Faculty.\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{Security Controls}
+% =====================================================================
+\section{Control Catalogue}
+\begin{longtable}{@{}p{0.28\linewidth} p{0.64\linewidth}@{}}
+\toprule
+\textbf{Control} & \textbf{Behaviour}\\
+\midrule
+\endhead
+Secure headers & A hardening middleware sets safe response headers; the framework banner is disabled.\\
+CORS allowlist & Only configured origins are admitted; credentials are enabled for those origins only.\\
+Mutation-origin guard & State-changing requests must carry an allowlisted Origin/Referer, mitigating cross-site request forgery.\\
+Frontend-pathname guard & The optional client pathname header is validated against a safe pattern.\\
+Payload cap & JSON bodies are limited to 100\,kb.\\
+Global rate limiting & Requests are throttled per identity or IP; excess returns HTTP~429.\\
+Submission rate limiting & Final submissions and code runs are additionally rate limited per user.\\
+Security event logging & Authentication rejections are logged with masked identifiers and forwarded-chain diagnostics.\\
+Guarded internal routes & Health and diagnostic routes answer only trusted internal sources; the database diagnostic is disabled in production.\\
+\bottomrule
+\end{longtable}
+
+\section{Threats \& Mitigations}
+\begin{longtable}{@{}p{0.34\linewidth} p{0.58\linewidth}@{}}
+\toprule
+\textbf{Threat} & \textbf{Mitigation}\\
+\midrule
+\endhead
+Identity spoofing & Trusted-proxy source check; proxy strips client identity headers.\\
+Cross-site request forgery & Origin/Referer allowlist on mutations; credentialed CORS restricted to known origins.\\
+Request floods / abuse & Global and per-user rate limiting; payload cap.\\
+Untrusted code execution & Sandboxed judging with no network and strict limits (Module~4).\\
+Result tampering & Server-side scoring and violation accounting from persisted state.\\
+Information disclosure & Masked logs; no sensitive data in URLs; restricted internal endpoints.\\
+\bottomrule
+\end{longtable}
+
+\section{Secrets \& Sensitive Material}
+The token-signing secret must meet a minimum strength and is validated at
+startup. Environment files and any service-account keys must never be committed
+to version control. Personal data is kept out of URLs and query strings, and
+emails are masked in security logs.
+
+% =====================================================================
+\chapter{Data Architecture}
+% =====================================================================
+\section{Datastore}
+All application state is persisted in MongoDB via the official driver. A single,
+lazily-initialized client and database handle is shared process-wide; the
+database name is configurable. The store uses \textbf{server-side JSON Schema
+validation}: each collection declares required fields and per-field types, so
+non-conforming documents are rejected \textemdash\ a second line of defence
+behind the application's validation.
+
+\note{Some repository classes carry a legacy \code{Firestore}-prefixed name. The
+authoritative and only datastore is MongoDB; the prefix does not indicate a
+Firestore dependency.}
+
+\section{Persistence Patterns}
+\begin{description}[leftmargin=1.6em,style=nextline]
+  \item[Repository per domain] Each domain's repository is the sole gateway to
+        its collection(s); services depend on interfaces, not the driver.
+  \item[Stable application identifiers] Records carry an application-level
+        identifier in addition to the database identifier; writes are idempotent
+        upserts keyed on it.
+  \item[Denormalized snapshots] Records embed the values they depend on at
+        creation time (e.g. a submission stores the problem's title and
+        difficulty), keeping history stable and reads cheap.
+  \item[Recomputed aggregates] User and problem statistics are recomputed from
+        source submissions on finalization, keeping analytics current without a
+        batch job.
+\end{description}
+
+\section{Collection Map}
+\begin{longtable}{@{}p{0.28\linewidth} p{0.64\linewidth}@{}}
+\toprule
+\textbf{Collection} & \textbf{Contents}\\
+\midrule
+\endhead
+\code{users} & Identity, profile, and denormalized statistics.\\
+\code{problems} & Problem bank with tests, limits, lifecycle, and aggregates.\\
+\code{submissions} & Every code submission (practice or contest) with verdict and snapshots.\\
+\code{leaderboard} & Denormalized ranking projection of user statistics.\\
+\code{contests} & Contest definitions with the embedded question set.\\
+\code{contest\_registrations} & Per-student contest enrolments.\\
+\code{contest\_attempts} & Per-student attempts embedding per-question state.\\
+\code{proctoring\_events} & Immutable log of integrity events during attempts.\\
+\code{contest\_feedback} & One post-contest questionnaire per student per contest; gates results.\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{Data Dictionary}
+% =====================================================================
+This chapter documents the persisted schema of each collection, derived from the
+database's own schema definition. Types are given in general terms; ``opt.''
+marks an optional field.
+
+\section{Collection: \code{users}}
+\begin{xltabular}{\linewidth}{@{}l l X@{}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Meaning}\\
+\midrule
+\endhead
+\code{email} & string & Primary identity (lower-cased).\\
+\code{role} & string & Student or Faculty.\\
+\code{name} & string & Display name.\\
+\code{uid} & string / null & Institutional user id.\\
+\code{isProfileComplete} & bool & Whether onboarding is finished.\\
+\code{designation} & string / null & Faculty designation.\\
+\code{rollNumber} & string / null & Student roll number.\\
+\code{department} & string / null & Academic department.\\
+\code{semester} & int / null & Current semester (drives ``year'').\\
+\code{linkedInUrl}, \code{githubUrl} & string / null & Profile links.\\
+\code{skills} & array & Declared skills.\\
+\code{rating}, \code{score} & int & Difficulty-weighted rating (score mirrors rating).\\
+\code{problemsSolved} & int & Distinct problems accepted.\\
+\code{submissionCount} & int & Finalized problem submissions.\\
+\code{acceptedSubmissionCount} & int & Accepted submissions.\\
+\code{accuracy} & number & Accepted / total, as a percentage.\\
+\code{lastAcceptedAt} & date / null & Timestamp of last accepted solve.\\
+\code{lastLoginAt} & date & Last authenticated access.\\
+\code{createdAt}, \code{updatedAt} & date & Lifecycle timestamps.\\
+\bottomrule
+\end{xltabular}
+
+\section{Collection: \code{problems}}
+\begin{xltabular}{\linewidth}{@{}l l X@{}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Meaning}\\
+\midrule
+\endhead
+\code{id}, \code{slug} & string & Application id and URL-friendly identifier.\\
+\code{title}, \code{topic} & string & Title and primary topic.\\
+\code{statement} & string & Full problem statement.\\
+\code{inputFormat}, \code{outputFormat} & string & I/O format descriptions.\\
+\code{constraints} & array & Constraint lines.\\
+\code{explanation} & string & Worked explanation.\\
+\code{examples} & array & Displayed examples (input, output, explanation, hidden).\\
+\code{difficulty} & string & Easy / Medium / Hard.\\
+\code{tags} & array & Topical tags.\\
+\code{timeLimit(Seconds)} & int & Per-run CPU time limit.\\
+\code{memoryLimit(Mb)} & int & Per-run memory limit.\\
+\code{lifecycleState} & string & Draft / Published / Archived.\\
+\code{approved} & bool & Editorial approval flag.\\
+\code{targetDepartment} & string / null & Department targeting (null = open).\\
+\code{createdBy}, \code{createdByRole} & string & Authoring faculty and role.\\
+\code{totalSubmissions}, \code{acceptedSubmissions} & int & Finalized and accepted counts.\\
+\code{acceptanceRate} & number & Acceptance percentage.\\
+\code{sampleTestCases} & array & Visible tests.\\
+\code{hiddenTestCases} & array & Hidden judging tests.\\
+\code{createdAt}, \code{updatedAt} & date & Lifecycle timestamps.\\
+\bottomrule
+\end{xltabular}
+
+\section{Collection: \code{submissions}}
+\begin{xltabular}{\linewidth}{@{}l l X@{}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Meaning}\\
+\midrule
+\endhead
+\code{id} & string & Application id.\\
+\code{sourceType} & string & Practice problem or contest coding.\\
+\code{userEmail}, \code{userRole}, \code{userDepartment} & string & Submitter snapshot.\\
+\code{resourceOwnerEmail} & string & Owning faculty (visibility control).\\
+\code{resourceTargetDepartment} & string / null & Target department snapshot.\\
+\code{problemId} & string & Problem or contest-question id.\\
+\code{problemTitleSnapshot} & string & Title at submission time.\\
+\code{problemDifficultySnapshot} & string & Difficulty at submission time.\\
+\code{contestId}, \code{contestTitleSnapshot}, \code{contestQuestionId} & string / null & Contest context, if any.\\
+\code{code} & string & Submitted source.\\
+\code{language} & string & Submission language.\\
+\code{status} & string & Verdict.\\
+\code{runtimeMs}, \code{memoryKb} & int & Measured runtime and memory.\\
+\code{passedCount}, \code{totalCount} & int & Tests passed / total.\\
+\code{executionProvider} & string & Judge0 or stub.\\
+\code{ratingAwarded} & int & Rating granted (first accept only).\\
+\code{stdout}, \code{stderr} & string / null & Captured output / diagnostics.\\
+\code{queueJobId} & string / null & Queue job id.\\
+\code{createdAt}, \code{updatedAt} & date & Lifecycle timestamps.\\
+\code{judgedAt} & date & When judging completed.\\
+\code{finalizationAppliedAt} & date & Idempotency guard for finalization.\\
+\bottomrule
+\end{xltabular}
+
+\section{Collection: \code{contests}}
+\begin{xltabular}{\linewidth}{@{}l l X@{}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Meaning}\\
+\midrule
+\endhead
+\code{id}, \code{title} & string & Application id and title.\\
+\code{type} & string & Rated or Practice.\\
+\code{lifecycleState} & string & Published.\\
+\code{startAt}, \code{endAt} & date & Contest window.\\
+\code{durationMinutes} & int & Per-attempt duration.\\
+\code{registrationOpenAt}, \code{registrationCloseAt} & date & Registration window.\\
+\code{resultsPublished} & bool & Whether results are revealed.\\
+\code{targetDepartment} & string & Eligibility department.\\
+\code{maxViolations} & int & Auto-submit violation threshold.\\
+\code{createdBy}, \code{createdByRole} & string & Authoring faculty and role.\\
+\code{questions} & array & Embedded question set (see below).\\
+\code{createdAt}, \code{updatedAt} & date & Lifecycle timestamps.\\
+\bottomrule
+\end{xltabular}
+
+\noindent Each embedded \emph{coding} question carries an id, type, points, title,
+difficulty, statement, constraints, input/output formats, time and memory limits,
+sample and hidden test cases, and supported languages. Objective (MCQ/MSQ)
+questions carry a statement, options, and the correct answer(s).
+
+\section{Collection: \code{contest\_attempts}}
+\begin{xltabular}{\linewidth}{@{}l l X@{}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Meaning}\\
+\midrule
+\endhead
+\code{id}, \code{contestId} & string & Attempt and contest ids.\\
+\code{contestTitleSnapshot} & string & Contest title at start.\\
+\code{userEmail}, \code{userName}, \code{userUid}, \code{userDepartment} & string & Student snapshot.\\
+\code{status} & string & Active / Submitted / Auto-submitted / \ldots\\
+\code{score} & int & Awarded points minus penalties.\\
+\code{violationCount}, \code{violationPenaltyPoints} & int & Violations and deductions.\\
+\code{timeTakenMs} & int & Elapsed time to terminal state.\\
+\code{startedAt}, \code{deadlineAt} & date & Start and frozen personal deadline.\\
+\code{submittedAt}, \code{autoSubmittedAt}, \code{lastSolvedAt} & date / null & Terminal and solve timestamps.\\
+\code{updatedAt} & date & Last mutation.\\
+\code{questionStates} & array & Per-question progress (below).\\
+\bottomrule
+\end{xltabular}
+
+\noindent Each \code{questionStates} entry holds the question id and type, a
+status, attempts count, awarded points, the submitted answer or draft code, the
+last submission pointer, pass counts, final language/status/runtime/memory, and a
+solved timestamp.
+
+\section{Collections: \code{contest\_registrations}, \code{proctoring\_events}, \code{contest\_feedback}}
+\begin{xltabular}{\linewidth}{@{}l l X@{}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Meaning}\\
+\midrule
+\endhead
+\code{registrations.*} & mixed & Registration id, contest id, student snapshot, and registration time.\\
+\code{proctoring.type} & string & Event type (tab switch, fullscreen exit, screenshot, \ldots).\\
+\code{proctoring.details} & string & Human-readable detail.\\
+\code{proctoring.*} & mixed & Event id, contest/attempt ids, student, and timestamp.\\
+\code{feedback.navigationEase} & int (1--5) & Navigation ease rating.\\
+\code{feedback.visualDesignRating} & int (1--5) & Visual design rating.\\
+\code{feedback.interfaceReadability} & enum & Yes / No / Need improvement.\\
+\code{feedback.editorResponsiveness} & int (1--5) & Editor responsiveness.\\
+\code{feedback.compilationLag} & int (1--5) & Perceived compile latency.\\
+\code{feedback.errorMessageClarity} & int (1--5) & Error-message clarity.\\
+\code{feedback.problemStatementClarity} & enum & Yes / No / Needs improvement.\\
+\code{feedback.bugsOrBrokenLinks} & string & Free-text bug report.\\
+\code{feedback.oneNewFeature} & string & One requested feature.\\
+\code{feedback.recommendLikelihood} & int (1--5) & Likelihood to recommend.\\
+\code{feedback.overallRating} & int (1--5) / null & Optional overall rating.\\
+\bottomrule
+\end{xltabular}
+
+% =====================================================================
+\chapter{Data Integrity, Privacy \& Lifecycle}
+% =====================================================================
+\section{Integrity Mechanisms}
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Schema validation} rejects malformed documents at the database.
+  \item \textbf{Idempotent finalization} ensures a verdict is applied once and
+        aggregates stay consistent under retries.
+  \item \textbf{Server-side scoring} guarantees results reflect persisted state,
+        not client claims.
+\end{itemize}
+
+\section{Privacy Handling}
+Personal data is confined to what the platform needs (identity, profile,
+academic details) and is never placed in URLs or query strings. Logs mask email
+addresses. Access to another user's data is restricted to faculty and to
+resources they own. Data-retention and consent documentation is identified as
+future work in Module~7.
+
+\section{Backup \& Retention (current \& planned)}
+The current build relies on the operational database's own durability. An
+explicit indexing, backup/restore, and archival strategy for large historical
+datasets is recorded as future work in Module~7.
+
+% =====================================================================
+\chapter{Security Summary}
+% =====================================================================
+\section{Assurance Summary}
+\begin{longtable}{@{}p{0.34\linewidth} p{0.58\linewidth}@{}}
+\toprule
+\textbf{Property} & \textbf{Basis of assurance}\\
+\midrule
+\endhead
+Authentication & Federated SSO; trusted-proxy source verification; active-status check.\\
+Authorization & Role guards plus service-layer ownership/visibility checks.\\
+Confidentiality & Restricted internal endpoints; masked logs; no data in URLs.\\
+Integrity & Server-side scoring; schema validation; idempotent finalization.\\
+Availability & Rate limiting; payload caps; resilience mechanisms (Modules~2, 4, 5).\\
+\bottomrule
+\end{longtable}
+
+\section{Residual Risks}
+Browser-based proctoring cannot control external cameras or a second device;
+these are accepted risks addressed by invigilation and future integrations
+(Modules~6 and~7). Observability is currently console-based; structured logging
+and alerting are future work.
+
+\vspace{0.6cm}
+\begin{center}
+\textit{--- End of Module 3. Continued in Module 4: Problems, Submissions \& Code Execution Engine. ---}
+\end{center}
+\end{document}

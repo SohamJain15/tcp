@@ -1,0 +1,375 @@
+% =====================================================================
+%  TCET CODING PLATFORM -- Official Technical Documentation
+%  MODULE 4 of 7 : Problems, Submissions & Code Execution Engine
+%  STANDALONE FILE.  Compile: pdflatex Module4_Execution.tex  (twice)
+% =====================================================================
+\documentclass[12pt,a4paper,oneside]{report}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{mathptmx}\usepackage{microtype}\usepackage{graphicx}\usepackage{xcolor}
+\usepackage{tabularx}\usepackage{booktabs}\usepackage{longtable}\usepackage{xltabular}
+\usepackage{array}\usepackage{enumitem}\usepackage{listings}\usepackage{titlesec}
+\usepackage{fancyhdr}\usepackage{parskip}\usepackage[hidelinks]{hyperref}
+\definecolor{tcetblue}{RGB}{0,0,0}\definecolor{tcetaccent}{RGB}{0,0,0}
+\definecolor{codebg}{RGB}{245,246,248}\definecolor{codeframe}{RGB}{215,219,225}
+\definecolor{codekw}{RGB}{0,0,0}\definecolor{codecomment}{RGB}{0,0,0}
+\definecolor{codestr}{RGB}{0,0,0}\definecolor{boxframe}{RGB}{0,0,0}
+\hypersetup{colorlinks=true,linkcolor=tcetblue,urlcolor=tcetaccent,citecolor=tcetblue,
+  pdftitle={TCET Coding Platform -- Module 4: Execution Engine},pdfauthor={Centre of Excellence, TCET}}
+\lstdefinestyle{tcp}{backgroundcolor=\color{codebg},basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{codekw}\bfseries,commentstyle=\color{codecomment}\itshape,
+  stringstyle=\color{codestr},numberstyle=\tiny\color{gray},frame=single,
+  rulecolor=\color{codeframe},breaklines=true,showstringspaces=false,tabsize=2,
+  columns=fullflexible,keepspaces=true,xleftmargin=0.6em,framexleftmargin=0.6em}
+\lstset{style=tcp}
+\newcommand{\code}[1]{\texttt{#1}}
+\newenvironment{callout}[1]{\par\vspace{4pt}\noindent
+  \begin{tabular}{@{}p{0.014\linewidth}@{\hspace{0.6em}}p{0.93\linewidth}@{}}
+  \textcolor{boxframe}{\rule{2pt}{\baselineskip}} & \textbf{\textcolor{tcetblue}{#1}}\\[2pt] & }{\end{tabular}\par\vspace{6pt}}
+\titleformat{\chapter}[display]{\bfseries\fontsize{18}{22}\selectfont}{\bfseries\fontsize{14}{17}\selectfont Chapter \thechapter}{0.2em}{}
+\titlespacing*{\chapter}{0pt}{6pt}{22pt}
+\titleformat{\section}{\bfseries\fontsize{16}{19}\selectfont}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\bfseries\fontsize{14}{17}\selectfont}{\thesubsection}{0.5em}{}
+\pagestyle{fancy}\fancyhf{}\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[L]{\small\itshape TCET Coding Platform}\fancyhead[R]{\small\itshape Module 4 \textbullet\ Execution}
+\fancyfoot[C]{\thepage}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}}
+\newcommand{\note}[1]{\par\vspace{3pt}\noindent{\color{tcetaccent}\textbf{Note.}}~#1\par\vspace{3pt}}
+\begin{document}
+\begin{titlepage}\centering
+\vspace*{1.4cm}{\color{tcetaccent}\rule{\linewidth}{1.2pt}}\\[0.5cm]
+{\LARGE\bfseries TCET Coding Platform\par}
+\vspace{0.4cm}{\Large Official Technical Documentation\par}{\large Draft~1 \textemdash\ Testing Phase\par}
+{\color{tcetaccent}\rule{\linewidth}{1.2pt}}\\[1.4cm]
+{\Huge\bfseries\color{tcetblue} Module 4\par}\vspace{0.3cm}
+{\Huge Problems, Submissions \&\\[0.2cm] Code Execution Engine\par}\vspace{2.0cm}
+{\large\bfseries Powered by\par}{\Large\color{tcetblue} Centre of Excellence (CoE), TCET\par}\vfill
+\begin{tabular}{rl}\textbf{Module} & 4 of 7\\[3pt]
+\textbf{Scope} & Problem bank, judging pipeline, sandbox, wrapping\\[3pt]
+\textbf{Status} & Draft~1 (living document until Stage~2)\\[3pt]
+\textbf{Audience} & Engineering, Officials\\\end{tabular}
+\vspace{0.8cm}{\small\itshape \today\par}\end{titlepage}
+\pagenumbering{roman}\tableofcontents\clearpage\pagenumbering{arabic}
+
+% =====================================================================
+\chapter{Overview}
+% =====================================================================
+\section{Scope of this Module}
+This module specifies the core practice loop: how problems are authored and made
+visible, how a submission travels from the editor to a graded verdict, and how
+the sandboxed execution engine compiles and judges untrusted code across many
+languages. It also specifies how ratings and statistics are derived and how the
+pipeline recovers from failure.
+
+\section{Key Concepts}
+\begin{longtable}{@{}p{0.24\linewidth} p{0.68\linewidth}@{}}
+\toprule
+\textbf{Concept} & \textbf{Meaning}\\
+\midrule
+\endhead
+Problem & An authored programming task with statement, limits, and tests.\\
+Sample test & A visible test used by Run for immediate feedback.\\
+Hidden test & A non-visible test used together with samples to judge Submit.\\
+Run & Synchronous execution against samples only; unscored.\\
+Submit & Asynchronous, queued execution against all tests; graded.\\
+Verdict & The normalized outcome status of an execution.\\
+Finalization & The one-time application of a verdict and its side effects.\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{The Problem Bank}
+% =====================================================================
+\section{Problem Lifecycle}
+Every problem moves through a three-state lifecycle controlled by faculty.
+\begin{longtable}{@{}p{0.20\linewidth} p{0.72\linewidth}@{}}
+\toprule
+\textbf{State} & \textbf{Meaning}\\
+\midrule
+\endhead
+Draft & Authored but invisible to students; freely editable.\\
+Published & Live and visible to eligible students.\\
+Archived & Retired; retained for history but not offered to students.\\
+\bottomrule
+\end{longtable}
+
+\section{Visibility Rules}
+A student sees a problem only if it is Published and either open to all
+departments or targeted at the student's own department. Faculty management views
+expose problems in any state to their owners. These rules are enforced in the
+service layer, not merely in the UI.
+
+\section{Problem Definition}
+A problem carries a rich statement (statement, input format, output format,
+constraints), a difficulty (Easy/Medium/Hard), tags, and per-problem resource
+limits (CPU time and memory). It defines two sets of test cases: \emph{sample}
+tests shown to students and used by Run, and \emph{hidden} tests used together
+with samples to judge a Submit.
+
+\begin{callout}{Why sample and hidden tests are separated}
+Sample tests give students fast, honest feedback while they work. Hidden tests
+prevent a solution from being hard-coded to the visible cases, so a passing
+Submit reflects a genuinely general solution.
+\end{callout}
+
+% =====================================================================
+\chapter{Submission Modes}
+% =====================================================================
+\section{Run vs. Submit}
+\begin{longtable}{@{}p{0.14\linewidth} p{0.78\linewidth}@{}}
+\toprule
+\textbf{Mode} & \textbf{Behaviour}\\
+\midrule
+\endhead
+Run & Synchronous. Executes against sample tests and returns immediate feedback. Rate limited. Awards nothing.\\
+Submit & Asynchronous. Persists a submission, enqueues it, and returns a receipt. A worker later runs the code against all tests and finalizes the verdict.\\
+\bottomrule
+\end{longtable}
+
+\section{The Submit Pipeline}
+\begin{lstlisting}[language={}]
+1. Client sends code + language + problemId.
+2. Service validates problem visibility; ensures the user record exists.
+3. A submission is persisted with status QUEUED and the full test count.
+4. The submission id is enqueued; the job id is stored.
+   (If enqueue fails, the submission is marked errored immediately.)
+5. Client receives a receipt and polls for the result.
+6. A worker picks up the job -> status RUNNING.
+7. The execution provider runs the code against all tests.
+8. Finalization writes the verdict and, for practice submissions, recomputes
+   user and problem aggregates and the leaderboard.
+\end{lstlisting}
+
+\section{Idempotent Finalization}
+Finalization is guarded so a verdict is applied at most once: a submission that
+already carries a finalization marker and a terminal status is returned
+unchanged. This makes the pipeline safe against duplicate delivery, retries, and
+the stale-recovery re-enqueue path.
+
+\section{Polling Model}
+Because Submit is asynchronous, the client polls the submission endpoint until a
+terminal status is observed. The server returns the current status on each poll;
+the verdict, runtime, memory, pass counts, and diagnostics become available once
+judging finalizes.
+
+% =====================================================================
+\chapter{Rating \& Statistics}
+% =====================================================================
+\section{First-Solve Rating}
+Rating points are awarded only for the \emph{first} accepted submission per
+problem, weighted by difficulty. Re-solving an already-solved problem awards
+nothing further. This rewards breadth of solved problems rather than repeated
+submissions.
+
+\section{Recomputed Aggregates}
+On finalizing a practice submission the platform recomputes, from the user's
+submissions and the problem's submissions:
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{User:} rating, score, problems solved, submission count, accepted
+        count, accuracy, and last-accepted time.
+  \item \textbf{Problem:} total submissions, accepted submissions, and acceptance
+        rate.
+  \item \textbf{Leaderboard:} a denormalized entry for fast ranking.
+\end{itemize}
+
+\note{Only practice submissions contribute to a user's public rating and
+accuracy. Contest coding submissions are graded within the contest and do not
+inflate the global practice rating.}
+
+\section{Analytics Derived}
+From the same submission history the platform derives per-user analytics:
+difficulty breakdown of solved problems, language-usage breakdown, an activity
+heatmap over time, and recent accepted activity. These power the student profile
+and the faculty view of a student.
+
+% =====================================================================
+\chapter{The Execution Engine}
+% =====================================================================
+\section{Provider Abstraction}
+Execution is abstracted behind an execution-provider interface with two
+operations: run against samples and execute against all tests. Two
+implementations exist.
+\begin{longtable}{@{}p{0.26\linewidth} p{0.66\linewidth}@{}}
+\toprule
+\textbf{Provider} & \textbf{Use}\\
+\midrule
+\endhead
+Judge0 provider & Production; delegates to a Judge0 instance.\\
+Stub provider & Deterministic stand-in for tests and offline development.\\
+\bottomrule
+\end{longtable}
+
+\section{Sandboxing}
+Judge0 runs each execution inside an \code{isolate} sandbox with \emph{no network
+access} and strict CPU-time and memory limits. Untrusted student code therefore
+cannot reach the network, exceed its resource budget, or affect the host.
+
+\begin{callout}{Containment first}
+The execution engine treats every submission as hostile. Network is disabled,
+resources are bounded, and each run is isolated, so even deliberately malicious
+code is confined to a disposable sandbox.
+\end{callout}
+
+\section{Language Resolution}
+The provider resolves the concrete language runtime dynamically: it queries the
+live language list and selects a preferred version by name, then by name hints,
+then by a curated fallback identifier. Separate fallback sets exist for a local
+and a cloud execution backend, so the correct runtime is chosen in either
+deployment.
+
+\section{Fair Limits Across Languages}
+Interpreted and virtual-machine languages are inherently slower and heavier than
+compiled ones. The provider applies per-language CPU-time and memory multipliers
+so that, for example, an interpreted language is given proportionally more
+wall-clock and memory than C or C++, subject to an absolute ceiling. This yields
+fair judging across a diverse language set.
+
+\section{Chunked Judging with Short-Circuit}
+For a full submission the provider runs a compilation preflight and then executes
+test cases in small parallel chunks, stopping as soon as a non-accepted result
+appears. A failing solution is therefore not run against every remaining test,
+which conserves execution capacity under load.
+
+\section{Verdict Normalization \& Aggregation}
+Raw execution outcomes are mapped to a normalized status set, and a multi-test
+submission is reduced to a single verdict by priority.
+\begin{longtable}{@{}p{0.30\linewidth} p{0.62\linewidth}@{}}
+\toprule
+\textbf{Status} & \textbf{Meaning}\\
+\midrule
+\endhead
+Accepted & All executed tests passed.\\
+Wrong answer & Output did not match on at least one test.\\
+Time-limit exceeded & A test exceeded its time budget.\\
+Compilation error & The program failed to compile.\\
+Runtime error & The program crashed or exited abnormally.\\
+Internal error & An infrastructure failure occurred.\\
+\bottomrule
+\end{longtable}
+
+\noindent The final status is chosen by priority (compilation error dominates,
+then runtime error, then time-limit, then wrong answer, then accepted), with
+internal error dominating if any infrastructure failure occurred; the most
+informative diagnostic is surfaced to the user, along with aggregate pass count,
+worst-case runtime, and peak memory.
+
+% =====================================================================
+\chapter{Language Support \& Automatic Wrapping}
+% =====================================================================
+\section{Supported Languages}
+The platform supports 20+ executable languages (including C, C++, Java, Python,
+JavaScript, TypeScript, Go, Rust, C\#, PHP, Ruby, Kotlin, Swift, Dart, Scala,
+Elixir, Erlang, and Assembly) plus three editor-only languages (HTML, CSS, React)
+that are never sent to the judge. Aliases exist \textemdash\ for instance Arduino
+compiles as C++, and a ``vanilla'' variant runs as JavaScript.
+
+\section{The Code Wrapper}
+A distinctive feature lets students write function-style, class-based solutions
+without a main entry point. When a submission defines a solution class but no
+entry point, the platform synthesizes one:
+\begin{itemize}[leftmargin=1.5em]
+  \item It detects the target method by scanning the class body, ignoring
+        constructors and reserved names.
+  \item It generates an entry point that instantiates the solution, invokes the
+        method, and prints the result using a language-specific formatter that
+        renders booleans, arrays/lists, pairs, and maps consistently.
+  \item Wrappers exist for the major languages; others pass through unchanged.
+\end{itemize}
+If the student already provides an entry point, their program is used verbatim.
+This dual behaviour supports both function-style and full-program problems from
+the same editor, and it behaves identically for practice and contest submissions.
+
+\begin{callout}{Consistent output formatting}
+Because the generated wrapper formats results uniformly across languages, the
+same logical answer prints the same way whether the student wrote Python, Java,
+or C++, so a single expected-output test judges all languages fairly.
+\end{callout}
+
+\section{Editor-Only Languages}
+HTML, CSS, and React exist for authoring and preview contexts and are explicitly
+blocked from execution: the engine refuses to send them to the judge, so they can
+never consume sandbox capacity or be mistaken for executable submissions.
+
+% =====================================================================
+\chapter{Failure Handling \& Recovery}
+% =====================================================================
+\section{Failure Modes \& Responses}
+\begin{longtable}{@{}p{0.30\linewidth} p{0.62\linewidth}@{}}
+\toprule
+\textbf{Failure} & \textbf{Response}\\
+\midrule
+\endhead
+Enqueue failure & The submission is finalized as an internal error immediately, never left pending.\\
+Worker exception & The submission is finalized as an internal error rather than left running.\\
+Judge transient error & Retried automatically with backoff via the queue.\\
+Worker crash mid-job & Stale recovery re-enqueues the stuck submission.\\
+\bottomrule
+\end{longtable}
+
+\section{Stale-Submission Recovery}
+Submissions left pending past a staleness threshold, and not yet finalized, are
+re-enqueued by a recovery routine. This guards against a worker that died
+mid-judging, so no student's submission is permanently stranded.
+
+\section{Idempotency Guarantees}
+Every recovery and retry path is safe because finalization is idempotent: a
+submission that has already been finalized is returned unchanged rather than
+re-judged, so aggregates and ratings cannot be double-counted.
+
+% =====================================================================
+\chapter{End-to-End Walkthroughs}
+% =====================================================================
+\section{Walkthrough: Accepted Practice Submission}
+\begin{enumerate}[leftmargin=1.6em]
+  \item A student writes a solution and presses Run; sample tests pass.
+  \item The student presses Submit; a submission is persisted and queued.
+  \item A worker judges the submission against all tests; every test passes.
+  \item The verdict is finalized as accepted; because it is the first acceptance
+        of this problem, difficulty-weighted rating is awarded.
+  \item The student's analytics and the leaderboard update.
+\end{enumerate}
+
+\section{Walkthrough: Failing Submission}
+\begin{enumerate}[leftmargin=1.6em]
+  \item The student submits a solution that fails a hidden test.
+  \item The worker judges in chunks and stops at the first non-accepted test.
+  \item The verdict is finalized as wrong answer with a diagnostic; no rating is
+        awarded; accuracy reflects the attempt.
+\end{enumerate}
+
+\section{Walkthrough: Infrastructure Hiccup}
+\begin{enumerate}[leftmargin=1.6em]
+  \item A submission is queued but the worker crashes mid-judging.
+  \item The submission remains pending past the staleness threshold.
+  \item Stale recovery re-enqueues it; a healthy worker judges it to completion.
+  \item Finalization applies exactly once thanks to the idempotency guard.
+\end{enumerate}
+
+% =====================================================================
+\chapter{Design Rationale \& Summary}
+% =====================================================================
+\section{Why this Design}
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Asynchial judging} keeps the platform responsive under mass load.
+  \item \textbf{Sandboxing} makes running untrusted code safe by default.
+  \item \textbf{Per-language limits} keep judging fair across runtimes.
+  \item \textbf{Short-circuit judging} conserves capacity for failing solutions.
+  \item \textbf{Idempotent finalization} makes retries and recovery safe.
+  \item \textbf{The wrapper} lowers the barrier to entry for students while
+        keeping judging consistent.
+\end{itemize}
+
+\section{Module Summary}
+The execution engine turns a student's code into a fair, safe, and reproducible
+verdict. Submissions are accepted instantly, judged asynchronously inside a
+sandbox against sample and hidden tests, normalized to a consistent verdict,
+and finalized exactly once, updating ratings and analytics for practice work.
+The same engine underpins contest coding questions, which are governed by the
+contest engine described in Module~5.
+
+\vspace{0.6cm}
+\begin{center}
+\textit{--- End of Module 4. Continued in Module 5: Contest \& Assessment Engine. ---}
+\end{center}
+\end{document}

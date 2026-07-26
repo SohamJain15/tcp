@@ -1,0 +1,397 @@
+% =====================================================================
+%  TCET CODING PLATFORM -- Official Technical Documentation
+%  MODULE 5 of 7 : Contest & Assessment Engine
+%  STANDALONE FILE.  Compile: pdflatex Module5_Contest.tex  (twice)
+% =====================================================================
+\documentclass[12pt,a4paper,oneside]{report}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{mathptmx}\usepackage{microtype}\usepackage{graphicx}\usepackage{xcolor}
+\usepackage{tabularx}\usepackage{booktabs}\usepackage{longtable}\usepackage{xltabular}
+\usepackage{array}\usepackage{enumitem}\usepackage{listings}\usepackage{titlesec}
+\usepackage{fancyhdr}\usepackage{parskip}\usepackage[hidelinks]{hyperref}
+\definecolor{tcetblue}{RGB}{0,0,0}\definecolor{tcetaccent}{RGB}{0,0,0}
+\definecolor{codebg}{RGB}{245,246,248}\definecolor{codeframe}{RGB}{215,219,225}
+\definecolor{codekw}{RGB}{0,0,0}\definecolor{codecomment}{RGB}{0,0,0}
+\definecolor{codestr}{RGB}{0,0,0}\definecolor{boxframe}{RGB}{0,0,0}
+\hypersetup{colorlinks=true,linkcolor=tcetblue,urlcolor=tcetaccent,citecolor=tcetblue,
+  pdftitle={TCET Coding Platform -- Module 5: Contest Engine},pdfauthor={Centre of Excellence, TCET}}
+\lstdefinestyle{tcp}{backgroundcolor=\color{codebg},basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{codekw}\bfseries,commentstyle=\color{codecomment}\itshape,
+  stringstyle=\color{codestr},numberstyle=\tiny\color{gray},frame=single,
+  rulecolor=\color{codeframe},breaklines=true,showstringspaces=false,tabsize=2,
+  columns=fullflexible,keepspaces=true,xleftmargin=0.6em,framexleftmargin=0.6em}
+\lstset{style=tcp}
+\newcommand{\code}[1]{\texttt{#1}}
+\newenvironment{callout}[1]{\par\vspace{4pt}\noindent
+  \begin{tabular}{@{}p{0.014\linewidth}@{\hspace{0.6em}}p{0.93\linewidth}@{}}
+  \textcolor{boxframe}{\rule{2pt}{\baselineskip}} & \textbf{\textcolor{tcetblue}{#1}}\\[2pt] & }{\end{tabular}\par\vspace{6pt}}
+\titleformat{\chapter}[display]{\bfseries\fontsize{18}{22}\selectfont}{\bfseries\fontsize{14}{17}\selectfont Chapter \thechapter}{0.2em}{}
+\titlespacing*{\chapter}{0pt}{6pt}{22pt}
+\titleformat{\section}{\bfseries\fontsize{16}{19}\selectfont}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\bfseries\fontsize{14}{17}\selectfont}{\thesubsection}{0.5em}{}
+\pagestyle{fancy}\fancyhf{}\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[L]{\small\itshape TCET Coding Platform}\fancyhead[R]{\small\itshape Module 5 \textbullet\ Contest Engine}
+\fancyfoot[C]{\thepage}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}}
+\newcommand{\note}[1]{\par\vspace{3pt}\noindent{\color{tcetaccent}\textbf{Note.}}~#1\par\vspace{3pt}}
+\begin{document}
+\begin{titlepage}\centering
+\vspace*{1.4cm}{\color{tcetaccent}\rule{\linewidth}{1.2pt}}\\[0.5cm]
+{\LARGE\bfseries TCET Coding Platform\par}
+\vspace{0.4cm}{\Large Official Technical Documentation\par}{\large Draft~1 \textemdash\ Testing Phase\par}
+{\color{tcetaccent}\rule{\linewidth}{1.2pt}}\\[1.4cm]
+{\Huge\bfseries\color{tcetblue} Module 5\par}\vspace{0.3cm}
+{\Huge Contest \& Assessment Engine\par}\vspace{2.2cm}
+{\large\bfseries Powered by\par}{\Large\color{tcetblue} Centre of Excellence (CoE), TCET\par}\vfill
+\begin{tabular}{rl}\textbf{Module} & 5 of 7\\[3pt]
+\textbf{Scope} & Contests, deferred grading, finalization, feedback\\[3pt]
+\textbf{Status} & Draft~1 (living document until Stage~2)\\[3pt]
+\textbf{Audience} & Officials, Faculty, Engineering\\\end{tabular}
+\vspace{0.8cm}{\small\itshape \today\par}\end{titlepage}
+\pagenumbering{roman}\tableofcontents\clearpage\pagenumbering{arabic}
+
+% =====================================================================
+\chapter{Overview}
+% =====================================================================
+\section{The Role of the Contest Engine}
+The contest engine is the platform's most sophisticated subsystem. It powers
+timed, proctored examinations that mix objective and coding questions, enforces
+per-student attempt windows, and grades everyone fairly and reproducibly \textemdash\
+even when students disconnect mid-examination. This module specifies its
+lifecycle, its deferred-grading philosophy, its finalization guarantees, the
+post-contest feedback gate, and the standings and review facilities.
+
+\section{Entities}
+\begin{longtable}{@{}p{0.24\linewidth} p{0.68\linewidth}@{}}
+\toprule
+\textbf{Entity} & \textbf{Meaning}\\
+\midrule
+\endhead
+Contest & A timed assessment with a window, per-attempt duration, question set, and violation limit.\\
+Registration & A student's enrolment, required before attempting.\\
+Attempt & A single student's run with its own frozen deadline and per-question state.\\
+Question & An MCQ, MSQ, or Coding item.\\
+Proctoring event & A logged integrity event (Module~6).\\
+Feedback & A post-contest questionnaire that gates a student's results.\\
+Standing & A ranked entry in the published results.\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{Contest Configuration}
+% =====================================================================
+\section{Two Notions of Time}
+A contest distinguishes the \emph{contest window} from the \emph{attempt
+duration}.
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Contest window} (start to end) \textemdash\ the period during
+        which the contest is Live and attempts may be started.
+  \item \textbf{Attempt duration} \textemdash\ the length of a single student's
+        attempt, always capped by the contest end.
+\end{itemize}
+
+\section{Additional Configuration}
+A contest also carries a \emph{registration window}, a \emph{type} (Rated or
+Practice), an optional \emph{target department} for eligibility, and a
+\emph{maximum violations} threshold. Windows are validated for coherence on
+create and update: the end must follow the start, the per-attempt duration cannot
+exceed the window, and registration cannot close after the contest ends.
+
+\section{Computed Status}
+A contest's status is derived from the clock, never stored.
+\begin{longtable}{@{}p{0.20\linewidth} p{0.72\linewidth}@{}}
+\toprule
+\textbf{Status} & \textbf{Condition}\\
+\midrule
+\endhead
+Upcoming & The current time is before the start.\\
+Live & The current time is within the window.\\
+Ended & The current time is after the end.\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{Attempt Lifecycle}
+% =====================================================================
+\section{States}
+\begin{lstlisting}[language={}]
+REGISTER  (registration open, department eligible)
+   |
+START     (contest Live, registered) -> status ACTIVE
+   |   deadlineAt = min(startedAt + duration, contest end)   [frozen]
+   v
+ANSWER / SAVE DRAFT / SUBMIT CODE     (repeatable; nothing scored)
+   |
+   +--> SUBMIT (student)              -> SUBMITTED
+   +--> DEADLINE PASSES               -> AUTO_SUBMITTED
+   +--> VIOLATION LIMIT REACHED       -> AUTO_SUBMITTED
+   v
+FINALIZE  (auto-submit drafts; grade from saved answers)
+   |
+PUBLISH (faculty) -> authoritative re-grade; results gated by feedback
+\end{lstlisting}
+
+\section{One Attempt per Student}
+A student holds at most one attempt per contest; starting again returns the
+existing attempt. A student who has started an attempt can no longer withdraw
+their registration.
+
+\section{The Frozen Personal Deadline}
+The deadline is frozen when the attempt starts, as the earlier of the
+per-attempt duration from now and the contest end. A student who starts late
+receives only the time remaining in the window, never a full duration that would
+run past the contest end.
+
+\begin{callout}{Why freeze the deadline}
+Freezing the deadline at start makes every downstream decision \textemdash\
+whether a save is in time, when to auto-submit, how to grade an abandoned
+attempt \textemdash\ unambiguous and reproducible, because it is computed against
+a fixed instant rather than a moving target.
+\end{callout}
+
+% =====================================================================
+\chapter{Question Types}
+% =====================================================================
+\section{The Three Types}
+\begin{longtable}{@{}p{0.16\linewidth} p{0.76\linewidth}@{}}
+\toprule
+\textbf{Type} & \textbf{Grading}\\
+\midrule
+\endhead
+MCQ & Single correct option; full points if the saved answer equals the correct option.\\
+MSQ & Multiple correct options; full points only if the saved set matches exactly.\\
+Coding & Sandboxed judging against sample and hidden tests; points proportional to passed tests, full ``solved'' only on an all-pass acceptance.\\
+\bottomrule
+\end{longtable}
+
+\section{Coding Question Definition}
+Coding questions embed their own statement, constraints, formats, resource
+limits, supported languages, and both sample and hidden test cases; at least one
+hidden test case is required. They are judged by the same execution engine
+described in Module~4, but accounted within the contest.
+
+% =====================================================================
+\chapter{The Deferred-Grading Model}
+% =====================================================================
+\section{Nothing is Scored Live}
+The single most important integrity property of the engine is that nothing is
+scored during a live contest.
+\begin{itemize}[leftmargin=1.5em]
+  \item Saving an objective answer records it but never reveals correctness; the
+        student may change it freely.
+  \item Submitting code enqueues it and records a verdict for feedback, but
+        awards zero points and never marks the question solved while the contest
+        is live.
+  \item A student's score, correctness, the correct answers, and their rank are
+        revealed only when faculty publishes results \textemdash\ and then only
+        after the student submits the feedback questionnaire.
+\end{itemize}
+
+\begin{callout}{The integrity dividend}
+Because correctness is invisible during the contest, a student cannot use the
+platform itself as an oracle \textemdash\ trying answers until one ``lights up.''
+This closes a channel that undermines many naive online-assessment designs.
+\end{callout}
+
+\section{Finalization \& Scoring}
+Grading is centralized in a single deterministic, idempotent routine that can run
+safely at submit, at auto-submit, and again at publish, always yielding the same
+result.
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Objective questions} are graded from the saved answer:
+        exact-match for MCQ, exact-set-match for MSQ.
+  \item \textbf{Coding questions} are scored from the latest judged submission's
+        pass count \textemdash\ points proportional to the fraction of tests
+        passed, with a full-pass acceptance marking the question solved. An
+        earlier solved time is never cleared.
+  \item \textbf{Attempt score} is the sum of awarded points minus a violation
+        penalty, floored at zero.
+\end{itemize}
+Coding scoring is defined once and shared by both the publish-time grading pass
+and the asynchronous judge, so the two paths can never diverge.
+
+\section{Auto-Submission of Drafts}
+Students' editor content is auto-saved as a draft. When an attempt ends by
+\emph{any} route \textemdash\ manual submit, deadline expiry, violation limit, or
+closing the tab \textemdash\ any pending draft that differs from the last
+submitted code is automatically submitted for judging, so nothing a student wrote
+is discarded. Untouched starter templates are excluded because the client only
+saves a draft once the code differs from the template.
+
+% =====================================================================
+\chapter{Publishing Results}
+% =====================================================================
+\section{The Authoritative Grading Pass}
+Publishing is only permitted once the contest has ended. On publish the engine:
+\begin{enumerate}[leftmargin=1.6em]
+  \item Auto-submits any still-pending drafts across all attempts, catching
+        students who abandoned without submitting.
+  \item Waits, within a bound, for any in-flight coding submissions to finish
+        judging, so their real verdicts are counted rather than a stale zero.
+  \item Re-grades every attempt from its saved answers and judged submissions.
+  \item Marks results published, at which point standings and per-student report
+        cards become available (subject to the feedback gate).
+\end{enumerate}
+
+\section{Late Verdicts After Publish}
+If a coding submission is judged after publish (a slow queue or a retry), the
+worker scores that question on the spot using the same scoring routine, so a
+correct-but-late submission is never stranded at zero and an already-awarded
+score is never reset.
+
+% =====================================================================
+\chapter{Post-Contest Feedback Gate}
+% =====================================================================
+\section{Feedback as the Gate to Results}
+After results are published, the platform collects a short feedback questionnaire
+from each student and uses it as the gate to their results: a student must submit
+feedback for a contest before their published report and standings are revealed
+to them.
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Opens only post-publish.} Feedback cannot be submitted before
+        results are published; an attempt to do so is refused.
+  \item \textbf{One record per student per contest.} Feedback is idempotent; a
+        repeat submission returns the stored record unchanged.
+  \item \textbf{Gates report and standings.} While results are published, the
+        student's report and standings stay withheld until feedback is submitted;
+        the standings endpoint refuses access otherwise.
+\end{itemize}
+
+\section{The Questionnaire}
+\begin{longtable}{@{}p{0.36\linewidth} p{0.56\linewidth}@{}}
+\toprule
+\textbf{Field} & \textbf{Captures}\\
+\midrule
+\endhead
+Navigation ease (1--5) & Ease of moving around the platform.\\
+Visual design (1--5) & Visual design quality.\\
+Interface readability & Yes / No / Need improvement.\\
+Editor responsiveness (1--5) & Code editor responsiveness.\\
+Compilation lag (1--5) & Perceived compile / run latency.\\
+Error-message clarity (1--5) & Clarity of error messages.\\
+Problem-statement clarity & Yes / No / Needs improvement.\\
+Bugs or broken links & Free-text bug report (required).\\
+One new feature & One requested feature (required).\\
+Recommend likelihood (1--5) & Likelihood to recommend.\\
+Overall rating (1--5) & Optional overall rating.\\
+\bottomrule
+\end{longtable}
+
+\begin{callout}{Two goals at once}
+The feedback gate guarantees the platform gathers structured usability feedback
+from every participant, and it does so at the moment a student is most motivated
+to comply \textemdash\ when they want to see their results.
+\end{callout}
+
+% =====================================================================
+\chapter{Violation Penalties}
+% =====================================================================
+\section{Integrity Cost}
+Integrity violations detected by the proctoring subsystem (Module~6) carry a
+scoring cost. Each counted violation subtracts a fixed penalty from the attempt
+score, and reaching the contest's maximum-violations threshold ends the attempt
+as auto-submitted. Penalty points and the derived score are recomputed whenever
+the attempt changes.
+
+\section{Which Events Count}
+Only the evasions the browser cannot prevent \textemdash\ leaving the tab,
+leaving fullscreen, and screenshots \textemdash\ move the violation counter.
+Actions the browser blocks outright (copy, cut, paste, context menu) are logged
+for review but cost nothing, because the action never succeeded. The precise
+event taxonomy is in Module~6.
+
+% =====================================================================
+\chapter{Standings, Review \& Export}
+% =====================================================================
+\section{Ranking}
+Standings sort by score descending, then by time-taken ascending, then by
+earliest start, then by a stable tie-breaker \textemdash\ a deterministic,
+reproducible ordering.
+
+\section{Student Report Card}
+After publish and feedback, a student sees their rank, score, per-question
+outcome, correct answers, violations, and timing.
+
+\section{Faculty Review}
+The owning faculty can inspect any attempt, including the exact final code the
+student ended on for each coding question, pairing each verdict with the correct
+(newest) submission for that question.
+
+\section{Exports \& Filtering}
+Standings and registrations can be exported as CSV and filtered by department and
+academic year, where the year is derived from the student's saved semester.
+
+% =====================================================================
+\chapter{Resilience: the Attempt Finalizer}
+% =====================================================================
+\section{Handling Disconnection}
+Because students may close their browser mid-contest, a background timer
+periodically finds active attempts whose personal deadline has passed and
+finalizes each one \emph{as of its deadline} (not the current time): it marks the
+attempt auto-submitted, auto-submits pending drafts for judging, and grades. This
+mirrors the on-access expiry path exactly, so an abandoned tab can never keep
+accruing time or score after the student's time ran out, and standings are
+complete at publish even for students who never pressed submit.
+
+\section{Robustness}
+The finalizer is guarded against overlapping runs, tolerates per-attempt failures
+(retried on the next tick), and can be disabled by setting its interval to zero.
+
+\begin{callout}{Fairness for the disconnected}
+A student whose laptop dies mid-contest is graded exactly as though they had run
+out of time at their deadline \textemdash\ their saved answers and drafts are
+judged, and they appear in the standings. No one is silently zeroed for a
+technical failure.
+\end{callout}
+
+% =====================================================================
+\chapter{Contest Coding vs. Practice}
+% =====================================================================
+\section{Shared Engine, Separate Accounting}
+Contest coding submissions share the same execution engine and code wrapper as
+practice submissions but differ in accounting: they are marked as contest
+submissions, judged against the contest question's own tests and limits, do not
+award global practice rating, and their state is reflected back into the owning
+attempt's per-question state for the student's live feedback and the eventual
+report card.
+
+\section{Why Keep Them Separate}
+Keeping contest and practice accounting distinct ensures that examination
+performance and everyday practice do not contaminate each other: a student's
+public practice rating is unaffected by contest work, and contest grading is
+governed entirely by the deferred-grading model rather than by the practice
+rating rules.
+
+% =====================================================================
+\chapter{Assurance \& Summary}
+% =====================================================================
+\section{Integrity Properties}
+\begin{longtable}{@{}p{0.36\linewidth} p{0.56\linewidth}@{}}
+\toprule
+\textbf{Property} & \textbf{Basis}\\
+\midrule
+\endhead
+No live scoring & Deferred grading; results revealed only at publish.\\
+No answer oracle & Correctness invisible during the contest.\\
+Complete grading & Auto-submission and the background finalizer grade every attempt.\\
+Reproducible ranking & Deterministic, stable standings ordering.\\
+Feedback assurance & Results gated behind the feedback questionnaire.\\
+Tamper resistance & Scoring and violation counts computed server-side.\\
+\bottomrule
+\end{longtable}
+
+\section{Module Summary}
+The contest engine conducts fair, proctored, timed examinations. It freezes a
+personal deadline per attempt, scores nothing during the contest, auto-submits
+and finalizes every attempt (including abandoned ones), re-grades authoritatively
+at publish, gates results behind structured feedback, and produces reproducible
+standings and rich faculty review. Its integrity depends on the proctoring
+subsystem detailed next in Module~6.
+
+\vspace{0.6cm}
+\begin{center}
+\textit{--- End of Module 5. Continued in Module 6: Proctoring \& Academic Integrity. ---}
+\end{center}
+\end{document}

@@ -1,0 +1,432 @@
+% =====================================================================
+%  TCET CODING PLATFORM -- Official Technical Documentation
+%  MODULE 7 of 7 : Deployment, Infrastructure, Operations & Future Scope
+%  STANDALONE FILE.  Compile: pdflatex Module7_Deployment_Future.tex  (twice)
+% =====================================================================
+\documentclass[12pt,a4paper,oneside]{report}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{mathptmx}\usepackage{microtype}\usepackage{graphicx}\usepackage{xcolor}
+\usepackage{tabularx}\usepackage{booktabs}\usepackage{longtable}\usepackage{xltabular}
+\usepackage{array}\usepackage{enumitem}\usepackage{listings}\usepackage{titlesec}
+\usepackage{fancyhdr}\usepackage{parskip}\usepackage[hidelinks]{hyperref}
+\definecolor{tcetblue}{RGB}{0,0,0}\definecolor{tcetaccent}{RGB}{0,0,0}
+\definecolor{codebg}{RGB}{245,246,248}\definecolor{codeframe}{RGB}{215,219,225}
+\definecolor{codekw}{RGB}{0,0,0}\definecolor{codecomment}{RGB}{0,0,0}
+\definecolor{codestr}{RGB}{0,0,0}\definecolor{boxframe}{RGB}{0,0,0}
+\hypersetup{colorlinks=true,linkcolor=tcetblue,urlcolor=tcetaccent,citecolor=tcetblue,
+  pdftitle={TCET Coding Platform -- Module 7: Deployment \& Future Scope},pdfauthor={Centre of Excellence, TCET}}
+\lstdefinestyle{tcp}{backgroundcolor=\color{codebg},basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{codekw}\bfseries,commentstyle=\color{codecomment}\itshape,
+  stringstyle=\color{codestr},numberstyle=\tiny\color{gray},frame=single,
+  rulecolor=\color{codeframe},breaklines=true,showstringspaces=false,tabsize=2,
+  columns=fullflexible,keepspaces=true,xleftmargin=0.6em,framexleftmargin=0.6em}
+\lstset{style=tcp}
+\newcommand{\code}[1]{\texttt{#1}}
+\newenvironment{callout}[1]{\par\vspace{4pt}\noindent
+  \begin{tabular}{@{}p{0.014\linewidth}@{\hspace{0.6em}}p{0.93\linewidth}@{}}
+  \textcolor{boxframe}{\rule{2pt}{\baselineskip}} & \textbf{\textcolor{tcetblue}{#1}}\\[2pt] & }{\end{tabular}\par\vspace{6pt}}
+\titleformat{\chapter}[display]{\bfseries\fontsize{18}{22}\selectfont}{\bfseries\fontsize{14}{17}\selectfont Chapter \thechapter}{0.2em}{}
+\titlespacing*{\chapter}{0pt}{6pt}{22pt}
+\titleformat{\section}{\bfseries\fontsize{16}{19}\selectfont}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\bfseries\fontsize{14}{17}\selectfont}{\thesubsection}{0.5em}{}
+\pagestyle{fancy}\fancyhf{}\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[L]{\small\itshape TCET Coding Platform}\fancyhead[R]{\small\itshape Module 7 \textbullet\ Deployment \& Future}
+\fancyfoot[C]{\thepage}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}}
+\newcommand{\note}[1]{\par\vspace{3pt}\noindent{\color{tcetaccent}\textbf{Note.}}~#1\par\vspace{3pt}}
+\begin{document}
+\begin{titlepage}\centering
+\vspace*{1.4cm}{\color{tcetaccent}\rule{\linewidth}{1.2pt}}\\[0.5cm]
+{\LARGE\bfseries TCET Coding Platform\par}
+\vspace{0.4cm}{\Large Official Technical Documentation\par}{\large Draft~1 \textemdash\ Testing Phase\par}
+{\color{tcetaccent}\rule{\linewidth}{1.2pt}}\\[1.4cm]
+{\Huge\bfseries\color{tcetblue} Module 7\par}\vspace{0.3cm}
+{\Huge Deployment, Infrastructure,\\[0.2cm] Operations \& Future Scope\par}\vspace{2.0cm}
+{\large\bfseries Powered by\par}{\Large\color{tcetblue} Centre of Excellence (CoE), TCET\par}\vfill
+\begin{tabular}{rl}\textbf{Module} & 7 of 7\\[3pt]
+\textbf{Scope} & Topology, config, scaling, runbooks, roadmap\\[3pt]
+\textbf{Status} & Draft~1 (living document until Stage~2)\\[3pt]
+\textbf{Audience} & DevOps, Officials, Engineering\\\end{tabular}
+\vspace{0.8cm}{\small\itshape \today\par}\end{titlepage}
+\pagenumbering{roman}\tableofcontents\clearpage\pagenumbering{arabic}
+
+% =====================================================================
+\chapter{Deployment Topology}
+% =====================================================================
+\section{Scope of this Module}
+This module specifies how the platform is deployed and operated: its network
+topology, the complete configuration surface, scaling guidance, day-to-day
+runbooks, the testing strategy, and the forward-looking roadmap that will guide
+work beyond this draft.
+
+\section{A Private-by-Default Deployment}
+The production deployment is intentionally private: the application runs on a host
+that is not publicly exposed, all public traffic is routed through a secure tunnel,
+and administrative access is restricted to a private network.
+\begin{longtable}{@{}p{0.26\linewidth} p{0.66\linewidth}@{}}
+\toprule
+\textbf{Element} & \textbf{Role}\\
+\midrule
+\endhead
+Private admin network & Restricts administrative / SSH access; the host is not directly reachable from the internet.\\
+Secure tunnel & Exposes local services as public hostnames via a reverse proxy.\\
+Frontend hostname & Public entry point routed to the frontend.\\
+API hostname & Public entry point routed to the backend API.\\
+Process supervisor & Supervises the application processes and restarts them on failure.\\
+Container runtime & Runs the execution (Judge0) stack.\\
+\bottomrule
+\end{longtable}
+
+\section{Topology Diagram}
+\begin{lstlisting}[language={}]
+        Internet
+           |
+     Secure tunnel  (public hostnames -> local ports)
+           |
+     +-----+------------------------------+
+     |  Host (private; admin via VPN)     |
+     |                                    |
+     |  [Frontend]   [API server]---------|--> MongoDB
+     |                 |   \              |
+     |                 |    \--> Redis <--|--- [Worker]
+     |                 |                  |        |
+     |                 +--> schedulers    |        +--> Judge0 (Docker)
+     +------------------------------------+
+\end{lstlisting}
+
+\section{Trust Boundary Reminder}
+The backend reads the proxy's forwarded headers and enforces the trusted-proxy
+source-IP allowlist described in Module~3. The reverse proxy is responsible for
+stripping any client-supplied identity headers so identity cannot be spoofed.
+
+% =====================================================================
+\chapter{Process Supervision \& Execution Stack}
+% =====================================================================
+\section{Supervised Processes}
+\begin{longtable}{@{}p{0.28\linewidth} p{0.64\linewidth}@{}}
+\toprule
+\textbf{Process} & \textbf{Description}\\
+\midrule
+\endhead
+API server & The Express API; the embedded worker is disabled here in production.\\
+Submission worker & The dedicated queue consumer, isolating judging load from request handling.\\
+Frontend & Serves the built single-page application.\\
+\bottomrule
+\end{longtable}
+Each process runs with automatic restart and a memory ceiling, so a runaway
+process is recycled without manual intervention.
+
+\section{The Execution Stack}
+The execution engine is deployed as a container stack with a sandbox override.
+Helper scripts manage its lifecycle:
+\begin{longtable}{@{}p{0.34\linewidth} p{0.58\linewidth}@{}}
+\toprule
+\textbf{Operation} & \textbf{Action}\\
+\midrule
+\endhead
+Bring up & Start the local execution stack.\\
+Bring down & Stop the stack.\\
+Status & Report health / readiness.\\
+Test sandbox & Verify sandboxed execution end to end.\\
+Test languages & Verify the language runtime matrix.\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{Configuration Reference}
+% =====================================================================
+All backend configuration is validated at startup; the process refuses to start
+on invalid configuration. The tables group the configuration surface by concern.
+
+\section{Identity \& Security}
+\begin{xltabular}{\linewidth}{@{}l X@{}}
+\toprule
+\textbf{Setting} & \textbf{Purpose}\\
+\midrule
+\endhead
+SSO base URL & Base URL of the CoE SSO, used for cookie-domain logout.\\
+Frontend base URL & Canonical frontend origin.\\
+Token signing secret & Secret for verifying the CoE token; must meet a minimum strength.\\
+Require trusted proxy & Enforce trusted-proxy source checks (kept on in production).\\
+Trusted proxy allowlist & Comma-separated proxy source IPs / CIDRs.\\
+CORS origins & Comma-separated allowed origins.\\
+\bottomrule
+\end{xltabular}
+
+\section{Data, Queue \& Execution}
+\begin{xltabular}{\linewidth}{@{}l X@{}}
+\toprule
+\textbf{Setting} & \textbf{Purpose}\\
+\midrule
+\endhead
+Database URI \& name & MongoDB connection and database name.\\
+Redis connection & Host, port, database, and password for the queue.\\
+Queue name & The submission queue name.\\
+Worker concurrency & Number of jobs a worker processes in parallel.\\
+Embedded worker toggle & Whether the API hosts a worker (disabled in production).\\
+Execution provider & Judge0 or the stub provider.\\
+Judge0 endpoint & Base URL and optional cloud credentials.\\
+Poll cadence & Result polling interval and timeout.\\
+\bottomrule
+\end{xltabular}
+
+\section{Scheduling \& Scoring}
+\begin{xltabular}{\linewidth}{@{}l X@{}}
+\toprule
+\textbf{Setting} & \textbf{Purpose}\\
+\midrule
+\endhead
+Stale threshold & Age after which a stuck submission is re-enqueued.\\
+Finalizer interval & Cadence of the expired-attempt finalizer (zero disables it).\\
+Default problem limits & Default CPU time and memory limits for problems.\\
+Rating weights & Difficulty-weighted rating awards.\\
+Environment \& port & Runtime mode and API port.\\
+\bottomrule
+\end{xltabular}
+
+% =====================================================================
+\chapter{Scaling Guidance}
+% =====================================================================
+\section{Principles}
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Absorb spikes with the queue.} Submissions are buffered, so a
+        burst of many concurrent submits does not overwhelm execution; work
+        drains at worker capacity.
+  \item \textbf{Scale judging horizontally.} Run multiple worker processes or
+        hosts against the same queue and tune concurrency to match the execution
+        stack's throughput.
+  \item \textbf{Separate API and worker.} Keep the worker out of the API process
+        so request latency is unaffected by judging load.
+  \item \textbf{Right-size limits.} Global and per-user rate limits and the
+        payload cap protect the API under mass load.
+\end{itemize}
+
+\section{Capacity Planning}
+\begin{longtable}{@{}p{0.32\linewidth} p{0.60\linewidth}@{}}
+\toprule
+\textbf{Dimension} & \textbf{Lever}\\
+\midrule
+\endhead
+Submission throughput & Worker count $\times$ concurrency, bounded by execution capacity.\\
+API request throughput & Horizontal API instances behind the proxy; rate limits.\\
+Storage growth & Retention and archival policy (see Future Scope).\\
+Execution capacity & Judge0 host sizing and language runtime availability.\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{Operational Runbooks}
+% =====================================================================
+\section{Local Development}
+\begin{enumerate}[leftmargin=1.6em]
+  \item Install and run the backend (and, optionally, a separate worker).
+  \item Install and run the frontend, pointed at the backend base URL.
+  \item Bring up the local execution stack and verify its status.
+  \item Use the local mock SSO to obtain a development identity (never in
+        production).
+  \item Seed baseline data if needed.
+\end{enumerate}
+
+\section{Production Build \& Start}
+\begin{enumerate}[leftmargin=1.6em]
+  \item Build the backend and frontend.
+  \item Start the API, worker, and frontend under the process supervisor.
+  \item Ensure the datastore, queue, and execution stack are reachable.
+\end{enumerate}
+
+\section{Troubleshooting}
+\begin{longtable}{@{}p{0.34\linewidth} p{0.58\linewidth}@{}}
+\toprule
+\textbf{Symptom} & \textbf{Likely cause / action}\\
+\midrule
+\endhead
+Unauthorized source & The request source IP is not allowlisted; update the allowlist and restart.\\
+Missing authentication & The request did not pass through the trusted auth path; verify the proxy injects identity.\\
+Account not active & The upstream identity marks the user inactive; confirm the identity payload.\\
+Failed to fetch & Check the API base URL, CORS origins, and ingress reachability.\\
+Execution failures & Check execution-stack status and the sandbox/language self-tests; confirm the endpoint.\\
+Submissions stuck & Stale recovery re-enqueues them; verify the worker and queue are healthy.\\
+\bottomrule
+\end{longtable}
+
+\section{Health \& Observability}
+A basic status route is public; health and database-diagnostic routes answer only
+trusted internal sources and must not be exposed publicly. Security-relevant
+authentication failures and background-scheduler outcomes are logged to the
+process console for aggregation.
+
+% =====================================================================
+\chapter{Testing \& Quality Strategy}
+% =====================================================================
+\section{Test Levels}
+\begin{longtable}{@{}p{0.30\linewidth} p{0.62\linewidth}@{}}
+\toprule
+\textbf{Level} & \textbf{Coverage}\\
+\midrule
+\endhead
+Backend integration & The API run against in-memory repositories, a stub execution provider, and a fixed clock \textemdash\ covering auth, submissions, contest scoring, and recovery deterministically.\\
+Execution \& wrapper & Validating the code wrapper and the execution provider's language resolution and verdict normalization.\\
+Frontend & Client mapping, submission polling, and editor helpers.\\
+Type safety & Whole-repository static type checking.\\
+Load testing & Scripts that exercise the submission queue.\\
+\bottomrule
+\end{longtable}
+
+\section{Why Testability was Designed In}
+Because services depend on interfaces and an injected clock, the entire system
+can be exercised deterministically without production infrastructure. This is a
+first-class quality mechanism, not an afterthought: it makes regressions in
+scoring, timing, and recovery catchable in automated tests.
+
+% =====================================================================
+\chapter{Future Scope \& Roadmap}
+% =====================================================================
+The following items are candidate work beyond Draft~1, recorded so the Stage~2
+review can prioritize them. They are intentionally scoped, not committed. The
+headline direction is to evolve the platform from an assessment platform into a
+\textbf{full self-learning environment} \textemdash\ pairing guided, AI-assisted
+practice with hands-on labs for programming, databases, and operating systems.
+
+\section{AI-Assisted, Answer-Preserving Learning}
+A central pillar of the roadmap is an AI layer that helps students \emph{learn}
+rather than copy. Unlike platforms that reveal a canonical solution, this layer
+never hands over the answer; it reasons about the student's own code.
+
+\subsection{Solution Optimality Analysis}
+After a student submits a working solution, the AI analyzes \emph{their} code and
+reports how optimal it is \textemdash\ estimated time and space complexity,
+redundant work, unnecessary allocations, and whether a better algorithmic class
+exists (for example, ``your approach is quadratic; a log-linear solution is
+possible''). It grades the solution's quality and explains \emph{why}, without
+printing an optimal solution the student can simply paste back.
+
+\subsection{Real-Time, Non-Revealing Hints}
+While a student is coding, the AI analyzes the in-progress code and, when the
+student is stuck or heading down a wrong path, offers \emph{graduated hints} that
+nudge them toward the fix \textemdash\ pointing at the failing idea, the
+off-by-one, or the missing case, escalating in specificity only as needed, but
+always stopping short of writing the answer. This mirrors a good teaching
+assistant: it unblocks without solving.
+
+\subsection{Guardrails}
+The AI operates under strict integrity rules: it is disabled (or restricted to
+complexity feedback only) during live, rated contests, and its hint verbosity is
+configurable by faculty per problem or per course, so it can be tuned from a
+gentle nudge to off.
+
+\begin{callout}{Design intent: answer-preserving}
+The AI's objective is the student's understanding, not task completion. It
+critiques and hints on the student's own work and never substitutes a model
+solution for it \textemdash\ so it accelerates learning without becoming a
+shortcut to the answer.
+\end{callout}
+
+\section{Integrated Learning \& Practice Environments}
+Beyond competitive-style problems, the platform will host structured, hands-on
+learning tracks so a student can practice an entire course inside the platform.
+
+\subsection{TCET Practical Labs}
+Digitize the institution's practical laboratory sessions: each lab becomes a
+structured, auto-evaluated assignment with objectives, starter scaffolding,
+sandboxed execution, and automatic capture of student work \textemdash\ replacing
+manual lab submissions and giving faculty a single dashboard for practical-exam
+conduct and assessment. This directly targets the routine laboratory workflow
+that today is spread across machines and paper.
+
+\subsection{DBMS \& SQL Learning Module}
+An interactive database track where students write and run real SQL against a
+sandboxed database engine, with schema-and-query exercises, result-set checking,
+and the same AI optimality feedback applied to queries (index usage, join
+strategy, query cost). This extends the platform from programming into core
+database coursework.
+
+\subsection{Linux / Operating-Systems Terminal Practice}
+A browser-based, sandboxed Linux terminal environment where students practice
+shell commands, file-system navigation, permissions, processes, and scripting
+\textemdash\ a safe operating-systems laboratory, with task-based challenges
+(``create this directory tree,'' ``find and stop this process'') that are
+automatically verified against the container's state.
+
+\begin{callout}{One spine, many environments}
+These environments reuse the platform's existing spine \textemdash\ sandboxed
+execution, per-attempt state, proctoring, and analytics \textemdash\ so labs, SQL
+exercises, and terminal challenges are authored, assigned, proctored, and graded
+through the same faculty tooling documented in this record.
+\end{callout}
+
+\section{Assessment \& Integrity Enhancements}
+\begin{itemize}[leftmargin=1.5em]
+  \item Optional integrations for invigilated / lockdown environments and, where
+        policy permits, webcam-assisted proctoring, to close the browser-only
+        limitations noted in Module~6.
+  \item Plagiarism and code-similarity detection across contest submissions.
+  \item Partial-credit and subtask-based grading for coding questions, and
+        configurable penalty policies.
+  \item Randomized question sets per student to reduce answer sharing.
+\end{itemize}
+
+\section{Platform Capabilities}
+\begin{itemize}[leftmargin=1.5em]
+  \item An explicit administrator tier distinct from faculty, with
+        institution-wide oversight and audit dashboards.
+  \item Richer analytics: cohort comparisons, topic-wise mastery, and
+        outcome-based reporting for accreditation.
+  \item Real-time submission status via push channels to replace client polling.
+  \item Additional language runtimes and per-department language policies.
+\end{itemize}
+
+\section{Operations \& Reliability}
+\begin{itemize}[leftmargin=1.5em]
+  \item Centralized structured logging, metrics, and alerting.
+  \item Explicit database indexing and archival strategy for large historical
+        datasets, with a documented backup / restore procedure.
+  \item Horizontal auto-scaling of judging workers driven by queue depth.
+  \item A migration to retire the legacy repository naming for clarity.
+\end{itemize}
+
+\section{Documentation \& Governance}
+\begin{itemize}[leftmargin=1.5em]
+  \item Promotion of this Draft~1 to a Stage~2 baseline with formal change
+        control and an API reference appendix.
+  \item Data-retention, privacy, and consent documentation aligned to
+        institutional policy.
+\end{itemize}
+
+\section{Indicative Roadmap Phasing}
+\begin{longtable}{@{}p{0.20\linewidth} p{0.72\linewidth}@{}}
+\toprule
+\textbf{Horizon} & \textbf{Candidate focus}\\
+\midrule
+\endhead
+Near term & Practical Labs digitization; structured logging and metrics; indexing and backups.\\
+Mid term & AI optimality analysis and real-time hints; DBMS/SQL module; plagiarism detection.\\
+Longer term & Linux terminal environment; administrator tier and audit dashboards; auto-scaling; accreditation analytics.\\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{Conclusion}
+% =====================================================================
+\section{Where the Platform Stands}
+As documented across these seven modules, the TCET Coding Platform is a
+functioning, institution-owned coding and assessment platform engineered for
+scale, integrity, and ownership: federated identity behind a trusted proxy, an
+asynchronous sandboxed execution pipeline, a rigorous contest engine with
+deferred grading and a feedback gate, a layered proctoring subsystem, and a
+private, supervised deployment.
+
+\section{The Path Forward}
+The roadmap turns this foundation toward a comprehensive self-learning
+environment \textemdash\ AI that helps students reason about their own code
+without revealing answers, and hands-on labs for programming, databases, and
+operating systems \textemdash\ all built on the same spine of sandboxed
+execution, integrity, and analytics. This document, Draft~1, is the baseline
+against which that progress will be reviewed at Stage~2.
+
+\vspace{0.8cm}
+\begin{center}
+\textit{--- End of Module 7, and of the Draft~1 documentation set. Subject to revision at Stage~2. ---}
+\end{center}
+\end{document}
