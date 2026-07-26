@@ -353,7 +353,7 @@ export default function StudentProfile() {
   <body>
     <button onclick="window.print()">Print / Save as PDF</button>
     <h1>Student Report Card</h1>
-    <div class="muted">Generated from TCET Code Studio</div>
+    <div class="muted">Generated from TCET Coding Platform</div>
     <h2>Identity</h2>
     <dl>
       <dt>Name</dt><dd>${escapeHtml(profile.name ?? "Student")}</dd>

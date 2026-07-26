@@ -1,6 +1,6 @@
-# TCET Code Studio Frontend
+# TCET Coding Platform Frontend
 
-React + Vite frontend for TCET Code Studio.
+React + Vite frontend for TCET Coding Platform.
 
 ## Runs On
 

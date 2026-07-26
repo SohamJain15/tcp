@@ -1,8 +1,59 @@
 # TCET Coding Platform
 
-TCET Coding Platform is a full-stack coding platform with a React + Vite frontend, an Express 5 + TypeScript backend, MongoDB persistence, Redis-backed queueing, and Judge0-based code execution.
+TCET Coding Platform is a full-stack, self-hosted competitive-programming and assessment platform for running large-scale coding contests and lab exams — designed for mass sessions with thousands of concurrent students. It combines a practice problem archive, timed proctored contests, real-time code execution across 20+ languages, and faculty tooling for authoring, monitoring, and grading.
 
-The current deployment model assumes centralized CoE authentication upstream of the backend.
+It uses a React + Vite frontend, an Express 5 + TypeScript backend, MongoDB for persistence, Redis + BullMQ for asynchronous submission queuing, and a self-hosted Judge0 cluster (sandboxed via `isolate`) for code execution. Authentication is delegated to a centralized CoE SSO gateway upstream of the backend.
+
+## Overview
+
+The platform serves two roles:
+
+- **Students** — solve practice problems, register for and take timed contests (coding + objective questions), submit code that is judged in a secure sandbox, and view results and rankings once released.
+- **Faculty** — author problems and contests, target contests by department, monitor attempts and proctoring events, and publish results and standings.
+
+## Key Features
+
+**Practice & problems**
+
+- Problem archive with difficulty tiers, sample/hidden test cases, and per-language time/memory limits.
+- Run-before-submit, rate-limited execution, and rating awarded on accepted submissions.
+
+**Contests**
+
+- Timed contests mixing Coding and MCQ/MSQ questions, with department targeting and registration windows.
+- Per-student attempt timer (start + duration, capped at contest end), editor draft auto-save, and auto-submit of unsubmitted drafts when time runs out.
+- **Proctoring** — violation events are logged and penalized; reaching the configured limit auto-submits the attempt.
+- **Deferred scoring** — nothing is revealed during a live contest; scores, correctness, and standings are computed and shown only after faculty publish results.
+
+**Execution & scale**
+
+- Submissions are queued (Redis/BullMQ) and judged asynchronously by a pool of Judge0 workers, so bursts of thousands of simultaneous submissions are buffered rather than overwhelming the judge.
+- Sandbox isolation via `isolate` with a recycled box-ID pool (see [Judge0 Setup](#judge0-setup)).
+- Resilience — stale-submission recovery and a background attempt finaliser (see [Background Jobs](#background-jobs)).
+
+**Faculty tooling**
+
+- Problem/contest authoring, attempt & proctoring review, standings, and CSV exports.
+- Global rating-based leaderboard.
+
+## Architecture
+
+```
+Browser (React + Vite)
+      │  CoE SSO headers, injected by a trusted reverse proxy
+      ▼
+Express API  (TypeScript, Zod, Helmet, rate limiting)
+      │                                  │
+      ▼                                  ▼
+   MongoDB                        Redis + BullMQ queue
+ (users, problems, contests,             │
+  attempts, submissions)                 ▼
+                              Judge0 workers ──► isolate sandbox (self-hosted)
+```
+
+**Submission lifecycle** — a submission is persisted as `QUEUED`, enqueued to BullMQ, picked up by a worker, executed on Judge0 against the problem/question test cases, then finalized with a verdict (`ACCEPTED` / `WRONG_ANSWER` / `TIME_LIMIT_EXCEEDED` / `RUNTIME_ERROR` / `COMPILATION_ERROR` / `INTERNAL_ERROR`), pass count, runtime, and memory. For contest submissions the verdict is written back onto the attempt, while points stay deferred until publish.
+
+**Contest lifecycle** — `register → start attempt → (answer / run / submit, drafts auto-saved) → submit or auto-submit at deadline → faculty publish`. Grading (`finalizeAttemptScoring`) is the single scoring pass — deterministic and idempotent — run at submit, auto-submit, and publish. Coding points are proportional to passed test cases; a question is `SOLVED` only on a full pass with an `ACCEPTED` verdict; objective questions are graded by correctness; and violation penalties are deducted. Standings rank by score, then time taken, then start time. Results stay hidden from students until `resultsPublished` is set.
 
 ## Tech Stack
 
@@ -106,6 +157,32 @@ Judge0 helper files live in:
 
 - `infrastructure/judge0/`
 - `scripts/`
+
+### Sandbox box-ID pool (custom `isolate_job.rb`)
+
+Judge0's job runner is customized in `infrastructure/judge0/overrides/isolate_job.rb` (mounted read-only into the `server` and `worker` containers). Each run **leases a sandbox box ID from a small, recycled pool** instead of deriving it from the submission ID.
+
+Why this exists: `isolate` only permits box IDs `0–999`. Deriving the box ID from the ever-incrementing submission ID exhausts that range after 1000 submissions and then breaks **all** judging with `Sandbox ID out of range (allowed: 0-999)` → `Internal Error (status 13)`. The pool leases the lowest currently-free ID (held via an `flock`, returned on cleanup), so box IDs stay bounded and are recycled — the range can never be exhausted regardless of total submission volume. `isolate` state is per-container, so the pool is scoped per worker container.
+
+Optional environment variables (defaults are fine for most deployments):
+
+- `JUDGE0_BOX_POOL_SIZE` — number of concurrent sandbox slots (default `100`). Must exceed a worker's concurrency and stay `≤ 1000`.
+- `JUDGE0_BOX_LOCK_DIR` — lock directory for the pool (default `/tmp/judge0-box-locks`, per container).
+
+After editing the override, reload it into the containers and re-check the runtime:
+
+```bash
+npm run judge0:down && npm run judge0:up
+npm run judge0:status   # expect RUNTIME_PROBE=ok
+```
+
+## Background Jobs
+
+The backend runs two maintenance jobs (in the API server process):
+
+- **Stale submission recovery** — on startup, re-enqueues any submission left `QUEUED`/`RUNNING` and never finalized, so a worker/Judge0 hiccup doesn't strand submissions.
+- **Attempt finaliser** — on a timer, finalises every `ACTIVE` attempt whose personal deadline has passed: it auto-submits any unsubmitted draft for judging and marks the attempt `AUTO_SUBMITTED` as of the deadline. This closes abandoned attempts near their real deadline instead of leaving them open until the student returns or results are published. Scoring stays deferred (hidden from students) until faculty publishes.
+  - `ATTEMPT_FINALIZER_INTERVAL_MS` — sweep interval in ms (default `60000`; set `0` to disable).
 
 ## Ports
 
@@ -253,3 +330,4 @@ Judge0 helper files live in:
 - Run `npm run judge0:test-sandbox`.
 - Run `npm run judge0:test-languages`.
 - Confirm `JUDGE0_BASE_URL=http://127.0.0.1:2358`.
+- If logs show `Sandbox ID out of range (allowed: 0-999)`, `chown: cannot access '/box'`, or `rb_sysopen - /box/script.py` (Internal Error / status 13), the sandbox box-ID range was exhausted. This is handled by the box-ID pool in `infrastructure/judge0/overrides/isolate_job.rb` — ensure that override is deployed, then reload with `npm run judge0:down && npm run judge0:up`. Re-judge any submissions that returned `INTERNAL_ERROR` during the outage.

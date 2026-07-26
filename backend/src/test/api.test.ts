@@ -115,7 +115,7 @@ function submitFeedback(
     .send({ ...feedbackPayload, ...overrides });
 }
 
-describe("TCET Code Studio backend APIs", () => {
+describe("TCET Coding Platform backend APIs", () => {
   it("auto-provisions users through CoE auth and preserves the legacy profile route", async () => {
     const { app } = createTestApp();
 
