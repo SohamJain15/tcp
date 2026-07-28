@@ -193,10 +193,9 @@ export function createApp(dependencies: ApplicationDependencies): Express {
     const frontendOrigin = resolveSafeFrontendOrigin(req.get("origin"), allowedOrigins);
     const secure = req.secure || env.NODE_ENV === "production";
 
-    // Clear the SSO auth cookie ourselves instead of bouncing through the SSO's
-    // /logout page (which does not exist on the production SSO host). A cookie is
-    // only deleted when name + Domain + Path match how it was set, so clear the
-    // host-only variant plus the SSO-domain-wide variants shared across subdomains.
+    // Best-effort local clear of the shared SSO cookie (belt-and-suspenders). A cookie is only
+    // deleted when name + Domain + Path match how it was set, so clear the host-only variant plus
+    // the SSO-domain-wide variants shared across subdomains.
     const domains: (string | undefined)[] = [undefined];
     try {
       const ssoHost = new URL(env.COE_AUTH_BASE_URL).hostname;
@@ -213,7 +212,18 @@ export function createApp(dependencies: ApplicationDependencies): Express {
       }
     }
 
-    res.redirect(302, frontendOrigin);
+    // Single Log-Out: bounce through the CoE SSO's logout endpoint so it ends the upstream session
+    // and clears the shared cookie authoritatively, then returns to the app via callbackUrl. The
+    // local clear above alone cannot end the CoE server session or reliably clear a cookie set on the
+    // SSO domain, so this is what logs the user out of BOTH the CoE site and this platform.
+    try {
+      const coeLogoutUrl = new URL("/api/auth/logout", env.COE_AUTH_BASE_URL);
+      coeLogoutUrl.searchParams.set("callbackUrl", frontendOrigin);
+      res.redirect(302, coeLogoutUrl.toString());
+    } catch {
+      // If COE_AUTH_BASE_URL is unusable, at least return the user to the app after the local clear.
+      res.redirect(302, frontendOrigin);
+    }
   });
 
   app.use("/api/auth", createAuthRouter(dependencies));

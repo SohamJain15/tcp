@@ -114,7 +114,9 @@ app.post('/login', (req, res) => {
   res.redirect(302, callbackUrl);
 });
 
-app.get('/logout', (req, res) => {
+// Mirror the production CoE SSO, which exposes logout at /api/auth/logout. /logout is kept as an
+// alias for backward compatibility.
+app.get(['/api/auth/logout', '/logout'], (req, res) => {
   const callbackUrl = typeof req.query.callbackUrl === 'string' && req.query.callbackUrl.trim() !== ''
     ? req.query.callbackUrl
     : DEFAULT_CALLBACK_URL;
