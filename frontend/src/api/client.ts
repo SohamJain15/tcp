@@ -142,14 +142,14 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   if (!response.ok) {
     const errorPayload = await parseErrorPayload(response);
 
-    if (
-      errorPayload.status === 401 &&
-      errorPayload.loginUrl &&
-      isAllowedLoginUrl(errorPayload.loginUrl) &&
-      !options.suppressAuthRedirect &&
-      typeof window !== "undefined"
-    ) {
-      window.location.assign(errorPayload.loginUrl);
+    if (errorPayload.status === 401 && !options.suppressAuthRedirect && typeof window !== "undefined") {
+      if (errorPayload.loginUrl && isAllowedLoginUrl(errorPayload.loginUrl)) {
+        window.location.assign(errorPayload.loginUrl);
+      } else if (window.location.pathname !== "/") {
+        // Auth was lost (e.g. CoE-side logout or session timeout) and no login URL was supplied.
+        // Send the user to the public landing page instead of leaving them on a broken authed view.
+        window.location.assign("/");
+      }
     }
 
     throw new ApiError(errorPayload);
