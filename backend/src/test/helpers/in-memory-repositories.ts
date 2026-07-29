@@ -17,9 +17,15 @@ import type {
 import type { ProblemRecord } from "../../modules/problem/problem.model";
 import type { ProblemRepository } from "../../modules/problem/problem.repository";
 import type { SubmissionRecord } from "../../modules/submission/submission.model";
-import type { SubmissionListFilters, SubmissionRepository } from "../../modules/submission/submission.repository";
+import type {
+  SubmissionAnalyticsRecord,
+  SubmissionListFilters,
+  SubmissionRepository,
+} from "../../modules/submission/submission.repository";
 import type { UserRecord } from "../../modules/user/user.model";
 import type { UserRecordUpdate, UserRepository } from "../../modules/user/user.repository";
+import type { UserRole } from "../../shared/types/auth";
+import type { Department } from "../../shared/types/domain";
 
 function cloneDate(value: Date | null): Date | null {
   return value ? new Date(value.getTime()) : null;
@@ -147,6 +153,13 @@ export class InMemoryUserRepository implements UserRepository {
     return this.findByEmail(email);
   }
 
+  async listByDepartment(department: Department, role?: UserRole): Promise<UserRecord[]> {
+    return Array.from(this.users.values())
+      .filter((user) => user.department === department)
+      .filter((user) => (role ? user.role === role : true))
+      .map(cloneUser);
+  }
+
   async update(email: string, updates: UserRecordUpdate): Promise<UserRecord> {
     const existingUser = await this.findByEmail(email);
     if (!existingUser) {
@@ -231,8 +244,25 @@ export class InMemorySubmissionRepository implements SubmissionRepository {
       .filter((submission) => (filters.contestId ? submission.contestId === filters.contestId : true))
       .filter((submission) => (filters.status ? submission.status === filters.status : true))
       .filter((submission) => (filters.language ? submission.language === filters.language : true))
+      // Production honours sourceType; this stand-in used to ignore it, which hid
+      // practice-vs-contest filtering bugs from the test suite entirely.
+      .filter((submission) => (filters.sourceType ? submission.sourceType === filters.sourceType : true))
+      .filter((submission) =>
+        filters.userEmails ? filters.userEmails.includes(submission.userEmail) : true,
+      )
+      .filter((submission) =>
+        filters.createdFrom ? submission.createdAt.getTime() >= filters.createdFrom.getTime() : true,
+      )
+      .filter((submission) =>
+        filters.createdTo ? submission.createdAt.getTime() <= filters.createdTo.getTime() : true,
+      )
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
       .map(cloneSubmission);
+  }
+
+  async listForAnalytics(filters: SubmissionListFilters = {}): Promise<SubmissionAnalyticsRecord[]> {
+    const submissions = await this.list(filters);
+    return submissions.map(({ code: _code, stdout: _stdout, stderr: _stderr, ...rest }) => rest);
   }
 }
 

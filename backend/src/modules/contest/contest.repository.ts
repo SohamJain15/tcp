@@ -174,6 +174,10 @@ function mapContestRecord(contestId: string, data: Record<string, unknown>): Con
     maxViolations: normalizeNumber(data.maxViolations, 3),
     createdBy: typeof data.createdBy === "string" ? data.createdBy : "",
     createdByRole: normalizeRole(data.createdByRole),
+    // Absent on every pre-existing contest, so defaults to an empty list — no migration.
+    managerEmails: Array.isArray(data.managerEmails)
+      ? data.managerEmails.filter((value): value is string => typeof value === "string")
+      : [],
     questions: Array.isArray(data.questions) ? data.questions.map(mapQuestion).filter((value): value is ContestQuestion => Boolean(value)) : [],
     createdAt,
     updatedAt,

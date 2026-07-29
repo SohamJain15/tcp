@@ -123,6 +123,7 @@ async function ensureUser(
     uid: authUser.uid ?? null,
     isProfileComplete: false,
     designation: null,
+    isHod: false,
     rollNumber: null,
     department: normalizeDepartment(authUser.department) ?? null,
     semester: null,

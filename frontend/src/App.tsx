@@ -19,6 +19,7 @@ import ContestFeedback from "./pages/student/ContestFeedback.tsx";
 import ContestQuestionPage from "./pages/student/ContestQuestionPage.tsx";
 import CompleteProfile from "./pages/student/CompleteProfile.tsx";
 import FacultyDashboard from "./pages/faculty/Dashboard.tsx";
+import FacultyDepartment from "./pages/faculty/Department.tsx";
 import CreateProblem from "./pages/faculty/CreateProblem.tsx";
 import CreateContest from "./pages/faculty/CreateContest.tsx";
 import FacultyContests from "./pages/faculty/Contests.tsx";
@@ -52,6 +53,7 @@ const App = () => (
             <Route path="/student/profile" element={<RoleRoute allowedRole="STUDENT"><StudentProfile /></RoleRoute>} />
             <Route path="/complete-profile" element={<RoleRoute allowedRole={["STUDENT", "FACULTY"]}><CompleteProfile /></RoleRoute>} />
             <Route path="/faculty/dashboard" element={<RoleRoute allowedRole="FACULTY"><FacultyDashboard /></RoleRoute>} />
+            <Route path="/faculty/department" element={<RoleRoute allowedRole="FACULTY"><FacultyDepartment /></RoleRoute>} />
             <Route path="/faculty/students/:email" element={<RoleRoute allowedRole="FACULTY"><StudentProfile /></RoleRoute>} />
             <Route path="/faculty/create-problem" element={<RoleRoute allowedRole="FACULTY"><CreateProblem /></RoleRoute>} />
             <Route path="/faculty/create-contest" element={<RoleRoute allowedRole="FACULTY"><CreateContest /></RoleRoute>} />

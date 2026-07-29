@@ -23,11 +23,7 @@ import { toLanguageLabel, toStatusLabel } from "@/api/mappers";
 import { chartTooltipItemStyle, chartTooltipLabelStyle, chartTooltipStyle } from "@/lib/chart-theme";
 import { formatDateTime } from "@/lib/datetime";
 
-const DIFFICULTY_COLORS: Record<string, string> = {
-  Easy: "#22c55e",
-  Medium: "#eab308",
-  Hard: "#ef4444",
-};
+import { ChartCard, DIFFICULTY_COLORS, SERIES_COLORS, TrendAreaChart } from "@/components/charts";
 
 function initialsFromName(name: string | null, email: string): string {
   if (!name) {
@@ -251,6 +247,30 @@ export default function StudentProfile() {
       })),
     [analyticsData?.analytics.languageBreakdown],
   );
+
+  // Cumulative problems solved over the last 30 active days, from the per-day
+  // first-solve series the analytics endpoint provides.
+  const progressData = useMemo(() => {
+    let solved = 0;
+    return (analyticsData?.analytics.progressTrend ?? []).slice(-30).map((entry) => {
+      solved += entry.firstSolveCount;
+      return { date: entry.date.slice(5), solved, submissions: entry.submissionCount };
+    });
+  }, [analyticsData?.analytics.progressTrend]);
+
+  const activeTimeData = useMemo(
+    () =>
+      (analyticsData?.analytics.activeTime.byDate ?? []).slice(-30).map((entry) => ({
+        date: entry.date.slice(5),
+        minutes: entry.minutes,
+      })),
+    [analyticsData?.analytics.activeTime.byDate],
+  );
+
+  const estimatedActiveLabel = useMemo(() => {
+    const minutes = analyticsData?.analytics.activeTime.estimatedActiveMinutes ?? 0;
+    return minutes >= 60 ? `${Math.round((minutes / 60) * 10) / 10} h` : `${minutes} min`;
+  }, [analyticsData?.analytics.activeTime.estimatedActiveMinutes]);
 
   // Monthly submission counts for the last 6 months, aggregated from the
   // already-fetched heatmap data (no extra API calls).
@@ -510,6 +530,39 @@ export default function StudentProfile() {
                   </Card>
                 </div>
               </div>
+            </div>
+
+            {/* Two activity summaries, sitting directly above the heatmap they contextualise. */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <ChartCard
+                title="Progress Over Time"
+                subtitle="Cumulative problems solved and daily submissions (last 30 active days)"
+                bodyClassName="min-h-[180px]"
+              >
+                <TrendAreaChart
+                  data={progressData}
+                  xKey="date"
+                  series={[
+                    { dataKey: "solved", name: "Solved", color: SERIES_COLORS.success },
+                    { dataKey: "submissions", name: "Submissions", color: SERIES_COLORS.accent },
+                  ]}
+                  emptyMessage="Solve a problem to start tracking progress."
+                />
+              </ChartCard>
+
+              <ChartCard
+                title="Estimated Active Time"
+                subtitle="Estimated from your submission activity, not measured session time"
+                bodyClassName="min-h-[180px]"
+                action={<span className="font-display text-lg font-bold">{estimatedActiveLabel}</span>}
+              >
+                <TrendAreaChart
+                  data={activeTimeData}
+                  xKey="date"
+                  series={[{ dataKey: "minutes", name: "Minutes", color: SERIES_COLORS.primary }]}
+                  emptyMessage="No activity recorded yet."
+                />
+              </ChartCard>
             </div>
 
             <Card className="profile-card">

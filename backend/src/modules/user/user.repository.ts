@@ -1,5 +1,7 @@
 import type { Collection } from "mongodb";
 import { getMongoDatabase } from "../../config/mongodb";
+import type { UserRole } from "../../shared/types/auth";
+import type { Department } from "../../shared/types/domain";
 import { toDate } from "../../shared/utils/date";
 import { normalizeDepartment, normalizeNumber, normalizeRole } from "../../shared/utils/normalize";
 import type { UserRecord } from "./user.model";
@@ -9,6 +11,13 @@ export type UserRecordUpdate = Partial<Omit<UserRecord, "email" | "createdAt">>;
 export interface UserRepository {
   findByEmail(email: string): Promise<UserRecord | null>;
   getByEmail(email: string): Promise<UserRecord | null>;
+  /**
+   * Every user in a department, optionally narrowed to one role. The department
+   * participation view needs the full roster as its denominator — the leaderboard
+   * only contains students who have already submitted, so it would silently drop
+   * the non-participants an HOD most needs to see.
+   */
+  listByDepartment(department: Department, role?: UserRole): Promise<UserRecord[]>;
   update(email: string, updates: UserRecordUpdate): Promise<UserRecord>;
   save(user: UserRecord): Promise<UserRecord>;
   deleteByEmail(email: string): Promise<void>;
@@ -29,6 +38,8 @@ function mapUserRecord(email: string, data: Record<string, unknown>): UserRecord
     uid: typeof data.uid === "string" ? data.uid : null,
     isProfileComplete: Boolean(data.isProfileComplete),
     designation: typeof data.designation === "string" ? data.designation : null,
+    // Absent on every pre-existing document, so default to false — no migration needed.
+    isHod: data.isHod === true,
     rollNumber: typeof data.rollNumber === "string" ? data.rollNumber : null,
     department: normalizeDepartment(data.department),
     semester: typeof data.semester === "number" ? data.semester : null,
@@ -69,6 +80,20 @@ export class FirestoreUserRepository implements UserRepository {
 
   async getByEmail(email: string): Promise<UserRecord | null> {
     return this.findByEmail(email);
+  }
+
+  async listByDepartment(department: Department, role?: UserRole): Promise<UserRecord[]> {
+    const collection = await getCollection();
+    const filter: Record<string, unknown> = { department };
+    if (role) {
+      filter.role = role;
+    }
+
+    const documents = await collection.find(filter).toArray();
+    return documents.map((document) => {
+      const data = document as Record<string, unknown>;
+      return mapUserRecord(String(data.email ?? ""), data);
+    });
   }
 
   async update(email: string, updates: UserRecordUpdate): Promise<UserRecord> {

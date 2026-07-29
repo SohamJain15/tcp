@@ -148,8 +148,13 @@ interface ContestServiceDependencies {
   now: () => Date;
 }
 
+function canManageContest(user: AuthenticatedUser, contest: ContestRecord): boolean {
+  // The creator, plus any faculty the HOD has delegated management to.
+  return contest.createdBy === user.email || (contest.managerEmails ?? []).includes(user.email);
+}
+
 function ensureFacultyOwnsContest(user: AuthenticatedUser, contest: ContestRecord | null): ContestRecord {
-  if (!contest || contest.createdBy !== user.email) {
+  if (!contest || !canManageContest(user, contest)) {
     throw new AppError(404, "Contest not found");
   }
 
@@ -888,7 +893,8 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         user.role === "STUDENT" ? await resolveStudentDepartment(user, dependencies) : null;
 
       const visible = contests
-        .filter((contest) => (user.role === "FACULTY" ? contest.createdBy === user.email : true))
+        // Faculty see their own contests plus any delegated to them for management.
+        .filter((contest) => (user.role === "FACULTY" ? canManageContest(user, contest) : true))
         .filter((contest) =>
           user.role === "STUDENT" ? !contest.targetDepartment || contest.targetDepartment === userDepartment : true,
         )
@@ -975,6 +981,7 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         maxViolations: input.maxViolations ?? 3,
         createdBy: user.email,
         createdByRole: user.role,
+        managerEmails: [],
         questions: normalizeContestQuestions(input.questions) ?? [],
         createdAt: now,
         updatedAt: now,

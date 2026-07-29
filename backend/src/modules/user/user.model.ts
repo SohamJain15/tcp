@@ -9,6 +9,8 @@ export interface UserRecord {
   uid: string | null;
   isProfileComplete: boolean;
   designation: string | null;
+  /** Faculty-only. Grants the read-only, department-scoped participation view. */
+  isHod: boolean;
   rollNumber: string | null;
   department: Department | null;
   semester: number | null;
@@ -34,6 +36,7 @@ export interface UserProfileResponse {
   uid: string | null;
   isProfileComplete: boolean;
   designation: string | null;
+  isHod: boolean;
   rollNumber: string | null;
   department: Department | null;
   semester: number | null;
@@ -83,10 +86,29 @@ export interface UserProfileAnalyticsSubmissionItem {
   contestTitle: string | null;
 }
 
+export interface UserProfileAnalyticsProgressItem {
+  date: string;
+  submissionCount: number;
+  acceptedCount: number;
+  /** Problems solved for the first time on this date — the cumulative-progress series. */
+  firstSolveCount: number;
+}
+
+/**
+ * Estimated, not measured. The platform records no sessions, so active time is inferred
+ * from gaps between submissions; the UI must label it as an estimate.
+ */
+export interface UserProfileAnalyticsActiveTime {
+  estimatedActiveMinutes: number;
+  byDate: { date: string; minutes: number }[];
+}
+
 export interface UserProfileAnalyticsResponse {
   difficultyBreakdown: UserProfileAnalyticsDifficultyItem[];
   languageBreakdown: UserProfileAnalyticsLanguageItem[];
   submissionHeatmap: UserProfileAnalyticsHeatmapItem[];
+  progressTrend: UserProfileAnalyticsProgressItem[];
+  activeTime: UserProfileAnalyticsActiveTime;
   recentAcceptedSubmissions: UserProfileAnalyticsSubmissionItem[];
   submissionHistory: UserProfileAnalyticsSubmissionItem[];
 }
@@ -99,6 +121,8 @@ export function toUserProfileResponse(user: UserRecord, rank: number | null): Us
     uid: user.uid,
     isProfileComplete: user.isProfileComplete,
     designation: user.designation,
+    // Students can never be HOD, regardless of what is stored.
+    isHod: user.role === "FACULTY" && user.isHod === true,
     rollNumber: user.rollNumber,
     department: user.department,
     semester: user.semester,

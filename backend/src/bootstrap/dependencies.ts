@@ -3,6 +3,7 @@ import { getMongoDatabase } from "../config/mongodb";
 import { Judge0ExecutionProvider } from "../execution/judge0-execution-provider";
 import { createAuthMiddleware } from "../middleware/auth";
 import { createRequireCompleteProfile } from "../middleware/require-complete-profile";
+import { createRequireHod } from "../middleware/require-hod";
 import {
   FirestoreContestAttemptRepository,
   FirestoreContestFeedbackRepository,
@@ -35,6 +36,7 @@ import {
 import { BullMQSubmissionQueue, type SubmissionQueue } from "../queue/submission-queue";
 import { FirestoreUserRepository, type UserRepository } from "../modules/user/user.repository";
 import { createUserService, type UserService } from "../modules/user/user.service";
+import { createDepartmentService, type DepartmentService } from "../modules/department/department.service";
 
 export interface RepositoryBundle {
   userRepository: UserRepository;
@@ -54,12 +56,14 @@ export interface ServiceBundle {
   submissionService: SubmissionService;
   leaderboardService: LeaderboardService;
   contestService: ContestService;
+  departmentService: DepartmentService;
 }
 
 export interface ApplicationDependencies extends ServiceBundle {
   userRepository: UserRepository;
   authMiddleware: RequestHandler;
   profileCompletionMiddleware: RequestHandler;
+  hodMiddleware: RequestHandler;
   databaseHealthcheck?: () => Promise<void>;
 }
 
@@ -138,10 +142,20 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     now,
   });
 
+  const departmentService = createDepartmentService({
+    userRepository: repositories.userRepository,
+    submissionRepository: repositories.submissionRepository,
+    contestRepository: repositories.contestRepository,
+    contestRegistrationRepository: repositories.contestRegistrationRepository,
+    contestAttemptRepository: repositories.contestAttemptRepository,
+    now,
+  });
+
   return {
     userRepository: repositories.userRepository,
     authMiddleware: overrides.authMiddleware ?? createAuthMiddleware(userService),
     profileCompletionMiddleware: createRequireCompleteProfile(repositories.userRepository),
+    hodMiddleware: createRequireHod(repositories.userRepository),
     databaseHealthcheck: async () => {
       const db = await getMongoDatabase();
       await db.command({ ping: 1 });
@@ -151,5 +165,6 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     submissionService,
     leaderboardService,
     contestService,
+    departmentService,
   };
 }

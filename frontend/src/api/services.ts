@@ -19,7 +19,14 @@ import type {
   ContestStandingsEnvelope,
   CreateContestPayload,
   Department,
+  DepartmentContestParticipation,
+  DepartmentFacultyEnvelope,
+  DepartmentOverviewEnvelope,
+  DepartmentStudentDetailEnvelope,
+  DepartmentStudentItem,
   FacultyContestDetail,
+  ManagedContestEnvelope,
+  ManagedContestsEnvelope,
   LeaderboardItem,
   ManageProblemDetail,
   ManageProblemSummary,
@@ -49,6 +56,12 @@ import type {
 export type PaginationQuery = {
   cursor?: string;
   pageSize?: number;
+};
+
+export type DepartmentAnalyticsQuery = {
+  year?: 1 | 2 | 3 | 4;
+  /** Size of the trailing activity window, in days. */
+  windowDays?: number;
 };
 
 export type StudentProblemsQuery = PaginationQuery & {
@@ -163,6 +176,38 @@ export const leaderboardApi = {
       pathname,
       responseType: "text",
     }),
+};
+
+/**
+ * Department participation views, available only to faculty flagged as HOD.
+ *
+ * No method takes a `department` argument: the backend resolves it from the caller's
+ * saved profile, so the scope cannot be widened from the client.
+ */
+export const departmentApi = {
+  overview: (query: DepartmentAnalyticsQuery = {}, pathname?: string) =>
+    apiRequest<DepartmentOverviewEnvelope>("/api/department/overview", { query, pathname }),
+  listStudents: (query: PaginationQuery & DepartmentAnalyticsQuery = {}, pathname?: string) =>
+    apiRequest<PaginatedResponse<DepartmentStudentItem>>("/api/department/students", { query, pathname }),
+  getStudent: (email: string, query: DepartmentAnalyticsQuery = {}, pathname?: string) =>
+    apiRequest<DepartmentStudentDetailEnvelope>(`/api/department/students/${encodeURIComponent(email)}`, {
+      query,
+      pathname,
+    }),
+  listContests: (query: PaginationQuery & DepartmentAnalyticsQuery = {}, pathname?: string) =>
+    apiRequest<PaginatedResponse<DepartmentContestParticipation>>("/api/department/contests", {
+      query,
+      pathname,
+    }),
+  listFaculty: (pathname?: string) =>
+    apiRequest<DepartmentFacultyEnvelope>("/api/department/faculty", { pathname }),
+  listManagedContests: (pathname?: string) =>
+    apiRequest<ManagedContestsEnvelope>("/api/department/managed-contests", { pathname }),
+  setContestManagers: (contestId: string, managerEmails: string[], pathname?: string) =>
+    apiRequest<ManagedContestEnvelope>(
+      `/api/department/managed-contests/${encodeURIComponent(contestId)}/managers`,
+      { method: "PATCH", body: { managerEmails }, pathname },
+    ),
 };
 
 export const contestsApi = {

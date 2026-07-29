@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FilePlus2, Trophy, BookOpen, Users, Activity, Target } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -8,7 +8,15 @@ import { AppLayout } from "@/components/AppLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/Badges";
-import { problemsApi, submissionsApi, userApi } from "@/api/services";
+import { contestsApi, problemsApi, submissionsApi, userApi } from "@/api/services";
+import {
+  CategoryBarChart,
+  ChartCard,
+  ChartEmptyState,
+  DIFFICULTY_COLORS,
+  SERIES_COLORS,
+  STATUS_COLORS,
+} from "@/components/charts";
 import { toFacultyStudentProfilePath } from "@/lib/student-profile";
 import { toLanguageLabel, toStatusLabel } from "@/api/mappers";
 import { chartAxisTick, chartTooltipItemStyle, chartTooltipLabelStyle, chartTooltipStyle } from "@/lib/chart-theme";
@@ -26,28 +34,10 @@ function formatTime(isoDate: string): string {
   return new Date(isoDate).toLocaleTimeString();
 }
 
-const STATUS_COLORS: Partial<Record<SubmissionStatus, string>> = {
-  ACCEPTED: "hsl(var(--success))",
-  WRONG_ANSWER: "hsl(var(--destructive))",
-  TIME_LIMIT_EXCEEDED: "hsl(var(--warning))",
-  RUNTIME_ERROR: "hsl(var(--accent))",
-  COMPILATION_ERROR: "hsl(var(--muted-foreground))",
-};
-
-const DIFFICULTY_COLORS: Record<string, string> = {
-  Easy: "#22c55e",
-  Medium: "#eab308",
-  Hard: "#ef4444",
-};
-
 type TrendDatum = { day: string; count: number };
 type VerdictDatum = { name: string; value: number; color: string };
 type LanguageDatum = { name: string; count: number };
 type DifficultyDatum = { name: string; count: number };
-
-function ChartEmptyState({ message }: { message: string }) {
-  return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{message}</div>;
-}
 
 // Memoized so query refreshes elsewhere on the page don't re-trigger chart animations.
 const SubmissionTrendChart = memo(function SubmissionTrendChart({ data }: { data: TrendDatum[] }) {
@@ -209,6 +199,11 @@ export default function FacultyDashboard() {
     queryFn: () => submissionsApi.list({ pageSize: 50 }, "/faculty/dashboard"),
   });
 
+  const contestsQuery = useQuery({
+    queryKey: ["faculty-dashboard", "contests"],
+    queryFn: () => contestsApi.list({ pageSize: 50 }, "/faculty/dashboard"),
+  });
+
   const recentSubmissions = useMemo(
     () =>
       [...(submissionsQuery.data?.items ?? [])]
@@ -219,7 +214,9 @@ export default function FacultyDashboard() {
   );
 
   const facultyName = userQuery.data?.user.name ?? "Faculty";
-  const problemList = problemsQuery.data?.items ?? [];
+  // Memoized because the `?? []` fallback would otherwise be a fresh array on every
+  // render, invalidating every useMemo below it.
+  const problemList = useMemo(() => problemsQuery.data?.items ?? [], [problemsQuery.data?.items]);
   const submissionList = useMemo(
     () => (submissionsQuery.data?.items ?? []).filter((submission) => submission.sourceType === "problem"),
     [submissionsQuery.data?.items],
@@ -351,6 +348,35 @@ export default function FacultyDashboard() {
     [problemList],
   );
 
+  // Engagement per problem, from the aggregate counters the manage list already returns
+  // (so these are true totals, unlike the charts derived from the capped submission page).
+  const problemEngagement = useMemo(
+    () =>
+      [...problemList]
+        .sort((left, right) => right.totalSubmissions - left.totalSubmissions)
+        .slice(0, 8)
+        .map((problem) => ({
+          name: problem.title.length > 22 ? `${problem.title.slice(0, 21)}…` : problem.title,
+          submissions: problem.totalSubmissions,
+          acceptance: problem.acceptanceRate,
+        })),
+    [problemList],
+  );
+
+  const contestFunnel = useMemo(
+    () =>
+      [...(contestsQuery.data?.items ?? [])]
+        .sort((left, right) => +new Date(right.startAt) - +new Date(left.startAt))
+        .slice(0, 6)
+        .reverse()
+        .map((contest) => ({
+          name: contest.title.length > 18 ? `${contest.title.slice(0, 17)}…` : contest.title,
+          registered: contest.registeredCount ?? 0,
+          participated: contest.participantsCount ?? 0,
+        })),
+    [contestsQuery.data?.items],
+  );
+
   const stats = [
     { label: "Problems Created", value: String(problemsQuery.data?.pageInfo.totalCount ?? problemList.length), icon: BookOpen },
     { label: "Total Submissions", value: submissionList.length.toLocaleString(), icon: Activity },
@@ -377,7 +403,7 @@ export default function FacultyDashboard() {
               </Button>
             </Link>
             <Link to="/faculty/create-contest">
-              <Button size="lg" variant="outline">
+              <Button size="lg" className="bg-accent text-accent-foreground hover:bg-accent/90">
                 <Trophy className="mr-2 h-4 w-4" /> New Contest
               </Button>
             </Link>
@@ -433,6 +459,39 @@ export default function FacultyDashboard() {
                   <DifficultyMixChart data={difficultyMix} />
                 </div>
               </Card>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <ChartCard
+                title="Problem Engagement"
+                subtitle="Top 8 of your problems by total submissions, with acceptance rate"
+              >
+                <CategoryBarChart
+                  data={problemEngagement}
+                  categoryKey="name"
+                  layout="vertical"
+                  bars={[
+                    { dataKey: "submissions", name: "Submissions", color: SERIES_COLORS.primary },
+                    { dataKey: "acceptance", name: "Acceptance %", color: SERIES_COLORS.success },
+                  ]}
+                  emptyMessage="No submissions to your problems yet."
+                />
+              </ChartCard>
+
+              <ChartCard
+                title="Contest Participation Funnel"
+                subtitle="Registered vs. actually attempted, for your most recent contests"
+              >
+                <CategoryBarChart
+                  data={contestFunnel}
+                  categoryKey="name"
+                  bars={[
+                    { dataKey: "registered", name: "Registered", color: SERIES_COLORS.accent },
+                    { dataKey: "participated", name: "Attempted", color: SERIES_COLORS.success },
+                  ]}
+                  emptyMessage="No contests created yet."
+                />
+              </ChartCard>
             </div>
 
             <div className="grid gap-6 lg:grid-cols-3">
