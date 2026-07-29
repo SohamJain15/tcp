@@ -73,6 +73,8 @@ export interface UserProfile {
   uid: string | null;
   isProfileComplete: boolean;
   designation: string | null;
+  /** Faculty-only. Unlocks the read-only department participation view. */
+  isHod: boolean;
   rollNumber: string | null;
   department: Department | null;
   semester: number | null;
@@ -112,6 +114,9 @@ export type CompleteProfilePayload =
       department: Department;
       linkedInUrl: string | null;
       githubUrl: string | null;
+      // The endpoint replaces the whole faculty profile, so this must be re-sent on
+      // every save; omitting it silently clears an existing HOD flag.
+      isHod?: boolean;
     };
 
 export const DEPARTMENTS: Department[] = [
@@ -300,12 +305,213 @@ export interface UserProfileAnalyticsSubmissionItem {
   contestTitle: string | null;
 }
 
+export interface UserProfileAnalyticsProgressItem {
+  date: string;
+  submissionCount: number;
+  acceptedCount: number;
+  firstSolveCount: number;
+}
+
+/** Estimated from submission activity — the platform does not measure sessions. */
+export interface UserProfileAnalyticsActiveTime {
+  estimatedActiveMinutes: number;
+  byDate: { date: string; minutes: number }[];
+}
+
 export interface UserProfileAnalytics {
   difficultyBreakdown: UserProfileAnalyticsDifficultyItem[];
   languageBreakdown: UserProfileAnalyticsLanguageItem[];
   submissionHeatmap: UserProfileAnalyticsHeatmapItem[];
+  progressTrend: UserProfileAnalyticsProgressItem[];
+  activeTime: UserProfileAnalyticsActiveTime;
   recentAcceptedSubmissions: UserProfileAnalyticsSubmissionItem[];
   submissionHistory: UserProfileAnalyticsSubmissionItem[];
+}
+
+export type StudentYear = 1 | 2 | 3 | 4;
+export type ActivityLevel = "Inactive" | "Low" | "Moderate" | "High";
+
+export interface DepartmentWindow {
+  from: string;
+  to: string;
+  days: number;
+}
+
+export interface DepartmentOverview {
+  department: Department;
+  window: DepartmentWindow;
+  totals: {
+    studentCount: number;
+    activeStudentCount: number;
+    participationRate: number;
+    submissionCount: number;
+    acceptedSubmissionCount: number;
+    accuracy: number;
+    problemsSolved: number;
+    contestRegistrationCount: number;
+    contestAttemptCount: number;
+  };
+  participationByYear: {
+    year: StudentYear | null;
+    label: string;
+    studentCount: number;
+    activeStudentCount: number;
+    participationRate: number;
+    submissionCount: number;
+    contestRegisteredCount: number;
+    contestAttemptedCount: number;
+  }[];
+  activityTrend: {
+    date: string;
+    submissionCount: number;
+    acceptedCount: number;
+    activeStudentCount: number;
+  }[];
+  activityLevelDistribution: {
+    level: ActivityLevel;
+    studentCount: number;
+    minActiveDays: number;
+    maxActiveDays: number;
+  }[];
+  consistency: {
+    windowDays: number;
+    averageConsistencyScore: number;
+    averageActiveDayRatio: number;
+    averageWeeklyRegularity: number;
+    averageActiveDays: number;
+    averageCurrentStreakDays: number;
+    averageLongestStreakDays: number;
+    distribution: { band: string; studentCount: number }[];
+  };
+  submissionHeatmap: UserProfileAnalyticsHeatmapItem[];
+  difficultyBreakdown: UserProfileAnalyticsDifficultyItem[];
+  languageBreakdown: UserProfileAnalyticsLanguageItem[];
+  contestParticipation: DepartmentContestParticipation[];
+}
+
+/** Participation counts only — this shape intentionally carries no question content. */
+export interface DepartmentContestParticipation {
+  contestId: string;
+  title: string;
+  type: string;
+  computedStatus: string;
+  startAt: string;
+  endAt: string;
+  durationMinutes: number;
+  targetDepartment: Department | null;
+  resultsPublished: boolean;
+  eligibleStudentCount: number;
+  registeredCount: number;
+  attemptedCount: number;
+  completedCount: number;
+  registrationRate: number;
+  attemptRate: number;
+  completionRate: number;
+  averageScore: number;
+  highestScore: number;
+  averageTimeTakenMs: number;
+  totalViolationCount: number;
+}
+
+export interface DepartmentStudentItem {
+  rank: number;
+  email: string;
+  name: string | null;
+  uid: string | null;
+  semester: number | null;
+  year: StudentYear | null;
+  rating: number;
+  problemsSolved: number;
+  submissionCount: number;
+  acceptedSubmissionCount: number;
+  accuracy: number;
+  activeDays: number;
+  consistencyScore: number;
+  currentStreakDays: number;
+  longestStreakDays: number;
+  activityLevel: ActivityLevel;
+  lastActiveAt: string | null;
+  contestsRegistered: number;
+  contestsAttempted: number;
+}
+
+export interface DepartmentStudentDetail {
+  student: {
+    email: string;
+    name: string | null;
+    uid: string | null;
+    department: Department | null;
+    semester: number | null;
+    year: StudentYear | null;
+    rating: number;
+    problemsSolved: number;
+    submissionCount: number;
+    acceptedSubmissionCount: number;
+    accuracy: number;
+    lastAcceptedAt: string | null;
+  };
+  window: DepartmentWindow;
+  activity: {
+    activeDays: number;
+    consistencyScore: number;
+    activeDayRatio: number;
+    weeklyRegularity: number;
+    currentStreakDays: number;
+    longestStreakDays: number;
+    estimatedActiveMinutes: number;
+    firstSubmissionAt: string | null;
+    lastSubmissionAt: string | null;
+  };
+  difficultyBreakdown: UserProfileAnalyticsDifficultyItem[];
+  languageBreakdown: UserProfileAnalyticsLanguageItem[];
+  submissionHeatmap: UserProfileAnalyticsHeatmapItem[];
+  contests: {
+    contestId: string;
+    title: string;
+    registeredAt: string | null;
+    attemptStatus: string;
+    score: number | null;
+    solvedCount: number | null;
+    timeTakenMs: number | null;
+    violationCount: number | null;
+  }[];
+}
+
+export interface DepartmentFacultyItem {
+  email: string;
+  name: string | null;
+  designation: string | null;
+  isHod: boolean;
+}
+
+export interface ManagedContestItem {
+  contestId: string;
+  title: string;
+  computedStatus: string;
+  startAt: string;
+  endAt: string;
+  resultsPublished: boolean;
+  managers: { email: string; name: string | null }[];
+}
+
+export interface DepartmentFacultyEnvelope {
+  faculty: DepartmentFacultyItem[];
+}
+
+export interface ManagedContestsEnvelope {
+  contests: ManagedContestItem[];
+}
+
+export interface ManagedContestEnvelope {
+  contest: ManagedContestItem;
+}
+
+export interface DepartmentOverviewEnvelope {
+  overview: DepartmentOverview;
+}
+
+export interface DepartmentStudentDetailEnvelope {
+  student: DepartmentStudentDetail;
 }
 
 export interface UserProfileAnalyticsEnvelope {
@@ -622,6 +828,7 @@ export interface ContestStandingItem {
   year: 1 | 2 | 3 | 4 | null;
   score: number;
   solvedCount: number;
+  totalQuestions: number;
   status: ContestAttemptStatus;
   violationCount: number;
   violationPenaltyPoints: number;

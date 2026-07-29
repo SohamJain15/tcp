@@ -16,6 +16,8 @@ export interface LeaderboardRow {
   year: 1 | 2 | 3 | 4 | null;
   score: number;
   solved: number;
+  /** Contest mode only: total questions in the contest, for a "solved / total" display. */
+  total: number | null;
   /** Problem mode only. */
   accuracy: number | null;
   /** Contest mode only. */
@@ -34,6 +36,7 @@ export function toProblemLeaderboardRows(items: LeaderboardItem[]): LeaderboardR
     year: item.year,
     score: item.score,
     solved: item.problemsSolved,
+    total: null,
     accuracy: item.accuracy,
     timeTakenMs: null,
     violationCount: null,
@@ -52,6 +55,7 @@ export function toContestLeaderboardRows(items: ContestStandingItem[]): Leaderbo
     year: item.year,
     score: item.score,
     solved: item.solvedCount,
+    total: item.totalQuestions,
     accuracy: null,
     timeTakenMs: item.timeTakenMs,
     violationCount: item.violationCount,

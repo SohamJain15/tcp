@@ -46,6 +46,10 @@ const studentProfileSchema = baseProfileSchema
 
 const facultyProfileSchema = baseProfileSchema.extend({
   designation: z.string().trim().min(1, "Designation is required"),
+  // Self-declared Head of Department flag. Grants the read-only department
+  // participation view; never any additional content access.
+  // NOT z.coerce.boolean() — that coerces the string "false" to true.
+  isHod: z.boolean().optional().default(false),
 });
 
 export function parseUpdateProfilePayload(
@@ -60,6 +64,7 @@ export function parseUpdateProfilePayload(
   rollNumber?: string;
   semester?: number;
   designation?: string;
+  isHod?: boolean;
 } {
   return role === "FACULTY"
     ? facultyProfileSchema.parse(payload)
