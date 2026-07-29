@@ -1,5 +1,5 @@
 import { AppError } from "../../shared/errors/app-error";
-import type { Department } from "../../shared/types/domain";
+import type { Department, Difficulty } from "../../shared/types/domain";
 import {
   ACTIVITY_LEVEL_BANDS,
   addDays,
@@ -24,6 +24,7 @@ import type {
   ContestRegistrationRepository,
   ContestRepository,
 } from "../contest/contest.repository";
+import type { ProblemRepository } from "../problem/problem.repository";
 import type { SubmissionAnalyticsRecord, SubmissionRepository } from "../submission/submission.repository";
 import type { UserRecord } from "../user/user.model";
 import type { UserRepository } from "../user/user.repository";
@@ -81,6 +82,7 @@ export interface DepartmentService {
 interface DepartmentServiceDependencies {
   userRepository: UserRepository;
   submissionRepository: SubmissionRepository;
+  problemRepository: ProblemRepository;
   contestRepository: ContestRepository;
   contestRegistrationRepository: ContestRegistrationRepository;
   contestAttemptRepository: ContestAttemptRepository;
@@ -176,6 +178,14 @@ async function loadContestParticipation(
   const attemptedByStudent = new Map<string, number>();
   const items: DepartmentContestParticipation[] = [];
 
+  // Resolve each conductor's name once (creators may sit in other departments), so the
+  // table can attribute a contest without ever loading its questions.
+  const creatorEmails = Array.from(new Set(contests.map((contest) => contest.createdBy)));
+  const creators = await Promise.all(creatorEmails.map((email) => dependencies.userRepository.getByEmail(email)));
+  const nameByCreator = new Map<string, string | null>(
+    creators.map((creator, index) => [creatorEmails[index], creator?.name ?? null]),
+  );
+
   for (const contest of contests) {
     const [registrations, attempts] = await Promise.all([
       dependencies.contestRegistrationRepository.listByContest(contest.id),
@@ -212,6 +222,7 @@ async function loadContestParticipation(
     items.push({
       contestId: contest.id,
       title: contest.title,
+      conductedByName: nameByCreator.get(contest.createdBy) ?? null,
       type: contest.type,
       computedStatus: computeContestStatus(contest, now),
       startAt: contest.startAt.toISOString(),
@@ -344,6 +355,40 @@ function buildActivityLevelDistribution(
   }));
 }
 
+/**
+ * Problems solved counted *per student*: if three students each solve the same problem,
+ * that problem contributes three. A problem a student solved more than once still counts
+ * once for that student, so the total reflects distinct student–problem solves.
+ */
+function buildDepartmentDifficultyBreakdown(
+  submissions: readonly SubmissionAnalyticsRecord[],
+): { difficulty: Difficulty; solvedCount: number }[] {
+  const counts = new Map<Difficulty, number>([
+    ["Easy", 0],
+    ["Medium", 0],
+    ["Hard", 0],
+  ]);
+  const seen = new Set<string>();
+
+  for (const submission of submissions) {
+    if (submission.sourceType !== "problem" || submission.status !== "ACCEPTED") {
+      continue;
+    }
+    const key = `${submission.userEmail}::${submission.problemId}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    const difficulty = submission.problemDifficultySnapshot;
+    counts.set(difficulty, (counts.get(difficulty) ?? 0) + 1);
+  }
+
+  return (["Easy", "Medium", "Hard"] as Difficulty[]).map((difficulty) => ({
+    difficulty,
+    solvedCount: counts.get(difficulty) ?? 0,
+  }));
+}
+
 export function createDepartmentService(dependencies: DepartmentServiceDependencies): DepartmentService {
   return {
     async getOverview(department, query) {
@@ -352,6 +397,40 @@ export function createDepartmentService(dependencies: DepartmentServiceDependenc
 
       const { items: contestParticipation, registeredByStudent, attemptedByStudent } =
         await loadContestParticipation(dependencies, department, rosterSet, now);
+
+      // Faculty of this department: used for the "created" counts and the faculty-vs-student
+      // consistency comparison. None of their content (problems/questions) is loaded here.
+      const faculty = await dependencies.userRepository.listByDepartment(department, "FACULTY");
+      const facultyEmails = faculty.map((member) => member.email);
+      const facultyEmailSet = new Set(facultyEmails);
+
+      const [allProblems, allContests, facultySubmissions] = await Promise.all([
+        dependencies.problemRepository.list(),
+        dependencies.contestRepository.list(),
+        facultyEmails.length === 0
+          ? Promise.resolve([] as SubmissionAnalyticsRecord[])
+          : dependencies.submissionRepository.listForAnalytics({
+              userEmails: facultyEmails,
+              createdFrom: from,
+              createdTo: to,
+            }),
+      ]);
+
+      const problemsCreatedCount = allProblems.filter((problem) => facultyEmailSet.has(problem.createdBy)).length;
+      const contestsCreatedCount = allContests.filter((contest) => facultyEmailSet.has(contest.createdBy)).length;
+
+      const facultySubmissionsByMember = new Map<string, SubmissionAnalyticsRecord[]>();
+      for (const submission of facultySubmissions) {
+        const bucket = facultySubmissionsByMember.get(submission.userEmail);
+        if (bucket) {
+          bucket.push(submission);
+        } else {
+          facultySubmissionsByMember.set(submission.userEmail, [submission]);
+        }
+      }
+      const facultyConsistencies = faculty.map((member) =>
+        computeConsistency(activeDateKeys(facultySubmissionsByMember.get(member.email) ?? []), from, to),
+      );
 
       const consistencies = roster.map((student) =>
         computeConsistency(activeDateKeys(submissionsByStudent.get(student.email) ?? []), from, to),
@@ -365,6 +444,9 @@ export function createDepartmentService(dependencies: DepartmentServiceDependenc
 
       const acceptedSubmissionCount = submissions.filter((submission) => submission.status === "ACCEPTED").length;
       const analytics = buildAnalyticsFromSubmissions(submissions);
+      // Counted per student (3 students solving the same problem → 3), unlike the profile
+      // analytics which dedupe a solve to a single problem.
+      const difficultyBreakdown = buildDepartmentDifficultyBreakdown(submissions);
 
       const distributionBands = ["0-20", "21-40", "41-60", "61-80", "81-100"];
       const distribution = distributionBands.map((band) => ({ band, studentCount: 0 }));
@@ -383,12 +465,14 @@ export function createDepartmentService(dependencies: DepartmentServiceDependenc
           submissionCount: submissions.length,
           acceptedSubmissionCount,
           accuracy: percentage(acceptedSubmissionCount, submissions.length),
-          problemsSolved: analytics.difficultyBreakdown.reduce((total, entry) => total + entry.solvedCount, 0),
+          problemsSolved: difficultyBreakdown.reduce((total, entry) => total + entry.solvedCount, 0),
           contestRegistrationCount: Array.from(registeredByStudent.values()).reduce(
             (total, value) => total + value,
             0,
           ),
           contestAttemptCount: Array.from(attemptedByStudent.values()).reduce((total, value) => total + value, 0),
+          problemsCreatedCount,
+          contestsCreatedCount,
         },
         participationByYear: buildYearParticipation(
           roster,
@@ -406,10 +490,11 @@ export function createDepartmentService(dependencies: DepartmentServiceDependenc
           averageActiveDays: average(consistencies.map((entry) => entry.activeDays)),
           averageCurrentStreakDays: average(consistencies.map((entry) => entry.currentStreakDays)),
           averageLongestStreakDays: average(consistencies.map((entry) => entry.longestStreakDays)),
+          facultyAverageConsistencyScore: average(facultyConsistencies.map((entry) => entry.consistencyScore)),
           distribution,
         },
         submissionHeatmap: analytics.submissionHeatmap,
-        difficultyBreakdown: analytics.difficultyBreakdown,
+        difficultyBreakdown,
         languageBreakdown: analytics.languageBreakdown,
         contestParticipation: contestParticipation.slice(0, RECENT_CONTEST_LIMIT),
       };

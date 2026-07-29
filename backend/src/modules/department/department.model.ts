@@ -27,6 +27,10 @@ export interface DepartmentTotals {
   problemsSolved: number;
   contestRegistrationCount: number;
   contestAttemptCount: number;
+  /** Problems authored by faculty in this department. */
+  problemsCreatedCount: number;
+  /** Contests authored by faculty in this department. */
+  contestsCreatedCount: number;
 }
 
 export interface DepartmentYearParticipation {
@@ -62,6 +66,8 @@ export interface DepartmentConsistency {
   averageActiveDays: number;
   averageCurrentStreakDays: number;
   averageLongestStreakDays: number;
+  /** Average consistency score across the department's faculty, for a like-for-like comparison. */
+  facultyAverageConsistencyScore: number;
   /** Count of students per 0-20/21-40/… consistency-score band. */
   distribution: { band: string; studentCount: number }[];
 }
@@ -70,6 +76,8 @@ export interface DepartmentConsistency {
 export interface DepartmentContestParticipation {
   contestId: string;
   title: string;
+  /** Name of the faculty who conducted (created) the contest — title/attribution only. */
+  conductedByName: string | null;
   type: string;
   computedStatus: string;
   startAt: string;
