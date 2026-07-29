@@ -129,6 +129,8 @@ export function createUserController({ userService, userRepository }: UserContro
           semester: payload.semester ?? null,
           linkedInUrl: payload.linkedInUrl,
           githubUrl: payload.githubUrl,
+          // A student is never HOD; clear it so a role change can't leave a stale flag.
+          isHod: false,
           isProfileComplete: true,
           updatedAt: new Date(),
         });
@@ -151,6 +153,7 @@ export function createUserController({ userService, userRepository }: UserContro
         department: payload.department,
         linkedInUrl: payload.linkedInUrl,
         githubUrl: payload.githubUrl,
+        isHod: payload.isHod ?? false,
         isProfileComplete: true,
         updatedAt: new Date(),
       });

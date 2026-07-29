@@ -92,7 +92,9 @@ export function LeaderboardTable({
         )}
       </td>
       {isContest && <td className="px-4 py-3">{row.year ? getYearLabel(row.year) : "-"}</td>}
-      <td className="px-4 py-3 text-right font-mono-code">{row.solved}</td>
+      <td className="px-4 py-3 text-right font-mono-code">
+        {row.total !== null ? `${row.solved}/${row.total}` : row.solved}
+      </td>
       <td className="px-4 py-3 text-right font-mono-code font-semibold">{row.score}</td>
       {isContest ? (
         <>
@@ -156,7 +158,10 @@ export function LeaderboardTable({
                         </p>
                       )}
                       <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-                        <PodiumStat label="Solved" value={String(row.solved)} />
+                        <PodiumStat
+                          label="Solved"
+                          value={row.total !== null ? `${row.solved}/${row.total}` : String(row.solved)}
+                        />
                         <PodiumStat label="Score" value={String(row.score)} />
                         {isContest ? (
                           <PodiumStat label="Time" value={formatLeaderboardDuration(row.timeTakenMs)} />

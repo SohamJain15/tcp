@@ -1072,3 +1072,252 @@ describe("TCET Coding Platform backend APIs", () => {
     expect(response.status).toBe(400);
   });
 });
+
+const hodHeaders = {
+  "x-coe-role": "FACULTY",
+  "x-coe-email": "hod1@tcetmumbai.in",
+  "x-coe-name": "Prof. Rao",
+};
+
+const hodNoDeptHeaders = {
+  "x-coe-role": "FACULTY",
+  "x-coe-email": "hodnodept@tcetmumbai.in",
+  "x-coe-name": "Prof. Nodept",
+};
+
+/**
+ * The HOD surface must expose participation only. Rather than asserting field by field
+ * (which silently passes the moment someone adds a new field), scan the whole serialized
+ * body for anything that would constitute question content or student code.
+ */
+function expectNoQuestionContent(body: unknown) {
+  const serialized = JSON.stringify(body);
+  for (const forbidden of [
+    "correctAnswer",
+    "correctAnswers",
+    "hiddenTestCases",
+    "sampleTestCases",
+    "problemStatement",
+    "statement",
+    "options",
+    "draftCode",
+    "finalCode",
+    '"code"',
+  ]) {
+    expect(serialized).not.toContain(forbidden);
+  }
+}
+
+describe("HOD department views", () => {
+  it("refuses faculty who are not flagged as HOD, and students", async () => {
+    const { app } = createTestApp();
+
+    const facultyResponse = await request(app).get("/api/department/overview").set(facultyHeaders);
+    expect(facultyResponse.status).toBe(403);
+
+    const studentResponse = await request(app).get("/api/department/overview");
+    expect(studentResponse.status).toBe(403);
+  });
+
+  it("refuses an HOD whose profile has no department", async () => {
+    const { app } = createTestApp();
+
+    const response = await request(app).get("/api/department/overview").set(hodNoDeptHeaders);
+    expect(response.status).toBe(403);
+    expect(response.body.message).toMatch(/department/i);
+  });
+
+  it("scopes the overview to the HOD's own department and ignores a client-supplied department", async () => {
+    const { app } = createTestApp();
+
+    const response = await request(app)
+      .get("/api/department/overview")
+      .query({ department: "B.E. Information Technology" })
+      .set(hodHeaders);
+
+    expect(response.status).toBe(200);
+    // Resolved from the saved profile, never from the query string.
+    expect(response.body.overview.department).toBe("B.E. Computer Engineering");
+    expect(response.body.overview.totals.studentCount).toBe(1);
+  });
+
+  it("counts students with no activity in the participation denominator", async () => {
+    const { app } = createTestApp();
+
+    const response = await request(app).get("/api/department/overview").set(hodHeaders);
+
+    expect(response.status).toBe(200);
+    // student1 exists but has submitted nothing, so they are counted but not active.
+    expect(response.body.overview.totals.studentCount).toBe(1);
+    expect(response.body.overview.totals.activeStudentCount).toBe(0);
+    expect(response.body.overview.totals.participationRate).toBe(0);
+    const inactive = response.body.overview.activityLevelDistribution.find(
+      (bucket: { level: string }) => bucket.level === "Inactive",
+    );
+    expect(inactive.studentCount).toBe(1);
+  });
+
+  it("lists only students from the HOD's own department", async () => {
+    const { app } = createTestApp();
+
+    const response = await request(app).get("/api/department/students").set(hodHeaders);
+
+    expect(response.status).toBe(200);
+    const emails = response.body.items.map((item: { email: string }) => item.email);
+    expect(emails).toContain("student1@tcetmumbai.in");
+    expect(emails).not.toContain("student2@tcetmumbai.in");
+  });
+
+  it("hides a student from another department behind a 404", async () => {
+    const { app } = createTestApp();
+
+    const ownStudent = await request(app)
+      .get("/api/department/students/student1@tcetmumbai.in")
+      .set(hodHeaders);
+    expect(ownStudent.status).toBe(200);
+
+    const otherStudent = await request(app)
+      .get("/api/department/students/student2@tcetmumbai.in")
+      .set(hodHeaders);
+    expect(otherStudent.status).toBe(404);
+  });
+
+  it("exposes participation for another faculty's contest without exposing its content", async () => {
+    const { app } = createTestApp();
+    const contest = await createContest(app);
+    await registerForContest(app, contest.id);
+
+    const contests = await request(app).get("/api/department/contests").set(hodHeaders);
+    expect(contests.status).toBe(200);
+
+    const participation = contests.body.items.find(
+      (item: { contestId: string }) => item.contestId === contest.id,
+    );
+    expect(participation).toBeDefined();
+    expect(participation.title).toBe("T&P Test");
+    expect(participation.registeredCount).toBe(1);
+    expectNoQuestionContent(contests.body);
+
+    const overview = await request(app).get("/api/department/overview").set(hodHeaders);
+    expectNoQuestionContent(overview.body);
+
+    const student = await request(app)
+      .get("/api/department/students/student1@tcetmumbai.in")
+      .set(hodHeaders);
+    expectNoQuestionContent(student.body);
+
+    // The content routes stay creator-scoped: being HOD grants no access to them.
+    const contestDetail = await request(app).get(`/api/contests/${contest.id}`).set(hodHeaders);
+    expect(contestDetail.status).toBe(404);
+  });
+
+  it("keeps normal faculty powers for an HOD while still scoping content to its creator", async () => {
+    const { app } = createTestApp();
+    await createProblem(app);
+
+    const created = await request(app)
+      .post("/api/problems")
+      .set(hodHeaders)
+      .send({
+        title: "HOD authored problem",
+        statement: "Echo the given integer.",
+        inputFormat: "One integer",
+        outputFormat: "The same integer",
+        constraints: ["1 <= n <= 10"],
+        difficulty: "Easy",
+        tags: ["Basics"],
+        timeLimitSeconds: 1,
+        memoryLimitMb: 256,
+        lifecycleState: "Published",
+        sampleTestCases: [{ input: "1", output: "1" }],
+        hiddenTestCases: [{ input: "2", output: "2" }],
+      });
+    expect(created.status).toBe(201);
+
+    // Sees only their own authored content, exactly like any other faculty member.
+    const manage = await request(app).get("/api/problems/manage").set(hodHeaders);
+    expect(manage.status).toBe(200);
+    const titles = manage.body.items.map((item: { title: string }) => item.title);
+    expect(titles).toContain("HOD authored problem");
+    expect(titles).not.toContain("Two Sum Variant");
+  });
+});
+
+describe("HOD contest delegation", () => {
+  async function createContestAs(app: Parameters<typeof request>[0], headers: Record<string, string>) {
+    const response = await request(app)
+      .post("/api/contests")
+      .set(headers)
+      .send({
+        title: "HOD Delegated Contest",
+        startTime: "2026-05-07T00:00:00.000Z",
+        endTime: "2026-05-07T01:00:00.000Z",
+        duration: 60,
+        type: "Rated",
+        targetDepartment: null,
+        maxViolations: 3,
+        registrationOpenAt: "2026-05-06T00:00:00.000Z",
+        registrationCloseAt: "2026-05-07T01:00:00.000Z",
+        questions: [
+          {
+            id: "q_mcq_1",
+            type: "MCQ",
+            points: 10,
+            statement: "Which data structure follows the LIFO principle?",
+            options: ["Queue", "Stack", "Heap", "Tree"],
+            correctAnswer: "B",
+          },
+        ],
+      });
+    expect(response.status).toBe(201);
+    return response.body.contest;
+  }
+
+  it("lets an HOD delegate their contest to a department faculty, who can then manage it", async () => {
+    const { app } = createTestApp();
+    const contest = await createContestAs(app, hodHeaders);
+
+    // faculty1 is in the same department but is not the creator: no access yet.
+    const before = await request(app).get(`/api/contests/${contest.id}`).set(facultyHeaders);
+    expect(before.status).toBe(404);
+
+    const delegate = await request(app)
+      .patch(`/api/department/managed-contests/${contest.id}/managers`)
+      .set(hodHeaders)
+      .send({ managerEmails: ["faculty1@tcetmumbai.in"] });
+    expect(delegate.status).toBe(200);
+    expect(delegate.body.contest.managers.map((m: { email: string }) => m.email)).toContain(
+      "faculty1@tcetmumbai.in",
+    );
+
+    // Now faculty1 can view and manage the contest.
+    const after = await request(app).get(`/api/contests/${contest.id}`).set(facultyHeaders);
+    expect(after.status).toBe(200);
+
+    const inList = await request(app).get("/api/contests").set(facultyHeaders);
+    expect(inList.body.items.map((c: { id: string }) => c.id)).toContain(contest.id);
+  });
+
+  it("refuses delegation from a non-HOD faculty", async () => {
+    const { app } = createTestApp();
+    const contest = await createContestAs(app, facultyHeaders);
+
+    const response = await request(app)
+      .patch(`/api/department/managed-contests/${contest.id}/managers`)
+      .set(facultyHeaders)
+      .send({ managerEmails: ["hod1@tcetmumbai.in"] });
+    expect(response.status).toBe(403);
+  });
+
+  it("ignores a manager email that is not a faculty in the HOD's department", async () => {
+    const { app } = createTestApp();
+    const contest = await createContestAs(app, hodHeaders);
+
+    const response = await request(app)
+      .patch(`/api/department/managed-contests/${contest.id}/managers`)
+      .set(hodHeaders)
+      .send({ managerEmails: ["student1@tcetmumbai.in", "outsider@tcetmumbai.in"] });
+    expect(response.status).toBe(200);
+    expect(response.body.contest.managers).toHaveLength(0);
+  });
+});

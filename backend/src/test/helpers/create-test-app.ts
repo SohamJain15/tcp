@@ -2,6 +2,8 @@ import express from "express";
 import { createApp } from "../../app";
 import { env } from "../../config/env";
 import { createRequireCompleteProfile } from "../../middleware/require-complete-profile";
+import { createRequireHod } from "../../middleware/require-hod";
+import { createDepartmentService } from "../../modules/department/department.service";
 import { createContestService } from "../../modules/contest/contest.service";
 import { createLeaderboardService } from "../../modules/leaderboard/leaderboard.service";
 import { createProblemService } from "../../modules/problem/problem.service";
@@ -32,6 +34,7 @@ export function createTestApp() {
       uid: "TCET-REAL-001",
       isProfileComplete: true,
       designation: null,
+      isHod: false,
       rollNumber: "TCET001",
       department: "B.E. Computer Engineering",
       semester: 4,
@@ -56,6 +59,7 @@ export function createTestApp() {
       uid: "TCET-REAL-002",
       isProfileComplete: true,
       designation: null,
+      isHod: false,
       rollNumber: "TCET002",
       department: "B.E. Information Technology",
       semester: 4,
@@ -80,8 +84,62 @@ export function createTestApp() {
       uid: "TCET-FAC-001",
       isProfileComplete: true,
       designation: "Professor",
+      isHod: false,
       rollNumber: null,
       department: "B.E. Computer Engineering",
+      semester: null,
+      linkedInUrl: null,
+      githubUrl: null,
+      skills: [],
+      rating: 0,
+      score: 0,
+      problemsSolved: 0,
+      submissionCount: 0,
+      acceptedSubmissionCount: 0,
+      accuracy: 0,
+      createdAt: seedTime,
+      updatedAt: seedTime,
+      lastLoginAt: seedTime,
+      lastAcceptedAt: null,
+    },
+    {
+      // Head of Computer Engineering — same department as student1, so department
+      // scoping and cross-department isolation are both exercised.
+      email: "hod1@tcetmumbai.in",
+      role: "FACULTY",
+      name: "Prof. Rao",
+      uid: "TCET-FAC-002",
+      isProfileComplete: true,
+      designation: "Associate Professor",
+      isHod: true,
+      rollNumber: null,
+      department: "B.E. Computer Engineering",
+      semester: null,
+      linkedInUrl: null,
+      githubUrl: null,
+      skills: [],
+      rating: 0,
+      score: 0,
+      problemsSolved: 0,
+      submissionCount: 0,
+      acceptedSubmissionCount: 0,
+      accuracy: 0,
+      createdAt: seedTime,
+      updatedAt: seedTime,
+      lastLoginAt: seedTime,
+      lastAcceptedAt: null,
+    },
+    {
+      // HOD flagged but with no department saved — must be refused by requireHod.
+      email: "hodnodept@tcetmumbai.in",
+      role: "FACULTY",
+      name: "Prof. Nodept",
+      uid: "TCET-FAC-003",
+      isProfileComplete: true,
+      designation: "Professor",
+      isHod: true,
+      rollNumber: null,
+      department: null,
       semester: null,
       linkedInUrl: null,
       githubUrl: null,
@@ -140,6 +198,7 @@ export function createTestApp() {
     userRepository,
     authMiddleware: mockAuthMiddleware,
     profileCompletionMiddleware: createRequireCompleteProfile(userRepository),
+    hodMiddleware: createRequireHod(userRepository),
     userService: createUserService({
       userRepository,
       leaderboardRepository,
@@ -176,6 +235,14 @@ export function createTestApp() {
       submissionQueue,
       userRepository,
       executionProvider: new StubExecutionProvider(),
+      now,
+    }),
+    departmentService: createDepartmentService({
+      userRepository,
+      submissionRepository,
+      contestRepository,
+      contestRegistrationRepository,
+      contestAttemptRepository,
       now,
     }),
   };

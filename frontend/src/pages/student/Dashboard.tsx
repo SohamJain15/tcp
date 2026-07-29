@@ -157,8 +157,10 @@ export default function StudentDashboard() {
 
   const contestsQuery = useQuery({
     queryKey: ["student-dashboard", "contests"],
-    queryFn: () => contestsApi.list({ pageSize: 100 }, "/student/dashboard"),
+    // The server caps page size at 50; asking for more just hid that fact.
+    queryFn: () => contestsApi.list({ pageSize: 50 }, "/student/dashboard"),
   });
+
 
   const user = userQuery.data?.user;
   const recentSubmissions = useMemo(

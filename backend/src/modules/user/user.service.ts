@@ -6,9 +6,10 @@ import {
 } from "../leaderboard/leaderboard.model";
 import type { AuthenticatedUser } from "../../shared/types/auth";
 import { AppError } from "../../shared/errors/app-error";
+import { estimateActiveMinutes } from "../../shared/utils/activity";
 import { normalizeDepartment, normalizeRole } from "../../shared/utils/normalize";
 import type { Department } from "../../shared/types/domain";
-import type { SubmissionRepository } from "../submission/submission.repository";
+import type { SubmissionAnalyticsRecord, SubmissionRepository } from "../submission/submission.repository";
 import type {
   UserProfileAnalyticsResponse,
   UserProfileResponse,
@@ -66,6 +67,7 @@ function createDefaultUser(authUser: AuthenticatedUser, now: Date): UserRecord {
     uid: authUser.uid ?? null,
     isProfileComplete: false,
     designation: null,
+    isHod: false,
     rollNumber: null,
     department: normalizeDepartment(authUser.department) ?? null,
     semester: null,
@@ -95,6 +97,8 @@ function mergeUser(existing: UserRecord, authUser: AuthenticatedUser, now: Date)
     department: existing.department ?? normalizeDepartment(authUser.department) ?? null,
     isProfileComplete: existing.isProfileComplete,
     designation: existing.designation,
+    // Only ever set from the saved profile — CoE/SSO headers must never grant HOD.
+    isHod: existing.isHod,
     rollNumber: existing.rollNumber,
     semester: existing.semester,
     linkedInUrl: existing.linkedInUrl,
@@ -120,8 +124,13 @@ async function buildRankedProfileResponse(
   return toUserProfileResponse(user, rank > 0 ? rank : null);
 }
 
-function buildAnalyticsFromSubmissions(
-  submissions: Awaited<ReturnType<SubmissionRepository["list"]>>,
+/**
+ * Pure aggregation over submissions. Typed against the code-free record so it can be
+ * reused by aggregate/reporting paths (e.g. the department views) that must never load
+ * source code; a full `SubmissionRecord[]` remains assignable.
+ */
+export function buildAnalyticsFromSubmissions(
+  submissions: readonly SubmissionAnalyticsRecord[],
 ): UserProfileAnalyticsResponse {
   const problemSubmissions = submissions.filter((submission) => submission.sourceType === "problem");
   const acceptedProblemSubmissions = problemSubmissions.filter((submission) => submission.status === "ACCEPTED");
@@ -153,10 +162,36 @@ function buildAnalyticsFromSubmissions(
   }
 
   const heatmapCounts = new Map<string, number>();
+  const acceptedCounts = new Map<string, number>();
   for (const submission of problemSubmissions) {
     const dateKey = submission.createdAt.toISOString().slice(0, 10);
     heatmapCounts.set(dateKey, (heatmapCounts.get(dateKey) ?? 0) + 1);
+    if (submission.status === "ACCEPTED") {
+      acceptedCounts.set(dateKey, (acceptedCounts.get(dateKey) ?? 0) + 1);
+    }
   }
+
+  // First solves are a free by-product of the map built above, and are what a
+  // "problems solved over time" curve must be built from — re-deriving it from the
+  // capped submission history would undercount.
+  const firstSolveCounts = new Map<string, number>();
+  for (const submission of firstAcceptedByResource.values()) {
+    const dateKey = submission.createdAt.toISOString().slice(0, 10);
+    firstSolveCounts.set(dateKey, (firstSolveCounts.get(dateKey) ?? 0) + 1);
+  }
+
+  const progressTrend = Array.from(heatmapCounts.keys())
+    .sort((left, right) => left.localeCompare(right))
+    .map((date) => ({
+      date,
+      submissionCount: heatmapCounts.get(date) ?? 0,
+      acceptedCount: acceptedCounts.get(date) ?? 0,
+      firstSolveCount: firstSolveCounts.get(date) ?? 0,
+    }));
+
+  // Estimated from every submission (practice and contest), since both represent time
+  // the student actually spent working in the platform.
+  const activeTimeEstimate = estimateActiveMinutes(submissions.map((submission) => submission.createdAt));
 
   const recentAcceptedSubmissions = acceptedProblemSubmissions
     .slice()
@@ -185,6 +220,11 @@ function buildAnalyticsFromSubmissions(
     submissionHeatmap: Array.from(heatmapCounts.entries())
       .sort((left, right) => left[0].localeCompare(right[0]))
       .map(([date, submissionCount]) => ({ date, submissionCount })),
+    progressTrend,
+    activeTime: {
+      estimatedActiveMinutes: activeTimeEstimate.totalMinutes,
+      byDate: activeTimeEstimate.byDate,
+    },
     recentAcceptedSubmissions,
     submissionHistory,
   };

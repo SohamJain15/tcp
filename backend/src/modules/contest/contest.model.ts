@@ -82,6 +82,12 @@ export interface ContestRecord {
   maxViolations: number;
   createdBy: string;
   createdByRole: UserRole;
+  /**
+   * Faculty (besides the creator) the HOD has delegated management of this contest to.
+   * A manager can do everything the creator can on the contest; only the creator/HOD
+   * can change this list.
+   */
+  managerEmails: string[];
   questions: ContestQuestion[];
   createdAt: Date;
   updatedAt: Date;
@@ -353,6 +359,8 @@ export interface ContestStandingItem {
   year: StudentYear | null;
   score: number;
   solvedCount: number;
+  /** Number of questions in the contest, so the UI can show "solved / total". */
+  totalQuestions: number;
   status: ContestAttemptStatus;
   violationCount: number;
   violationPenaltyPoints: number;
@@ -915,6 +923,8 @@ export function toContestStandingItem(
     year,
     score: attempt.score,
     solvedCount: attempt.questionStates.filter((state) => state.status === "SOLVED").length,
+    // questionStates holds one entry per contest question, so its length is the total.
+    totalQuestions: attempt.questionStates.length,
     status: attempt.status,
     violationCount: attempt.violationCount,
     violationPenaltyPoints: attempt.violationPenaltyPoints,

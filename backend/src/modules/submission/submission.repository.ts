@@ -16,6 +16,8 @@ import type { SubmissionSourceType } from "./submission.model";
 
 export interface SubmissionListFilters {
   userEmail?: string;
+  /** Matches any of the given authors. Used to scope reads to a department roster. */
+  userEmails?: string[];
   resourceOwnerEmail?: string;
   userDepartment?: Department;
   problemId?: string;
@@ -23,13 +25,26 @@ export interface SubmissionListFilters {
   sourceType?: SubmissionSourceType;
   status?: SubmissionStatus;
   language?: SupportedLanguage;
+  createdFrom?: Date;
+  createdTo?: Date;
 }
+
+/**
+ * A submission with the student's source code and program output removed.
+ *
+ * Aggregate/reporting paths (department participation views, dashboard statistics)
+ * read through this type so that leaking a student's code from an aggregate endpoint
+ * is a compile error rather than something a reviewer has to catch by eye.
+ */
+export type SubmissionAnalyticsRecord = Omit<SubmissionRecord, "code" | "stdout" | "stderr">;
 
 export interface SubmissionRepository {
   getById(submissionId: string): Promise<SubmissionRecord | null>;
   save(submission: SubmissionRecord): Promise<SubmissionRecord>;
   create(submission: SubmissionRecord): Promise<SubmissionRecord>;
   list(filters?: SubmissionListFilters): Promise<SubmissionRecord[]>;
+  /** Same query as `list`, projected to exclude code/stdout/stderr. */
+  listForAnalytics(filters?: SubmissionListFilters): Promise<SubmissionAnalyticsRecord[]>;
 }
 
 function mapSubmissionRecord(submissionId: string, data: Record<string, unknown>): SubmissionRecord {
@@ -84,6 +99,7 @@ async function getCollection(): Promise<Collection> {
 function buildFilter(filters: SubmissionListFilters): Filter<Record<string, unknown>> {
   const filter: Filter<Record<string, unknown>> = {};
   if (filters.userEmail) filter.userEmail = filters.userEmail;
+  if (filters.userEmails) filter.userEmail = { $in: filters.userEmails };
   if (filters.resourceOwnerEmail) filter.resourceOwnerEmail = filters.resourceOwnerEmail;
   if (filters.userDepartment) filter.userDepartment = filters.userDepartment;
   if (filters.problemId) filter.problemId = filters.problemId;
@@ -91,6 +107,12 @@ function buildFilter(filters: SubmissionListFilters): Filter<Record<string, unkn
   if (filters.sourceType) filter.sourceType = filters.sourceType;
   if (filters.status) filter.status = filters.status;
   if (filters.language) filter.language = filters.language;
+  if (filters.createdFrom || filters.createdTo) {
+    const range: Record<string, Date> = {};
+    if (filters.createdFrom) range.$gte = filters.createdFrom;
+    if (filters.createdTo) range.$lte = filters.createdTo;
+    filter.createdAt = range;
+  }
   return filter;
 }
 
@@ -117,5 +139,24 @@ export class FirestoreSubmissionRepository implements SubmissionRepository {
     const collection = await getCollection();
     const documents = await collection.find(buildFilter(filters)).sort({ createdAt: -1 }).toArray();
     return documents.map((document) => mapSubmissionRecord(String((document as Record<string, unknown>).id ?? ""), document as Record<string, unknown>));
+  }
+
+  async listForAnalytics(filters: SubmissionListFilters = {}): Promise<SubmissionAnalyticsRecord[]> {
+    const collection = await getCollection();
+    // Projected away at the database, so code never enters the process on this path.
+    const documents = await collection
+      .find(buildFilter(filters))
+      .project({ code: 0, stdout: 0, stderr: 0 })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    return documents.map((document) => {
+      const data = document as Record<string, unknown>;
+      const { code: _code, stdout: _stdout, stderr: _stderr, ...rest } = mapSubmissionRecord(
+        String(data.id ?? ""),
+        data,
+      );
+      return rest;
+    });
   }
 }

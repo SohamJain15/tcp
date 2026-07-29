@@ -9,6 +9,7 @@ import { userApi } from "@/api/services";
 import { DEPARTMENTS, type CompleteProfilePayload } from "@/api/types";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Form,
@@ -43,12 +44,17 @@ const studentProfileSchema = z.object({
   githubUrl: optionalUrlSchema,
 });
 
+const DESIGNATIONS = ["Professor", "Associate Professor", "Assistant Professor", "Lecturer"] as const;
+
 const facultyProfileSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   department: z.enum(DEPARTMENTS),
-  designation: z.string().trim().min(1, "Designation is required"),
+  designation: z.enum(DESIGNATIONS, { required_error: "Designation is required" }),
   linkedInUrl: optionalUrlSchema,
   githubUrl: optionalUrlSchema,
+  // A faculty member may self-declare as Head of Department. Grants a read-only
+  // department participation view; never any additional content access.
+  isHod: z.boolean().default(false),
 });
 
 type StudentProfileFormValues = z.infer<typeof studentProfileSchema>;
@@ -193,16 +199,18 @@ export default function CompleteProfile() {
     defaultValues: {
       name: userData?.user.name ?? "",
       department: userData?.user.department ?? undefined,
-      designation: userData?.user.designation ?? "",
+      designation: (userData?.user.designation ?? undefined) as (typeof DESIGNATIONS)[number] | undefined,
       linkedInUrl: userData?.user.linkedInUrl ?? "",
       githubUrl: userData?.user.githubUrl ?? "",
+      isHod: userData?.user.isHod ?? false,
     },
     values: {
       name: userData?.user.name ?? "",
       department: userData?.user.department ?? undefined,
-      designation: userData?.user.designation ?? "",
+      designation: (userData?.user.designation ?? undefined) as (typeof DESIGNATIONS)[number] | undefined,
       linkedInUrl: userData?.user.linkedInUrl ?? "",
       githubUrl: userData?.user.githubUrl ?? "",
+      isHod: userData?.user.isHod ?? false,
     },
   });
 
@@ -272,6 +280,7 @@ export default function CompleteProfile() {
                       department: values.department,
                       linkedInUrl: toNullableUrl(values.linkedInUrl),
                       githubUrl: toNullableUrl(values.githubUrl),
+                      isHod: values.isHod,
                     }),
                   )}
                   className="space-y-6"
@@ -322,9 +331,20 @@ export default function CompleteProfile() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Designation</FormLabel>
-                          <FormControl>
-                            <Input placeholder="e.g. Assistant Professor" {...field} />
-                          </FormControl>
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select designation" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {DESIGNATIONS.map((designation) => (
+                                <SelectItem key={designation} value={designation}>
+                                  {designation}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -360,6 +380,31 @@ export default function CompleteProfile() {
                       )}
                     />
                   </div>
+
+                  <FormField
+                    control={facultyForm.control}
+                    name="isHod"
+                    render={({ field }) => (
+                      <FormItem>
+                        <div className="flex items-start gap-3 border border-border p-4">
+                          <FormControl>
+                            <Checkbox
+                              id="faculty-is-hod-init"
+                              checked={field.value}
+                              onCheckedChange={(checked) => field.onChange(checked === true)}
+                              className="mt-0.5"
+                            />
+                          </FormControl>
+                          <div className="space-y-1">
+                            <FormLabel htmlFor="faculty-is-hod-init" className="cursor-pointer">
+                              I am the Head of Department
+                            </FormLabel>
+                            <FormMessage />
+                          </div>
+                        </div>
+                      </FormItem>
+                    )}
+                  />
 
                   <Button
                     type="submit"
