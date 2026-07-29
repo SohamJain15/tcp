@@ -350,6 +350,8 @@ export interface DepartmentOverview {
     problemsSolved: number;
     contestRegistrationCount: number;
     contestAttemptCount: number;
+    problemsCreatedCount: number;
+    contestsCreatedCount: number;
   };
   participationByYear: {
     year: StudentYear | null;
@@ -381,6 +383,7 @@ export interface DepartmentOverview {
     averageActiveDays: number;
     averageCurrentStreakDays: number;
     averageLongestStreakDays: number;
+    facultyAverageConsistencyScore: number;
     distribution: { band: string; studentCount: number }[];
   };
   submissionHeatmap: UserProfileAnalyticsHeatmapItem[];
@@ -393,6 +396,7 @@ export interface DepartmentOverview {
 export interface DepartmentContestParticipation {
   contestId: string;
   title: string;
+  conductedByName: string | null;
   type: string;
   computedStatus: string;
   startAt: string;

@@ -145,6 +145,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
   const departmentService = createDepartmentService({
     userRepository: repositories.userRepository,
     submissionRepository: repositories.submissionRepository,
+    problemRepository: repositories.problemRepository,
     contestRepository: repositories.contestRepository,
     contestRegistrationRepository: repositories.contestRegistrationRepository,
     contestAttemptRepository: repositories.contestAttemptRepository,

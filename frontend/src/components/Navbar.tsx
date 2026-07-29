@@ -86,11 +86,11 @@ export function Navbar() {
   const fallbackRole: UserRole = pathname.startsWith("/faculty") ? "FACULTY" : "STUDENT";
   const role = userQuery.data?.user.role ?? fallbackRole;
   const isHod = role === "FACULTY" && (userQuery.data?.user.isHod ?? false);
-  // HODs get an extra "Dept View" tab, inserted right after Dashboard.
+  // HODs get an extra "Department" tab, inserted right after Dashboard.
   const links = isHod
     ? [
         linksByRole.FACULTY[0],
-        { to: "/faculty/department", label: "Dept View" },
+        { to: "/faculty/department", label: "Department" },
         ...linksByRole.FACULTY.slice(1),
       ]
     : linksByRole[role];

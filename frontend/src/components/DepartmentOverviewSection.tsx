@@ -1,5 +1,5 @@
 import type { UseQueryResult } from "@tanstack/react-query";
-import { Building2, CalendarCheck, Flame, Users } from "lucide-react";
+import { CalendarCheck, FileText, Trophy, Users, type LucideIcon } from "lucide-react";
 
 import type { DepartmentOverviewEnvelope } from "@/api/types";
 import {
@@ -45,6 +45,15 @@ const YEAR_OPTIONS = [
   { value: "4", label: "4th Year" },
 ];
 
+// Slice colours for the participation-by-year pie, cycled per year.
+const YEAR_PIE_COLORS = [
+  SERIES_COLORS.accent,
+  SERIES_COLORS.success,
+  SERIES_COLORS.primary,
+  SERIES_COLORS.warning,
+  SERIES_COLORS.muted,
+];
+
 /**
  * Department-wide participation, shown only to a Head of Department.
  *
@@ -61,22 +70,25 @@ export function DepartmentOverviewSection({
 }: DepartmentOverviewSectionProps) {
   const overview = query.data?.overview;
 
-  const participationData = (overview?.participationByYear ?? []).map((entry) => ({
-    name: entry.label,
-    participating: entry.activeStudentCount,
-    inactive: Math.max(entry.studentCount - entry.activeStudentCount, 0),
-    rate: entry.participationRate,
-  }));
+  // Participation by year, drawn as a pie of active students per year.
+  const participationPie = (overview?.participationByYear ?? [])
+    .map((entry, index) => ({
+      name: entry.label,
+      value: entry.activeStudentCount,
+      color: YEAR_PIE_COLORS[index % YEAR_PIE_COLORS.length],
+    }))
+    .filter((slice) => slice.value > 0);
 
   const activityLevelData = (overview?.activityLevelDistribution ?? []).map((entry) => ({
     name: entry.level,
     count: entry.studentCount,
   }));
 
-  const consistencyData = (overview?.consistency.distribution ?? []).map((entry) => ({
-    name: entry.band,
-    count: entry.studentCount,
-  }));
+  // Average consistency, students vs faculty, on the same 0-100 scale.
+  const consistencyCompare = [
+    { name: "Students", score: overview?.consistency.averageConsistencyScore ?? 0 },
+    { name: "Faculty", score: overview?.consistency.facultyAverageConsistencyScore ?? 0 },
+  ];
 
   const trendData = (overview?.activityTrend ?? []).map((entry) => ({
     date: entry.date.slice(5),
@@ -90,22 +102,23 @@ export function DepartmentOverviewSection({
     color: DIFFICULTY_COLORS[entry.difficulty] ?? SERIES_COLORS.primary,
   }));
 
-  const stats = [
-    { label: "Students", value: String(overview?.totals.studentCount ?? 0), icon: Users },
+  const stats: { label: string; value: string; sub?: string; icon: LucideIcon }[] = [
+    { label: "Total Students", value: String(overview?.totals.studentCount ?? 0), icon: Users },
     {
       label: "Participating",
-      value: `${overview?.totals.activeStudentCount ?? 0} (${overview?.totals.participationRate ?? 0}%)`,
+      value: String(overview?.totals.activeStudentCount ?? 0),
+      sub: `(${overview?.totals.participationRate ?? 0}%)`,
       icon: CalendarCheck,
     },
     {
-      label: "Avg. Consistency",
-      value: `${overview?.consistency.averageConsistencyScore ?? 0}/100`,
-      icon: Flame,
+      label: "Problems Created",
+      value: String(overview?.totals.problemsCreatedCount ?? 0),
+      icon: FileText,
     },
     {
-      label: "Contest Attempts",
-      value: String(overview?.totals.contestAttemptCount ?? 0),
-      icon: Building2,
+      label: "Contests Created",
+      value: String(overview?.totals.contestsCreatedCount ?? 0),
+      icon: Trophy,
     },
   ];
 
@@ -117,10 +130,7 @@ export function DepartmentOverviewSection({
           <h2 className="mt-1 font-display text-2xl font-bold">
             {overview?.department ?? "Department"} Participation
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Student engagement across your department. Participation data only — contest questions and
-            submitted code are not shown here.
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">Student engagement across your department.</p>
         </div>
         <div className="flex flex-wrap gap-3">
           <div className="w-40">
@@ -151,7 +161,14 @@ export function DepartmentOverviewSection({
                   <span className="text-xs font-semibold uppercase tracking-wider">{stat.label}</span>
                   <stat.icon className="h-5 w-5 text-accent" />
                 </div>
-                <div className="mt-2 font-display text-2xl font-bold">{stat.value}</div>
+                <div className="mt-2 font-display text-2xl font-bold">
+                  {stat.value}
+                  {stat.sub ? (
+                    <sub className="ml-1 align-baseline text-xs font-semibold text-muted-foreground">
+                      {stat.sub}
+                    </sub>
+                  ) : null}
+                </div>
               </Card>
             ))}
           </div>
@@ -161,6 +178,18 @@ export function DepartmentOverviewSection({
               title="Department Activity"
               className="lg:col-span-2"
               subtitle={`Submissions and active students over the last ${overview?.window.days ?? windowDays} days`}
+              action={
+                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5" style={{ backgroundColor: SERIES_COLORS.accent }} aria-hidden />
+                    Submissions
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5" style={{ backgroundColor: SERIES_COLORS.success }} aria-hidden />
+                    Active students
+                  </span>
+                </div>
+              }
             >
               <TrendAreaChart
                 data={trendData}
@@ -173,20 +202,16 @@ export function DepartmentOverviewSection({
               />
             </ChartCard>
 
-            <ChartCard title="Problems Solved" subtitle="By difficulty, department-wide">
+            <ChartCard title="Problems Solved" subtitle="Total solves by students, by difficulty">
               <DonutChart data={difficultyData} centerLabel="Solved" emptyMessage="No problems solved yet." />
             </ChartCard>
           </div>
 
           <div className="grid gap-4 lg:grid-cols-3">
-            <ChartCard title="Participation by Year" subtitle="Active vs. inactive students in each year">
-              <CategoryBarChart
-                data={participationData}
-                categoryKey="name"
-                bars={[
-                  { dataKey: "participating", name: "Participating", color: SERIES_COLORS.success, stackId: "a" },
-                  { dataKey: "inactive", name: "Inactive", color: SERIES_COLORS.muted, stackId: "a" },
-                ]}
+            <ChartCard title="Participation by Year" subtitle="Active students in each year">
+              <DonutChart
+                data={participationPie}
+                centerLabel="Active"
                 emptyMessage="No students in this department yet."
               />
             </ChartCard>
@@ -201,15 +226,13 @@ export function DepartmentOverviewSection({
               />
             </ChartCard>
 
-            <ChartCard
-              title="Consistency Distribution"
-              subtitle="Blend of active-day ratio and week-to-week regularity"
-            >
+            <ChartCard title="Consistency" subtitle="Average consistency — students vs faculty">
               <CategoryBarChart
-                data={consistencyData}
+                data={consistencyCompare}
                 categoryKey="name"
-                bars={[{ dataKey: "count", name: "Students", color: SERIES_COLORS.accent }]}
-                emptyMessage="No students in this department yet."
+                bars={[{ dataKey: "score", name: "Avg. consistency" }]}
+                colorByCategory={{ Students: SERIES_COLORS.success, Faculty: SERIES_COLORS.accent }}
+                emptyMessage="No consistency data yet."
               />
             </ChartCard>
           </div>
@@ -227,7 +250,7 @@ export function DepartmentOverviewSection({
             <div className="p-6 pb-3">
               <h3 className="font-display text-xl font-bold">Contest Participation</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Attendance for contests your students took, across all faculty. Titles only.
+                Attendance for contests your students took, across all faculty.
               </p>
             </div>
             <div className="overflow-x-auto">
@@ -236,6 +259,7 @@ export function DepartmentOverviewSection({
                   <TableRow>
                     <TableHead>Contest</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Faculty</TableHead>
                     <TableHead className="text-right">Registered</TableHead>
                     <TableHead className="text-right">Attempted</TableHead>
                     <TableHead className="text-right">Completed</TableHead>
@@ -245,7 +269,7 @@ export function DepartmentOverviewSection({
                 <TableBody>
                   {(overview?.contestParticipation ?? []).length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                      <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                         No contest participation recorded for your department yet.
                       </TableCell>
                     </TableRow>
@@ -254,6 +278,7 @@ export function DepartmentOverviewSection({
                       <TableRow key={contest.contestId}>
                         <TableCell className="font-medium">{contest.title}</TableCell>
                         <TableCell className="text-muted-foreground">{contest.computedStatus}</TableCell>
+                        <TableCell className="text-muted-foreground">{contest.conductedByName ?? "—"}</TableCell>
                         <TableCell className="text-right font-mono-code">{contest.registeredCount}</TableCell>
                         <TableCell className="text-right font-mono-code">{contest.attemptedCount}</TableCell>
                         <TableCell className="text-right font-mono-code">{contest.completedCount}</TableCell>

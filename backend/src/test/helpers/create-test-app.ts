@@ -240,6 +240,7 @@ export function createTestApp() {
     departmentService: createDepartmentService({
       userRepository,
       submissionRepository,
+      problemRepository,
       contestRepository,
       contestRegistrationRepository,
       contestAttemptRepository,
