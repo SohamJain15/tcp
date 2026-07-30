@@ -42,8 +42,15 @@ export const SUPPORTED_LANGUAGES: SupportedLanguage[] = [
 export const EDITOR_ONLY_LANGUAGES: SupportedLanguage[] = ["vanilla", "react", "html", "css"];
 export const EXECUTION_EDITOR_ONLY_LANGUAGES: SupportedLanguage[] = ["react", "html", "css"];
 
+// Languages our Judge0 compiler cannot actually run — hidden from the code editor
+// dropdowns. They stay in SUPPORTED_LANGUAGES so historical submissions still label
+// correctly, but are never offered as new choices.
+export const UNSUPPORTED_EXECUTION_LANGUAGES: SupportedLanguage[] = ["arduino", "assembly8086"];
+
 export const EXECUTABLE_LANGUAGES: ExecutableLanguage[] = SUPPORTED_LANGUAGES.filter(
-  (language): language is ExecutableLanguage => !EXECUTION_EDITOR_ONLY_LANGUAGES.includes(language),
+  (language): language is ExecutableLanguage =>
+    !EXECUTION_EDITOR_ONLY_LANGUAGES.includes(language) &&
+    !UNSUPPORTED_EXECUTION_LANGUAGES.includes(language),
 );
 
 const LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
