@@ -158,13 +158,22 @@ export function toStudentProblemDetail(
   };
 }
 
-/** Generate starter code for every language that has a harness adapter. */
+/**
+ * Generate starter code for every language whose adapter can express this
+ * signature. Languages that cannot represent a declared type (e.g. Rust has no
+ * TreeNode, C has no List return) throw during generation and are simply skipped —
+ * never let that fail the whole problem-detail response.
+ */
 function buildStarterCode(harness: HarnessSpec): Partial<Record<ExecutableLanguage, string>> {
   const out: Partial<Record<ExecutableLanguage, string>> = {};
   for (const language of EXECUTABLE_LANGUAGES) {
-    const starter = generateStarterCode(language, harness);
-    if (starter) {
-      out[language] = starter;
+    try {
+      const starter = generateStarterCode(language, harness);
+      if (starter) {
+        out[language] = starter;
+      }
+    } catch {
+      // This language can't represent the signature; omit its starter.
     }
   }
   return out;
