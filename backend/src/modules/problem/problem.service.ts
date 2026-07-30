@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { inferHarness } from "../../execution/harness/inference/infer-harness";
 import { AppError } from "../../shared/errors/app-error";
 import { paginateArray, type PaginatedResult, type PaginationInput } from "../../shared/utils/pagination";
 import type { AuthenticatedUser } from "../../shared/types/auth";
@@ -159,6 +160,31 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
 
     async createProblem(user, payload) {
       const now = dependencies.now();
+
+      // Auto-detect a harness from the raw test cases + tags when the faculty did
+      // not supply one, so new problems become metadata-driven with no extra work.
+      // Only high-confidence detections are applied; anything ambiguous stays legacy.
+      let harness = payload.harness ?? undefined;
+      let sampleTestCases = payload.sampleTestCases;
+      let hiddenTestCases = payload.hiddenTestCases;
+      if (!harness) {
+        const inferred = inferHarness({
+          title: payload.title,
+          tags: payload.tags,
+          topic: payload.topic,
+          statement: payload.statement,
+          inputFormat: payload.inputFormat,
+          outputFormat: payload.outputFormat,
+          sampleTestCases: payload.sampleTestCases,
+          hiddenTestCases: payload.hiddenTestCases,
+        });
+        if (inferred.ok && inferred.confidence === "high" && inferred.harness) {
+          harness = inferred.harness;
+          sampleTestCases = inferred.sampleTestCases ?? sampleTestCases;
+          hiddenTestCases = inferred.hiddenTestCases ?? hiddenTestCases;
+        }
+      }
+
       const problem: ProblemRecord = {
         id: `problem_${randomUUID()}`,
         title: payload.title,
@@ -180,9 +206,9 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
         totalSubmissions: 0,
         acceptedSubmissions: 0,
         acceptanceRate: 0,
-        sampleTestCases: payload.sampleTestCases,
-        hiddenTestCases: payload.hiddenTestCases,
-        harness: payload.harness ?? undefined,
+        sampleTestCases,
+        hiddenTestCases,
+        harness,
         createdAt: now,
         updatedAt: now,
       };

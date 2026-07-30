@@ -8,6 +8,7 @@ import { CheckerComparator } from "./comparator/checker";
 import type { CheckerPlugin, Comparator } from "./comparator/comparator";
 import { ExactComparator, WhitespaceComparator } from "./comparator/exact";
 import { FloatComparator } from "./comparator/float";
+import { LenientComparator } from "./comparator/lenient";
 import { UnorderedComparator } from "./comparator/unordered";
 import type { ComparisonMode, HarnessSpec, SerializationFormat, TypeRef } from "./contract";
 import { UnsupportedTypeError } from "./errors";
@@ -30,6 +31,7 @@ export class HarnessRegistry {
       ["UNORDERED", new UnorderedComparator()],
       ["FLOAT", new FloatComparator()],
       ["CHECKER", new CheckerComparator(this.checkers)],
+      ["LENIENT", new LenientComparator()],
     ]);
   }
 

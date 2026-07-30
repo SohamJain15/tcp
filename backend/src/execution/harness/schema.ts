@@ -40,6 +40,7 @@ const comparisonSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("UNORDERED"), depth: z.number().int().nonnegative().optional() }).strict(),
   z.object({ mode: z.literal("FLOAT"), epsilon: z.number().positive() }).strict(),
   z.object({ mode: z.literal("CHECKER"), checkerId: z.string().min(1) }).strict(),
+  z.object({ mode: z.literal("LENIENT") }).strict(),
 ]);
 
 const languageOverrideSchema = z

@@ -82,7 +82,12 @@ export type ComparisonMode =
   | { mode: "WHITESPACE" }
   | { mode: "UNORDERED"; depth?: number }
   | { mode: "FLOAT"; epsilon: number }
-  | { mode: "CHECKER"; checkerId: string };
+  | { mode: "CHECKER"; checkerId: string }
+  // Token-normalized compare used for "passthrough" submissions (a student wrote
+  // their own full program): "[0,1]", "0 1" and "0, 1" all count as equal, numbers
+  // compared numerically, booleans case-insensitively. Lets correct logic pass
+  // regardless of output formatting.
+  | { mode: "LENIENT" };
 
 export interface LanguageOverride {
   entryMethod?: string;

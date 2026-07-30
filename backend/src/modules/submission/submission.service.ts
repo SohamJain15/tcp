@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { env } from "../../config/env";
-import { generateSubmissionProgram } from "../../execution/harness";
+import { generateSubmissionProgram, harnessLanguageSupported, submissionUsesOwnProgram } from "../../execution/harness";
 import { DIFFICULTY_RATING_WEIGHTS } from "../../shared/constants/domain";
 import { AppError } from "../../shared/errors/app-error";
 import type { AuthenticatedUser } from "../../shared/types/auth";
@@ -160,6 +160,24 @@ function ensureVisibleProblem(problem: ProblemRecord | null, user: Authenticated
   }
 
   return problem;
+}
+
+/**
+ * For metadata-driven problems, reject languages that cannot express the signature
+ * up front with a clear 400 (instead of failing later at judge time / 500).
+ */
+function ensureLanguageSupported(problem: ProblemRecord, language: SubmissionRecord["language"], code: string): void {
+  if (!problem.harness) {
+    return;
+  }
+  // A full program (own entry point) runs directly in any Judge0 language, so it
+  // never needs an adapter. Only skeleton-style submissions require one.
+  if (submissionUsesOwnProgram(language, code)) {
+    return;
+  }
+  if (!harnessLanguageSupported(language, problem.harness)) {
+    throw new AppError(400, `This problem is not available in ${language}. Please choose a supported language.`);
+  }
 }
 
 function buildSubmissionRunResponse(
@@ -413,6 +431,7 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
   return {
     async runSubmission(user, input) {
       const problem = ensureVisibleProblem(await dependencies.problemRepository.getById(input.problemId), user);
+      ensureLanguageSupported(problem, input.language, input.code);
       const program = generateSubmissionProgram(input.language, input.code, problem.harness);
       const result = await dependencies.executionProvider.executeRun({
         code: program.source,
@@ -430,6 +449,7 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
     async createSubmission(user, input) {
       const now = dependencies.now();
       const problem = ensureVisibleProblem(await dependencies.problemRepository.getById(input.problemId), user);
+      ensureLanguageSupported(problem, input.language, input.code);
 
       await ensureUser(dependencies.userRepository, user, now);
       const submissionUser = await dependencies.userRepository.getByEmail(user.email);
