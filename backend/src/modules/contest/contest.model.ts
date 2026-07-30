@@ -1,3 +1,4 @@
+import type { HarnessSpec } from "../../execution/harness/contract";
 import type { UserRole } from "../../shared/types/auth";
 import type { Department, Difficulty, ExecutableLanguage } from "../../shared/types/domain";
 import { toIsoString } from "../../shared/utils/date";
@@ -61,6 +62,8 @@ export interface CodingContestQuestion extends ContestQuestionBase {
   sampleTestCases: ContestTestCase[];
   hiddenTestCases: ContestTestCase[];
   supportedLanguages: ExecutableLanguage[];
+  /** Optional metadata-driven judging contract (see ProblemRecord.harness). */
+  harness?: HarnessSpec;
 }
 
 export type ContestQuestion = McqQuestion | MsqQuestion | CodingContestQuestion;

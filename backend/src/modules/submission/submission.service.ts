@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { env } from "../../config/env";
-import { wrapSubmissionCode } from "../../execution/code-wrapper";
+import { generateSubmissionProgram } from "../../execution/harness";
 import { DIFFICULTY_RATING_WEIGHTS } from "../../shared/constants/domain";
 import { AppError } from "../../shared/errors/app-error";
 import type { AuthenticatedUser } from "../../shared/types/auth";
@@ -413,8 +413,10 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
   return {
     async runSubmission(user, input) {
       const problem = ensureVisibleProblem(await dependencies.problemRepository.getById(input.problemId), user);
+      const program = generateSubmissionProgram(input.language, input.code, problem.harness);
       const result = await dependencies.executionProvider.executeRun({
-        code: wrapSubmissionCode(input.language, input.code),
+        code: program.source,
+        comparison: program.comparison,
         language: input.language,
         testCases: problem.sampleTestCases,
         problemId: problem.id,
@@ -528,28 +530,44 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
             throw new AppError(404, "Contest question not found");
           }
 
-          result = await dependencies.executionProvider.executeSubmission({
-            code: wrapSubmissionCode(runningSubmission.language, runningSubmission.code),
-            language: runningSubmission.language,
-            testCases: [...question.sampleTestCases, ...question.hiddenTestCases],
-            problemId: `${contest.id}:${question.id}`,
-            timeLimitSeconds: question.timeLimitSeconds,
-            memoryLimitMb: question.memoryLimitMb,
-          });
+          {
+            const program = generateSubmissionProgram(
+              runningSubmission.language,
+              runningSubmission.code,
+              question.harness,
+            );
+            result = await dependencies.executionProvider.executeSubmission({
+              code: program.source,
+              comparison: program.comparison,
+              language: runningSubmission.language,
+              testCases: [...question.sampleTestCases, ...question.hiddenTestCases],
+              problemId: `${contest.id}:${question.id}`,
+              timeLimitSeconds: question.timeLimitSeconds,
+              memoryLimitMb: question.memoryLimitMb,
+            });
+          }
         } else {
           const problem = await dependencies.problemRepository.getById(runningSubmission.problemId);
           if (!problem) {
             throw new AppError(404, "Problem not found");
           }
 
-          result = await dependencies.executionProvider.executeSubmission({
-            code: wrapSubmissionCode(runningSubmission.language, runningSubmission.code),
-            language: runningSubmission.language,
-            testCases: [...problem.sampleTestCases, ...problem.hiddenTestCases],
-            problemId: problem.id,
-            timeLimitSeconds: problem.timeLimitSeconds,
-            memoryLimitMb: problem.memoryLimitMb,
-          });
+          {
+            const program = generateSubmissionProgram(
+              runningSubmission.language,
+              runningSubmission.code,
+              problem.harness,
+            );
+            result = await dependencies.executionProvider.executeSubmission({
+              code: program.source,
+              comparison: program.comparison,
+              language: runningSubmission.language,
+              testCases: [...problem.sampleTestCases, ...problem.hiddenTestCases],
+              problemId: problem.id,
+              timeLimitSeconds: problem.timeLimitSeconds,
+              memoryLimitMb: problem.memoryLimitMb,
+            });
+          }
         }
 
         const finalizedSubmission = await finalizeSubmission(dependencies, runningSubmission.id, result);

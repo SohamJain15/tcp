@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { wrapSubmissionCode } from "../../execution/code-wrapper";
+import { generateSubmissionProgram } from "../../execution/harness";
 import type { ExecutionProvider } from "../../execution/execution-provider";
 import { AppError } from "../../shared/errors/app-error";
 import type { AuthenticatedUser } from "../../shared/types/auth";
@@ -1405,8 +1405,10 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         throw new AppError(400, "Question does not accept code execution");
       }
 
+      const program = generateSubmissionProgram(input.language, input.code, question.harness);
       const result = await dependencies.executionProvider.executeRun({
-        code: wrapSubmissionCode(input.language, input.code),
+        code: program.source,
+        comparison: program.comparison,
         language: input.language,
         testCases: question.sampleTestCases,
         problemId: `${contest.id}:${question.id}`,

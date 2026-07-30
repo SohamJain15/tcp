@@ -14,7 +14,8 @@ export interface Judge0SubmissionRequest {
   source_code: string;
   language_id: number;
   stdin: string;
-  expected_output: string;
+  /** Omitted when the caller compares output locally (non-EXACT comparison modes). */
+  expected_output?: string;
   cpu_time_limit: number;
   wall_time_limit: number;
   memory_limit: number;
@@ -168,13 +169,18 @@ export class Judge0Client {
   }
 
   private encodeSubmissionPayload(payload: Judge0SubmissionRequest): Judge0SubmissionRequest {
-    return {
+    const encoded: Judge0SubmissionRequest = {
       ...payload,
       source_code: this.encodeBase64(payload.source_code),
       stdin: this.encodeBase64(payload.stdin),
-      expected_output: this.encodeBase64(payload.expected_output),
       base64_encoded: true,
     };
+    if (payload.expected_output !== undefined) {
+      encoded.expected_output = this.encodeBase64(payload.expected_output);
+    } else {
+      delete encoded.expected_output;
+    }
+    return encoded;
   }
 
   private async requestJson<T>(

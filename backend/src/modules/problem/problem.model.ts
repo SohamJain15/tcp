@@ -1,3 +1,4 @@
+import type { HarnessSpec } from "../../execution/harness/contract";
 import type { UserRole } from "../../shared/types/auth";
 import type {
   Department,
@@ -36,6 +37,12 @@ export interface ProblemRecord {
   acceptanceRate: number;
   sampleTestCases: ProblemTestCase[];
   hiddenTestCases: ProblemTestCase[];
+  /**
+   * Optional metadata-driven judging contract. When present, submissions are
+   * wrapped by the harness framework (typed args, canonical JSON I/O). When
+   * absent, the problem uses legacy raw-stdin judging.
+   */
+  harness?: HarnessSpec;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -92,6 +99,7 @@ export interface ManageProblemDetailResponse extends ManageProblemSummaryRespons
   createdByRole: UserRole;
   sampleTestCases: ProblemTestCase[];
   hiddenTestCases: ProblemTestCase[];
+  harness?: HarnessSpec;
   createdAt: string;
 }
 
@@ -165,6 +173,7 @@ export function toManageProblemDetail(problem: ProblemRecord): ManageProblemDeta
     createdByRole: problem.createdByRole,
     sampleTestCases: problem.sampleTestCases,
     hiddenTestCases: problem.hiddenTestCases,
+    harness: problem.harness,
     createdAt: toIsoString(problem.createdAt) ?? new Date(0).toISOString(),
   };
 }

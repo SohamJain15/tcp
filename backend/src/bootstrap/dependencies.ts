@@ -1,5 +1,6 @@
 import type { RequestHandler } from "express";
 import { getMongoDatabase } from "../config/mongodb";
+import { ensureHarnessRegistered } from "../execution/harness/register";
 import { Judge0ExecutionProvider } from "../execution/judge0-execution-provider";
 import { createAuthMiddleware } from "../middleware/auth";
 import { createRequireCompleteProfile } from "../middleware/require-complete-profile";
@@ -94,6 +95,10 @@ function createRepositories(overrides?: Partial<RepositoryBundle>): RepositoryBu
 }
 
 export function createApplicationDependencies(overrides: DependencyOverrides = {}): ApplicationDependencies {
+  // Register harness adapters + serializer plugins before anything can generate a
+  // submission program. Idempotent, so repeated calls (e.g. in tests) are safe.
+  ensureHarnessRegistered();
+
   const repositories = createRepositories(overrides.repositories);
   const now = overrides.now ?? (() => new Date());
   const submissionQueue = overrides.submissionQueue ?? new BullMQSubmissionQueue();
