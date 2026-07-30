@@ -182,6 +182,7 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
         acceptanceRate: 0,
         sampleTestCases: payload.sampleTestCases,
         hiddenTestCases: payload.hiddenTestCases,
+        harness: payload.harness ?? undefined,
         createdAt: now,
         updatedAt: now,
       };
@@ -193,9 +194,12 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
     async updateProblem(user, problemId, payload) {
       const existingProblem = ensureFacultyOwnsProblem(user, await dependencies.problemRepository.getById(problemId));
 
+      // `harness` needs special handling: null clears it, undefined leaves it as-is.
+      const { harness: harnessUpdate, ...rest } = payload;
       const updatedProblem: ProblemRecord = {
         ...existingProblem,
-        ...payload,
+        ...rest,
+        ...(harnessUpdate !== undefined ? { harness: harnessUpdate ?? undefined } : {}),
         updatedAt: dependencies.now(),
       };
 

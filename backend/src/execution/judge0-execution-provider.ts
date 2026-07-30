@@ -1,6 +1,7 @@
 import type { ExecutableLanguage, SubmissionStatus } from "../shared/types/domain";
 import { isExecutableLanguage, tryNormalizeSupportedLanguage } from "../shared/utils/normalize";
 import type { ExecutionProvider, ExecutionRequest, ExecutionResult, ExecutionTestCase } from "./execution-provider";
+import { compareOutput, isDelegatedComparison } from "./harness";
 import {
   Judge0Client,
   Judge0ClientError,
@@ -374,11 +375,16 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
       const adjustedTimeLimitSeconds = this.resolveAdjustedTimeLimitSeconds(request.language, request.timeLimitSeconds);
       const adjustedMemoryLimitKb = this.resolveAdjustedMemoryLimitKb(request.language, request.memoryLimitMb);
 
+      const comparison = request.comparison ?? { mode: "EXACT" };
+      const delegateToJudge0 = isDelegatedComparison(comparison);
+
       const response = await this.client.createSubmissionAndWait({
         source_code: request.code,
         language_id: languageId,
         stdin: testCase.input,
-        expected_output: testCase.output,
+        // EXACT: Judge0 compares against expected_output. Non-EXACT: omit it so
+        // Judge0 just runs the program and returns stdout for local comparison.
+        expected_output: delegateToJudge0 ? testCase.output : undefined,
         cpu_time_limit: adjustedTimeLimitSeconds,
         wall_time_limit: Math.max(adjustedTimeLimitSeconds * 2, adjustedTimeLimitSeconds + 1),
         memory_limit: adjustedMemoryLimitKb,
@@ -388,7 +394,17 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
         enable_per_process_and_thread_memory_limit: false,
       });
 
-      return this.normalizeJudge0Response(response);
+      const outcome = this.normalizeJudge0Response(response);
+
+      // For non-EXACT modes, a clean run comes back ACCEPTED (no expected_output
+      // was sent); apply the local comparator to decide pass/fail. Compile/runtime/
+      // TLE outcomes are preserved as-is.
+      if (!delegateToJudge0 && outcome.status === "ACCEPTED") {
+        const passed = compareOutput(comparison, testCase.output, outcome.stdout ?? "", testCase.input);
+        return passed ? outcome : { ...outcome, status: "WRONG_ANSWER" };
+      }
+
+      return outcome;
     } catch (error) {
       const judge0Error = error as { response?: { data?: unknown }; message?: string };
       console.error("JUDGE0_SYSTEM_ERROR:", judge0Error.response?.data || judge0Error.message);

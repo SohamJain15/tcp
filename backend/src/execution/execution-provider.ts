@@ -1,4 +1,5 @@
 import type { ExecutableLanguage, SubmissionStatus } from "../shared/types/domain";
+import type { ComparisonMode } from "./harness/contract";
 
 export interface ExecutionTestCase {
   input: string;
@@ -13,6 +14,11 @@ export interface ExecutionRequest {
   problemId: string;
   timeLimitSeconds: number;
   memoryLimitMb: number;
+  /**
+   * How to compare produced output against expected. Defaults to EXACT (delegated
+   * to Judge0). Non-EXACT modes are compared locally in the provider.
+   */
+  comparison?: ComparisonMode;
 }
 
 export interface ExecutionResult {

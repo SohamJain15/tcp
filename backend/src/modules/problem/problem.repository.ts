@@ -9,12 +9,26 @@ import {
   normalizeProblemLifecycleState,
   normalizeRole,
 } from "../../shared/utils/normalize";
+import type { HarnessSpec } from "../../execution/harness/contract";
+import { harnessSpecSchema } from "../../execution/harness/schema";
 import type { ProblemRecord, ProblemTestCase } from "./problem.model";
 
 export interface ProblemRepository {
   getById(problemId: string): Promise<ProblemRecord | null>;
   save(problem: ProblemRecord): Promise<ProblemRecord>;
   list(): Promise<ProblemRecord[]>;
+}
+
+/**
+ * Parse a stored harness blob defensively. Invalid/legacy shapes are dropped so a
+ * malformed document degrades to legacy judging rather than crashing the mapper.
+ */
+function normalizeHarness(value: unknown): HarnessSpec | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const parsed = harnessSpecSchema.safeParse(value);
+  return parsed.success ? (parsed.data as HarnessSpec) : undefined;
 }
 
 function normalizeConstraints(value: unknown): string[] {
@@ -117,6 +131,7 @@ function mapProblemRecord(problemId: string, data: Record<string, unknown>): Pro
         : hiddenFromExamples.length > 0
           ? hiddenFromExamples
           : normalizeTestCaseList(data.testCases),
+    harness: normalizeHarness(data.harness),
     createdAt,
     updatedAt,
   };

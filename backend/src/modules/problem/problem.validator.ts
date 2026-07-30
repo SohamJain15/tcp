@@ -13,6 +13,8 @@ import {
   normalizeNumber,
 } from "../../shared/utils/normalize";
 import type { Department, Difficulty, ProblemLifecycleState } from "../../shared/types/domain";
+import type { HarnessSpec } from "../../execution/harness/contract";
+import { harnessSpecSchema } from "../../execution/harness/schema";
 import type { ProblemTestCase } from "./problem.model";
 
 const testCaseSchema = z.object({
@@ -70,6 +72,7 @@ const problemWriteBaseSchema = z.object({
   sampleTestCases: z.array(testCaseSchema).optional(),
   hiddenTestCases: z.array(testCaseSchema).optional(),
   examples: z.array(exampleSchema).optional(),
+  harness: harnessSpecSchema.nullable().optional(),
 });
 
 const problemDraftSchema = z.object({
@@ -168,6 +171,7 @@ export interface CanonicalProblemPayload {
   targetDepartment: Department | null;
   sampleTestCases: ProblemTestCase[];
   hiddenTestCases: ProblemTestCase[];
+  harness?: HarnessSpec | null;
 }
 
 export type CanonicalProblemUpdatePayload = Partial<CanonicalProblemPayload>;
@@ -202,6 +206,7 @@ export function toCanonicalProblemPayload(raw: z.infer<typeof createProblemSchem
     targetDepartment: normalizeDepartment(raw.targetDepartment) ?? null,
     sampleTestCases: raw.sampleTestCases ?? exampleSplit.sampleTestCases,
     hiddenTestCases: raw.hiddenTestCases ?? exampleSplit.hiddenTestCases,
+    harness: (raw.harness ?? undefined) as HarnessSpec | undefined,
   };
 }
 
@@ -242,6 +247,10 @@ export function toCanonicalProblemUpdatePayload(
   }
   if (raw.hiddenTestCases !== undefined || raw.examples !== undefined) {
     payload.hiddenTestCases = raw.hiddenTestCases ?? exampleSplit.hiddenTestCases;
+  }
+  if (raw.harness !== undefined) {
+    // null explicitly clears the harness (reverts the problem to legacy judging).
+    payload.harness = (raw.harness ?? null) as HarnessSpec | null;
   }
 
   return payload;
