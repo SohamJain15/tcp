@@ -343,6 +343,30 @@ export default function ProblemDetail() {
     retry: false,
   });
 
+  // For metadata-driven (harness) problems, seed the editor with the harness-generated
+  // starter (correct method name + typed params, no Main / stdin) once the detail loads,
+  // unless the student already has saved work for this language.
+  useEffect(() => {
+    const harnessStarter = problemEnvelope?.problem?.starterCode?.[language];
+    if (!id || !harnessStarter) {
+      return;
+    }
+    if (loadStoredDraft(id, language) !== null) {
+      return;
+    }
+    setDraftsByLanguage((current) => {
+      const existing = current[language];
+      // Only replace an untouched buffer (empty or the generic hardcoded template).
+      if (existing === undefined || existing === getStarterCode(language) || existing === harnessStarter) {
+        if (existing === harnessStarter) {
+          return current;
+        }
+        return { ...current, [language]: harnessStarter };
+      }
+      return current;
+    });
+  }, [problemEnvelope, id, language]);
+
   const submissions = useMemo(
     () => [...(submissionsData?.items ?? [])].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)),
     [submissionsData?.items],
@@ -456,7 +480,9 @@ export default function ProblemDetail() {
 
   const problem = problemEnvelope.problem;
   const testCases = problem.sampleTestCases;
-  const currentStarterCode = getStarterCode(language);
+  // Prefer the harness-generated starter (correct signature) over the generic template.
+  const resolveStarter = (lang: ExecutableLanguage): string => problem.starterCode?.[lang] ?? getStarterCode(lang);
+  const currentStarterCode = resolveStarter(language);
   const activeResult = submitResult
     ? {
         status: submitResult.status,
@@ -614,12 +640,13 @@ export default function ProblemDetail() {
                             value={language}
                             onValueChange={(value) => {
                               const nextLanguage = value as ExecutableLanguage;
+                              const storedNext = loadStoredDraft(id, nextLanguage);
                               setDraftsByLanguage((currentDrafts) =>
                                 currentDrafts[nextLanguage]
                                   ? currentDrafts
                                   : {
                                       ...currentDrafts,
-                                      [nextLanguage]: getStarterCode(nextLanguage),
+                                      [nextLanguage]: storedNext ?? resolveStarter(nextLanguage),
                                     },
                               );
                               setLanguage(nextLanguage);

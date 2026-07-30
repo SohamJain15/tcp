@@ -1,8 +1,11 @@
+import { generateStarterCode } from "../../execution/harness";
 import type { HarnessSpec } from "../../execution/harness/contract";
+import { EXECUTABLE_LANGUAGES } from "../../shared/constants/domain";
 import type { UserRole } from "../../shared/types/auth";
 import type {
   Department,
   Difficulty,
+  ExecutableLanguage,
   ProblemLifecycleState,
   StudentProblemStatus,
 } from "../../shared/types/domain";
@@ -71,6 +74,15 @@ export interface StudentProblemDetailResponse extends StudentProblemSummaryRespo
   constraints: string[];
   examples: Array<ProblemTestCase & { hidden: false }>;
   sampleTestCases: ProblemTestCase[];
+  /**
+   * Per-language starter code derived from the harness signature (only present for
+   * metadata-driven problems). The editor should prefer this over any hardcoded
+   * template so students see the correct function skeleton (right method name and
+   * typed parameters, no Main / stdin plumbing).
+   */
+  starterCode?: Partial<Record<ExecutableLanguage, string>>;
+  /** Whether this problem uses the metadata-driven harness. */
+  harnessEnabled?: boolean;
 }
 
 export interface ManageProblemSummaryResponse {
@@ -140,7 +152,22 @@ export function toStudentProblemDetail(
       hidden: false as const,
     })),
     sampleTestCases: problem.sampleTestCases,
+    ...(problem.harness
+      ? { harnessEnabled: true, starterCode: buildStarterCode(problem.harness) }
+      : {}),
   };
+}
+
+/** Generate starter code for every language that has a harness adapter. */
+function buildStarterCode(harness: HarnessSpec): Partial<Record<ExecutableLanguage, string>> {
+  const out: Partial<Record<ExecutableLanguage, string>> = {};
+  for (const language of EXECUTABLE_LANGUAGES) {
+    const starter = generateStarterCode(language, harness);
+    if (starter) {
+      out[language] = starter;
+    }
+  }
+  return out;
 }
 
 export function toManageProblemSummary(problem: ProblemRecord): ManageProblemSummaryResponse {

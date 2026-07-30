@@ -164,6 +164,10 @@ export interface StudentProblemDetail extends StudentProblemSummary {
   constraints: string[];
   examples: Array<ProblemTestCase & { hidden: false }>;
   sampleTestCases: ProblemTestCase[];
+  /** Per-language starter code from the harness signature (metadata-driven problems only). */
+  starterCode?: Partial<Record<ExecutableLanguage, string>>;
+  /** Whether this problem uses the metadata-driven harness. */
+  harnessEnabled?: boolean;
 }
 
 export interface ManageProblemSummary {
