@@ -48,50 +48,87 @@ import type {
 } from "@/api/types";
 import { isSubmissionPending, pollSubmissionUntilComplete } from "./submissionPolling";
 
+// Full-program (stdin/stdout) starters. Used for legacy problems that are not
+// metadata-driven (e.g. query-simulation / competitive-style). For harness
+// problems the backend supplies the correct `class Solution { ... }` skeleton and
+// these are not shown.
 const STARTER_TEMPLATES: Partial<Record<ExecutableLanguage, string>> = {
-  cpp: `// Solution.cpp
-#include <bits/stdc++.h>
+  cpp: `#include <bits/stdc++.h>
 using namespace std;
 
-class Solution {
-public:
-    // Read from cin if needed. The platform injects main() for Solution classes.
-    vector<int> solve() {
-        return {};
-    }
-};
-`,
-  java: `// Solution.java
-import java.util.*;
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
 
-class Solution {
-    // Read from System.in if needed. The platform injects Main for Solution classes.
-    public List<Integer> solve() {
-        return new ArrayList<>();
+    // Read the input from stdin and print your answer to stdout.
+
+    return 0;
+}
+`,
+  c: `#include <stdio.h>
+
+int main(void) {
+    // Read the input from stdin and print your answer to stdout.
+
+    return 0;
+}
+`,
+  java: `import java.util.*;
+import java.io.*;
+
+public class Main {
+    public static void main(String[] args) throws IOException {
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+        // Read the input using br.readLine() and print your answer to stdout.
+
     }
 }
 `,
-  python: `# Solution.py
-class Solution:
-    # Read from stdin if needed. The platform injects the execution entrypoint.
-    def solve(self):
-        return []
+  python: `import sys
+input = sys.stdin.readline
+
+def main():
+    # Read the input from stdin and print your answer to stdout.
+    pass
+
+main()
 `,
-  javascript: `// Solution.js
-class Solution {
-  // Read from stdin if needed. The platform injects the execution entrypoint.
-  solve() {
-    return [];
-  }
+  javascript: `const data = require('fs').readFileSync(0, 'utf8');
+const lines = data.split('\\n');
+
+// Read the input from lines[] and print your answer with console.log().
+`,
+  typescript: `declare const require: any;
+const data: string = require('fs').readFileSync(0, 'utf8');
+const lines: string[] = data.split('\\n');
+
+// Read the input from lines[] and print your answer with console.log().
+`,
+  go: `package main
+
+import (
+    "bufio"
+    "fmt"
+    "os"
+)
+
+func main() {
+    reader := bufio.NewReader(os.Stdin)
+    _ = reader
+    // Read the input from stdin and print your answer to stdout.
+    _ = fmt.Sprint
 }
 `,
 };
 
 const FILE_EXTENSIONS: Partial<Record<ExecutableLanguage, string>> = {
   cpp: "cpp",
+  c: "c",
   java: "java",
   python: "py",
   javascript: "js",
+  typescript: "ts",
+  go: "go",
 };
 
 const CODE_DRAFT_SAVE_DELAY_MS = 500;
@@ -99,8 +136,7 @@ const CODE_DRAFT_SAVE_DELAY_MS = 500;
 function getStarterCode(language: ExecutableLanguage): string {
   return (
     STARTER_TEMPLATES[language] ??
-    `// Solution.${FILE_EXTENSIONS[language] ?? language}
-// Start coding here.
+    `// Read the input from stdin and print your answer to stdout.
 `
   );
 }
