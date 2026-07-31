@@ -1,3 +1,4 @@
+import { env } from "../config/env";
 import type { ExecutableLanguage, SubmissionStatus } from "../shared/types/domain";
 import { isExecutableLanguage, tryNormalizeSupportedLanguage } from "../shared/utils/normalize";
 import type { ExecutionProvider, ExecutionRequest, ExecutionResult, ExecutionTestCase } from "./execution-provider";
@@ -10,7 +11,6 @@ import {
 } from "./judge0-client";
 
 const PROVIDER_NAME = "judge0";
-const SUBMISSION_CHUNK_SIZE = 5;
 const MAX_CPU_TIME_LIMIT_SECONDS = 5;
 
 const EDITOR_ONLY_BLOCKLIST = new Set(["react", "html", "css"]);
@@ -215,39 +215,42 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
       }
 
       const languageId = await this.resolveLanguageId(request.language);
-      const preflightResult = await this.executeTestCase(
-        request,
-        {
-          input: "",
-          output: "",
-        },
-        languageId,
-      );
+      const chunkSize = env.SUBMISSION_CHUNK_SIZE;
+      const results: TestExecutionOutcome[] = [];
 
-      if (preflightResult.status === "COMPILATION_ERROR") {
+      // The first test case doubles as the compile check: a broken program fails to
+      // compile here exactly as a dedicated preflight run would, so we skip that extra
+      // compile entirely. It runs alone so a compile error costs one Judge0 job, not a
+      // whole chunk of them.
+      const firstResult = await this.executeTestCase(request, request.testCases[0], languageId);
+
+      if (firstResult.status === "COMPILATION_ERROR") {
         return {
-          status: preflightResult.status,
-          runtimeMs: preflightResult.runtimeMs,
-          memoryKb: preflightResult.memoryKb,
+          status: firstResult.status,
+          runtimeMs: firstResult.runtimeMs,
+          memoryKb: firstResult.memoryKb,
           passedCount: 0,
+          // A compile error is not a test outcome — keep reporting 0/0 as before.
           totalCount: 0,
           provider: PROVIDER_NAME,
-          stdout: preflightResult.stdout,
-          stderr: preflightResult.stderr,
+          stdout: firstResult.stdout,
+          stderr: firstResult.stderr,
         };
       }
 
-      const results: TestExecutionOutcome[] = [];
+      results.push(firstResult);
 
-      for (let index = 0; index < request.testCases.length; index += SUBMISSION_CHUNK_SIZE) {
-        const testCaseChunk = request.testCases.slice(index, index + SUBMISSION_CHUNK_SIZE);
-        const chunkResults = await Promise.all(
-          testCaseChunk.map((testCase) => this.executeTestCase(request, testCase, languageId)),
-        );
-        results.push(...chunkResults);
+      if (firstResult.status === "ACCEPTED") {
+        for (let index = 1; index < request.testCases.length; index += chunkSize) {
+          const testCaseChunk = request.testCases.slice(index, index + chunkSize);
+          const chunkResults = await Promise.all(
+            testCaseChunk.map((testCase) => this.executeTestCase(request, testCase, languageId)),
+          );
+          results.push(...chunkResults);
 
-        if (chunkResults.some((result) => result.status !== "ACCEPTED")) {
-          break;
+          if (chunkResults.some((result) => result.status !== "ACCEPTED")) {
+            break;
+          }
         }
       }
 

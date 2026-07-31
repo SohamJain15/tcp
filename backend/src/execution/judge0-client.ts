@@ -104,6 +104,12 @@ export class Judge0Client {
   private readonly pollTimeoutMs = env.JUDGE0_POLL_TIMEOUT_MS;
   private useRapidApiHeaders = env.JUDGE0_API_KEY.length > 0;
   private languagesPromise: Promise<Judge0Language[]> | null = null;
+  /**
+   * Cleared permanently the first time a synchronous submit is rejected, so a
+   * deployment without ENABLE_WAIT_RESULT falls back to token+poll exactly once
+   * instead of paying a failed request per test case.
+   */
+  private waitResultSupported = env.JUDGE0_USE_WAIT;
 
   usesApiKey(): boolean {
     return this.apiKey.length > 0;
@@ -163,7 +169,57 @@ export class Judge0Client {
     throw new Judge0ClientError(`Judge0 polling timed out for submission ${token}.`);
   }
 
+  /**
+   * Submit and let Judge0 hold the connection until the run finishes.
+   *
+   * Returns null when this deployment does not support `wait=true`, so the caller
+   * can fall back to token+poll. Only that specific rejection is swallowed —
+   * genuine failures still throw.
+   */
+  private async createSubmissionSync(
+    payload: Judge0SubmissionRequest,
+  ): Promise<Judge0SubmissionResponse | null> {
+    const encodedPayload = this.encodeSubmissionPayload(payload);
+
+    try {
+      const response = await this.requestJson<Judge0SubmissionResponse>(
+        "/submissions?base64_encoded=true&wait=true",
+        {
+          method: "POST",
+          body: JSON.stringify(encodedPayload),
+          validate: isJudge0SubmissionResponse,
+          // Judge0 holds this open for the queue wait plus the run itself, so the
+          // ceiling has to match the polling path rather than the short default.
+          timeoutMs: this.pollTimeoutMs,
+        },
+      );
+      return this.decodeSubmissionResponse(response);
+    } catch (error) {
+      if (error instanceof Judge0ClientError && this.isWaitUnsupported(error)) {
+        // Stop trying for the lifetime of this client; every later call polls.
+        this.waitResultSupported = false;
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /** Judge0 answers 400 with an explanatory message when wait=true is disabled. */
+  private isWaitUnsupported(error: Judge0ClientError): boolean {
+    if (error.response?.status !== 400) {
+      return false;
+    }
+    return JSON.stringify(error.response.data ?? "").toLowerCase().includes("wait");
+  }
+
   async createSubmissionAndWait(payload: Judge0SubmissionRequest): Promise<Judge0SubmissionResponse> {
+    if (this.waitResultSupported) {
+      const synchronousResult = await this.createSubmissionSync(payload);
+      if (synchronousResult) {
+        return synchronousResult;
+      }
+    }
+
     const { token } = await this.createSubmissionToken(payload);
     return this.waitForSubmission(token);
   }
@@ -189,6 +245,8 @@ export class Judge0Client {
       method?: string;
       body?: string;
       validate: (value: unknown) => value is T;
+      /** Overrides the default request timeout — a `wait=true` submit is held open far longer. */
+      timeoutMs?: number;
     },
   ): Promise<T> {
     if (!this.activeBaseUrl) {
@@ -196,7 +254,7 @@ export class Judge0Client {
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? REQUEST_TIMEOUT_MS);
 
     try {
       const response = await fetch(this.buildUrl(path), {

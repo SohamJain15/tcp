@@ -48,13 +48,24 @@ const envSchema = z.object({
   JUDGE0_API_KEY: z.string().optional().transform((value) => value?.trim() ?? ""),
   JUDGE0_HOST: z.string().optional().transform((value) => value?.trim() ?? ""),
   JUDGE0_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(1500),
-  JUDGE0_POLL_TIMEOUT_MS: z.coerce.number().int().positive().default(120000),
+  // A run is capped well below this (5s CPU / 10s wall), so a lower ceiling only
+  // frees a blocked worker sooner. Timeouts surface as INTERNAL_ERROR and are not
+  // retried by the queue, so waiting longer buys nothing.
+  JUDGE0_POLL_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
+  // Ask Judge0 to hold the request until the run finishes (needs ENABLE_WAIT_RESULT
+  // on the Judge0 side). Avoids paying a full JUDGE0_POLL_INTERVAL_MS on every test
+  // case; the token+poll path stays as the fallback.
+  JUDGE0_USE_WAIT: z.unknown().transform((value) => parseBoolean(value, true)),
   REDIS_HOST: z.string().min(1).default("127.0.0.1"),
   REDIS_PORT: z.coerce.number().int().positive().default(6379),
   REDIS_DB: z.coerce.number().int().nonnegative().default(0),
   REDIS_PASSWORD: z.string().optional().transform((value) => value?.trim() ?? ""),
   SUBMISSION_QUEUE_NAME: z.string().min(1).default("tcet-code-submissions"),
   SUBMISSION_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(4),
+  // Test cases sent to Judge0 in parallel per submission. Peak in-flight Judge0 jobs is
+  // (worker processes) x SUBMISSION_WORKER_CONCURRENCY x this, and should be sized against
+  // the isolate worker count (`COUNT` in judge0.conf) so requests don't queue inside Judge0.
+  SUBMISSION_CHUNK_SIZE: z.coerce.number().int().min(1).max(20).default(5),
   SUBMISSION_RECOVERY_STALE_MS: z.coerce.number().int().positive().default(30000),
   // How often the background finaliser sweeps for ACTIVE attempts past their deadline. 0 disables it.
   ATTEMPT_FINALIZER_INTERVAL_MS: z.coerce.number().int().nonnegative().default(60000),

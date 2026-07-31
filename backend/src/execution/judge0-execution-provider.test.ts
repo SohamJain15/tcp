@@ -153,3 +153,88 @@ describe("Judge0ExecutionProvider", () => {
     expect(client.lastPayload?.language_id).toBe(501);
   });
 });
+
+/** Records every submission so we can assert how many Judge0 jobs a run costs. */
+class CountingJudge0Client {
+  public readonly payloads: Judge0SubmissionRequest[] = [];
+
+  constructor(private readonly statusIdFor: (callIndex: number) => number) {}
+
+  usesApiKey(): boolean {
+    return false;
+  }
+
+  async getLanguages(): Promise<Judge0Language[]> {
+    return [{ id: 54, name: "C++ (GCC 14.1.0)" }];
+  }
+
+  async createSubmissionAndWait(payload: Judge0SubmissionRequest): Promise<Judge0SubmissionResponse> {
+    const callIndex = this.payloads.length;
+    this.payloads.push(payload);
+    const statusId = this.statusIdFor(callIndex);
+    return {
+      token: `token-${callIndex}`,
+      stdout: null,
+      stderr: null,
+      compile_output: statusId === 6 ? "error: expected ';'" : null,
+      message: null,
+      time: "0.010",
+      memory: 4096,
+      status: { id: statusId, description: String(statusId) },
+    };
+  }
+}
+
+const cppRequest = (testCaseCount: number) => ({
+  code: "int main() { return 0; }",
+  language: "cpp" as const,
+  problemId: "problem-1",
+  timeLimitSeconds: 1,
+  memoryLimitMb: 256,
+  testCases: Array.from({ length: testCaseCount }, (_, index) => ({
+    input: String(index),
+    output: String(index),
+  })),
+});
+
+describe("Judge0ExecutionProvider compile handling", () => {
+  it("spends no extra Judge0 job on a preflight compile check", async () => {
+    // Everything passes: 4 test cases must cost exactly 4 submissions, not 5.
+    const client = new CountingJudge0Client(() => 3);
+    const provider = new Judge0ExecutionProvider(client as never);
+
+    const result = await provider.executeSubmission(cppRequest(4));
+
+    expect(result.status).toBe("ACCEPTED");
+    expect(result.passedCount).toBe(4);
+    expect(result.totalCount).toBe(4);
+    expect(client.payloads).toHaveLength(4);
+  });
+
+  it("reports a compilation error from the first test case without running the rest", async () => {
+    const client = new CountingJudge0Client(() => 6);
+    const provider = new Judge0ExecutionProvider(client as never);
+
+    const result = await provider.executeSubmission(cppRequest(10));
+
+    expect(result.status).toBe("COMPILATION_ERROR");
+    expect(result.stderr).toContain("expected ';'");
+    // One job proves the compile failure — the other 9 test cases are never sent.
+    expect(client.payloads).toHaveLength(1);
+    expect(result.passedCount).toBe(0);
+    expect(result.totalCount).toBe(0);
+  });
+
+  it("stops after the first failing test case", async () => {
+    // First case fails outright, so no further chunk should be dispatched.
+    const client = new CountingJudge0Client((callIndex) => (callIndex === 0 ? 4 : 3));
+    const provider = new Judge0ExecutionProvider(client as never);
+
+    const result = await provider.executeSubmission(cppRequest(8));
+
+    expect(result.status).toBe("WRONG_ANSWER");
+    expect(client.payloads).toHaveLength(1);
+    expect(result.passedCount).toBe(0);
+    expect(result.totalCount).toBe(1);
+  });
+});
