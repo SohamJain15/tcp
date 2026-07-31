@@ -25,9 +25,10 @@ const SOURCES: Record<string, string> = {
   python: "class Solution:\n    def twoSum(self, nums, target):\n        return [0, 1]",
   cpp: "class Solution {\npublic:\n    vector<int> twoSum(vector<int>& nums, int target) { return {0,1}; }\n};",
   java: "class Solution {\n    public int[] twoSum(int[] nums, int target) { return new int[]{0,1}; }\n}",
+  c: "int* twoSum(int* nums, int numsSize, int target, int* returnSize) { *returnSize = 0; return NULL; }",
 };
 
-const BATCH_LANGUAGES = ["python", "cpp", "java"] as const;
+const BATCH_LANGUAGES = ["python", "cpp", "java", "c"] as const;
 
 describe("batch codegen", () => {
   beforeAll(() => {

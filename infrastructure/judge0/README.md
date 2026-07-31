@@ -100,8 +100,13 @@ The compile-time figure is the one that matters for capacity: it is CPU taken fr
 student on the box. Wall-clock gain per submission is smaller in practice, because the per-case
 path already runs `SUBMISSION_CHUNK_SIZE` cases in parallel.
 
-Supported today in **Python, C++ and Java**. Other languages have harness adapters but no batch
-main yet, and transparently keep the per-case path.
+Supported today in **Python, C++, Java and C**. Go, Kotlin and Rust have harness adapters but no
+batch main yet, and transparently keep the per-case path.
+
+> While adding C batching, a pre-existing bug surfaced: the generated C program indexed input
+> lines through a fixed `char*[64]` table written with **no bounds check**, so any input over 64
+> lines (a large grid, a dense edge list) corrupted the stack — on the normal per-case path too,
+> not just batched runs. The table now grows on demand and short reads return an empty string.
 
 Batch size shrinks automatically when the per-case time limit is high, so a batch never exceeds
 20s CPU — Python carries a 3× multiplier, so it batches 6 cases at a time where C++ batches 20.

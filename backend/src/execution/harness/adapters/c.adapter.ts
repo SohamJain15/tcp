@@ -1,5 +1,6 @@
 import type { ExecutableLanguage } from "../../../shared/types/domain";
 import {
+  BATCH_CASE_SEPARATOR,
   resolveComparison,
   resolveEntryMethod,
   resolveReturnChannel,
@@ -28,10 +29,14 @@ export class CAdapter implements LanguageAdapter {
     const fn = resolveEntryMethod(spec, "c");
     const channel = resolveReturnChannel(spec);
 
+    // In batch mode the same declarations run inside a per-case loop, reading from a sliding
+    // offset into the line table instead of from the top of the input.
+    const batch = req.batch === true;
+
     const decls: string[] = [];
     const callArgs: string[] = [];
     spec.parameters.forEach((p, i) => {
-      const line = `__t_lines[${i}]`;
+      const line = batch ? `__T_LINE(__t_base + ${i})` : `__T_LINE(${i})`;
       switch (p.type.base) {
         case "int":
         case "long":
@@ -82,6 +87,8 @@ export class CAdapter implements LanguageAdapter {
     });
 
     const out = this.emitReturn(spec, channel, fn, callArgs);
+    // Every emitted line already carries 4 spaces; inside the batch loop they need one more level.
+    const nest = (body: string[]) => (batch ? body.map((line) => `    ${line}`) : body);
 
     const source = [
       C_HEADERS,
@@ -94,14 +101,25 @@ export class CAdapter implements LanguageAdapter {
       "/* --- generated harness --- */",
       "int main(void) {",
       C_READ_LINES,
-      ...decls,
-      ...out,
+      ...(batch
+        ? [
+            // Batched: leading case count, then a fixed-width block of lines per case.
+            "    int __t_n = __t_nlines > 0 ? (int) __c_pInt(__T_LINE(0)) : 0;",
+            `    const int __t_width = ${spec.parameters.length};`,
+            "    for (int __t_i = 0; __t_i < __t_n; ++__t_i) {",
+            "        const int __t_base = 1 + __t_i * __t_width;",
+            ...nest(decls),
+            ...nest(out),
+            `        printf("\\n${BATCH_CASE_SEPARATOR}\\n");`,
+            "    }",
+          ]
+        : [...decls, ...out]),
       "    return 0;",
       "}",
       "",
     ].join("\n");
 
-    return { source, comparison: resolveComparison(spec) };
+    return { source, comparison: resolveComparison(spec), batched: batch };
   }
 
   private emitReturn(
@@ -267,12 +285,22 @@ const C_TYPES = [
   "struct ListNode { int val; struct ListNode *next; };",
 ].join("\n");
 
+/**
+ * Reads all of stdin and indexes it by line.
+ *
+ * The line table grows on demand: it used to be a fixed `char*[64]` written without a bounds
+ * check, so any input over 64 lines (a large grid, a dense edge list, or a batched run)
+ * smashed the stack. `__T_LINE` also makes a short input read as an empty string rather than
+ * running off the end of the table.
+ */
 const C_READ_LINES = [
   "    char* __t_buf = NULL; size_t __t_cap = 0, __t_len = 0; int __t_ch;",
   "    while ((__t_ch = getchar()) != EOF) { if (__t_len + 1 >= __t_cap) { __t_cap = __t_cap ? __t_cap * 2 : 256; __t_buf = realloc(__t_buf, __t_cap); } __t_buf[__t_len++] = (char) __t_ch; }",
   "    if (!__t_buf) { __t_buf = malloc(1); }",
   "    __t_buf[__t_len] = '\\0';",
-  "    char* __t_lines[64]; int __t_nlines = 0; { char* p = __t_buf; __t_lines[__t_nlines++] = p; while (*p) { if (*p == '\\n') { *p = '\\0'; __t_lines[__t_nlines++] = p + 1; } p++; } }",
+  "    char** __t_lines = NULL; int __t_nlines = 0, __t_lcap = 0;",
+  "    { char* p = __t_buf; for (;;) { if (__t_nlines >= __t_lcap) { __t_lcap = __t_lcap ? __t_lcap * 2 : 64; __t_lines = realloc(__t_lines, (size_t) __t_lcap * sizeof(char*)); } __t_lines[__t_nlines++] = p; while (*p && *p != '\\n') p++; if (!*p) break; *p = '\\0'; p++; } }",
+  "    #define __T_LINE(i) ((i) >= 0 && (i) < __t_nlines ? __t_lines[i] : \"\")",
 ].join("\n");
 
 const C_HELPERS = String.raw`

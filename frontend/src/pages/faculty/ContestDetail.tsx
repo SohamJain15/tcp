@@ -285,7 +285,9 @@ export default function FacultyContestDetail() {
               <TableRow>
                 <TableHead>Student</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Score</TableHead>
+                {/* Nothing is graded until publish, so the column is dropped entirely rather
+                    than shown empty — there is no score to talk about during the contest. */}
+                {resultsPublished && <TableHead>Score</TableHead>}
                 <TableHead>Time</TableHead>
                 <TableHead>Violations</TableHead>
                 <TableHead className="text-right">Solutions</TableHead>
@@ -301,15 +303,7 @@ export default function FacultyContestDetail() {
                     </Link>
                   </TableCell>
                   <TableCell>{attempt.status}</TableCell>
-                  <TableCell>
-                    {attempt.score !== null ? (
-                      attempt.score
-                    ) : (
-                      <span className="text-muted-foreground" title="Scores are calculated when you publish results">
-                        Not graded
-                      </span>
-                    )}
-                  </TableCell>
+                  {resultsPublished && <TableCell>{attempt.score}</TableCell>}
                   <TableCell>{attempt.timeTakenMs !== null ? `${Math.ceil(attempt.timeTakenMs / 1000)} sec` : "-"}</TableCell>
                   <TableCell>{attempt.violationCount} ({attempt.violationPenaltyPoints} pts)</TableCell>
                   <TableCell className="text-right">
@@ -321,7 +315,10 @@ export default function FacultyContestDetail() {
               ))}
               {attempts.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">No attempts yet.</TableCell>
+                  {/* Matches the visible column count, which drops by one before publish. */}
+                  <TableCell colSpan={resultsPublished ? 6 : 5} className="py-8 text-center text-muted-foreground">
+                    No attempts yet.
+                  </TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -381,7 +378,7 @@ export default function FacultyContestDetail() {
           {reviewQuery.isLoading && <div className="text-sm text-muted-foreground">Loading student solutions...</div>}
           {!reviewQuery.isLoading && review && (
             <div className="space-y-5">
-              <div className="grid gap-3 md:grid-cols-4">
+              <div className={`grid gap-3 ${resultsPublished ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
                 <Card className="p-4 shadow-none">
                   <div className="text-xs uppercase tracking-wide text-muted-foreground">Student</div>
                   <Link to={toFacultyStudentProfilePath(review.student.email)} className="mt-2 block hover:text-accent">
@@ -389,10 +386,13 @@ export default function FacultyContestDetail() {
                     <div className="text-xs text-muted-foreground">{review.student.uid ?? review.student.email}</div>
                   </Link>
                 </Card>
-                <Card className="p-4 shadow-none">
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Score</div>
-                  <div className="mt-2 text-lg font-semibold">{review.score}</div>
-                </Card>
+                {/* Same rule as the attempts table: no score exists before publish. */}
+                {resultsPublished && (
+                  <Card className="p-4 shadow-none">
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">Score</div>
+                    <div className="mt-2 text-lg font-semibold">{review.score}</div>
+                  </Card>
+                )}
                 <Card className="p-4 shadow-none">
                   <div className="text-xs uppercase tracking-wide text-muted-foreground">Time Taken</div>
                   <div className="mt-2 text-lg font-semibold">{review.timeTakenMs !== null ? `${Math.ceil(review.timeTakenMs / 1000)} sec` : "-"}</div>

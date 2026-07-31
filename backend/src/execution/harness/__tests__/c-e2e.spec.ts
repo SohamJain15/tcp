@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { HARNESS_SCHEMA_VERSION, type HarnessSpec, type TypeRef } from "../contract";
+import { BATCH_CASE_SEPARATOR, HARNESS_SCHEMA_VERSION, type HarnessSpec, type TypeRef } from "../contract";
 import { generateSubmissionProgram } from "../index";
 import { ensureHarnessRegistered } from "../register";
 
@@ -104,5 +104,62 @@ describe.skipIf(!cOk)("C harness end-to-end (free-function convention)", () => {
       "}",
     ].join("\n");
     expect(runC(spec, user, "[4,2,7,1,3,6,9]")).toBe("[4,7,2,9,6,3,1]");
+  });
+});
+
+/** Batched C: one compiled program judging many cases in a single run. */
+function runCBatched(spec: HarnessSpec, userSource: string, input: string): string[] {
+  const dir = mkdtempSync(join(tmpdir(), "harness-c-batch-"));
+  const { source, batched } = generateSubmissionProgram("c", userSource, spec, { batch: true });
+  expect(batched).toBe(true);
+  const src = join(dir, "main.c");
+  const exe = join(dir, process.platform === "win32" ? "main.exe" : "main");
+  writeFileSync(src, source, "utf8");
+  execFileSync("gcc", ["-std=c11", "-o", exe, src], { stdio: "pipe" });
+  const stdout = execFileSync(exe, [], { input, encoding: "utf8" });
+  // The program writes a trailing separator, so drop the empty tail piece.
+  return stdout.split(BATCH_CASE_SEPARATOR).slice(0, -1).map((segment) => segment.trim());
+}
+
+const TWO_SUM_SPEC: HarnessSpec = {
+  schemaVersion: HARNESS_SCHEMA_VERSION,
+  entryMethod: "twoSum",
+  parameters: [
+    { name: "nums", type: t("int[]") },
+    { name: "target", type: t("int") },
+  ],
+  returnType: t("int[]"),
+};
+
+const TWO_SUM_C = `int* twoSum(int* nums, int numsSize, int target, int* returnSize) {
+    for (int i = 0; i < numsSize; i++)
+        for (int j = i + 1; j < numsSize; j++)
+            if (nums[i] + nums[j] == target) {
+                int* r = malloc(2 * sizeof(int));
+                r[0] = i; r[1] = j; *returnSize = 2; return r;
+            }
+    *returnSize = 0; return NULL;
+}`;
+
+describe.skipIf(!cOk)("C harness batched execution", () => {
+  beforeAll(() => ensureHarnessRegistered());
+
+  it("judges several cases from one compiled program", { timeout: 30000 }, () => {
+    const stdin = ["3", "[2,7,11,15]", "9", "[3,2,4]", "6", "[3,3]", "6"].join("\n");
+    expect(runCBatched(TWO_SUM_SPEC, TWO_SUM_C, stdin)).toEqual(["[0,1]", "[1,2]", "[0,1]"]);
+  });
+
+  it("handles input past the old 64-line table limit", { timeout: 30000 }, () => {
+    // The line table used to be a fixed `char*[64]` written with no bounds check, so this
+    // input (81 lines) corrupted the stack. It now grows on demand.
+    const caseCount = 40;
+    const stdin = [
+      String(caseCount),
+      ...Array.from({ length: caseCount }).flatMap(() => ["[2,7,11,15]", "9"]),
+    ].join("\n");
+
+    const results = runCBatched(TWO_SUM_SPEC, TWO_SUM_C, stdin);
+    expect(results).toHaveLength(caseCount);
+    expect(results.every((value) => value === "[0,1]")).toBe(true);
   });
 });
