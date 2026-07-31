@@ -58,6 +58,7 @@ export function generateSubmissionProgram(
   language: ExecutableLanguage,
   userSource: string,
   harness?: HarnessSpec,
+  options: { batch?: boolean } = {},
 ): GeneratedHarness {
   if (!harness) {
     return { source: wrapSubmissionCode(language, userSource), comparison: DEFAULT_COMPARISON };
@@ -86,7 +87,12 @@ export function generateSubmissionProgram(
 
   const sink = { runtime: new Map<string, string>(), counter: { value: 0 } };
   const ctx = harnessRegistry.createContext(harness, language, sink);
-  return adapter.generate({ spec: harness, userSource, language }, ctx);
+  return adapter.generate({ spec: harness, userSource, language, batch: options.batch }, ctx);
+}
+
+/** Number of stdin lines one test case occupies — the batch framing is fixed-width. */
+export function harnessParameterCount(harness: HarnessSpec): number {
+  return harness.parameters.length;
 }
 
 /** Generate empty starter code for a problem in a language, or undefined if no adapter. */

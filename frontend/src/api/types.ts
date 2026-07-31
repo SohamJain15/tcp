@@ -854,7 +854,8 @@ export interface ContestAttemptSummary {
   userUid: string | null;
   userDepartment: Department | null;
   status: ContestAttemptStatus;
-  score: number;
+  /** `null` until the contest's results are published — grading only happens at publish. */
+  score: number | null;
   violationCount: number;
   violationPenaltyPoints: number;
   timeTakenMs: number | null;

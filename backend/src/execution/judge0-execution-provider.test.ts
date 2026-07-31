@@ -1,5 +1,7 @@
+import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
 import { Judge0ExecutionProvider } from "./judge0-execution-provider";
+import { BATCH_CASE_SEPARATOR } from "./harness/contract";
 import type { Judge0Language, Judge0SubmissionRequest, Judge0SubmissionResponse } from "./judge0-client";
 
 class FakeJudge0Client {
@@ -236,5 +238,135 @@ describe("Judge0ExecutionProvider compile handling", () => {
     expect(client.payloads).toHaveLength(1);
     expect(result.passedCount).toBe(0);
     expect(result.totalCount).toBe(1);
+  });
+});
+
+/**
+ * Serves a scripted stdout per call so we can drive the batch path: the batched job is
+ * always call 0, and any later calls are the per-case fallback.
+ */
+class ScriptedJudge0Client {
+  public readonly payloads: Judge0SubmissionRequest[] = [];
+
+  constructor(private readonly replyFor: (callIndex: number) => { statusId: number; stdout: string | null }) {}
+
+  usesApiKey(): boolean {
+    return false;
+  }
+
+  async getLanguages(): Promise<Judge0Language[]> {
+    return [{ id: 71, name: "Python (3.12.5)" }];
+  }
+
+  async createSubmissionAndWait(payload: Judge0SubmissionRequest): Promise<Judge0SubmissionResponse> {
+    const callIndex = this.payloads.length;
+    this.payloads.push(payload);
+    const { statusId, stdout } = this.replyFor(callIndex);
+    return {
+      token: `token-${callIndex}`,
+      // Judge0Client decodes base64 before returning, so the provider always sees plain text.
+      stdout,
+      stderr: null,
+      compile_output: null,
+      message: null,
+      time: "0.020",
+      memory: 8192,
+      status: { id: statusId, description: String(statusId) },
+    };
+  }
+}
+
+const SEP = BATCH_CASE_SEPARATOR;
+
+const batchRequest = (outputs: string[]) => ({
+  code: "single-case program",
+  language: "python" as const,
+  problemId: "problem-batch",
+  timeLimitSeconds: 1,
+  memoryLimitMb: 256,
+  comparison: { mode: "EXACT" } as const,
+  batchProgram: { source: "batched program", parameterCount: 1 },
+  testCases: outputs.map((output, index) => ({ input: `case-${index}`, output })),
+});
+
+describe("Judge0ExecutionProvider batched execution", () => {
+  it("judges every test case from a single compiled job", async () => {
+    const client = new ScriptedJudge0Client(() => ({
+      statusId: 3,
+      stdout: ["1", "2", "3"].map((value) => `${value}\n${SEP}\n`).join(""),
+    }));
+    const provider = new Judge0ExecutionProvider(client as never);
+
+    const result = await provider.executeSubmission(batchRequest(["1", "2", "3"]));
+
+    expect(result.status).toBe("ACCEPTED");
+    expect(result.passedCount).toBe(3);
+    expect(result.totalCount).toBe(3);
+    // The whole point: 3 test cases cost one compile, not three.
+    expect(client.payloads).toHaveLength(1);
+    expect(client.payloads[0].source_code).toBe("batched program");
+    // stdin is framed as a leading case count followed by one line per case.
+    expect(client.payloads[0].stdin).toBe("3\ncase-0\ncase-1\ncase-2");
+  });
+
+  it("reports the failing case from a batched run", async () => {
+    const client = new ScriptedJudge0Client(() => ({
+      statusId: 3,
+      stdout: ["1", "WRONG", "3"].map((value) => `${value}\n${SEP}\n`).join(""),
+    }));
+    const provider = new Judge0ExecutionProvider(client as never);
+
+    const result = await provider.executeSubmission(batchRequest(["1", "2", "3"]));
+
+    expect(result.status).toBe("WRONG_ANSWER");
+    // A batch runs to completion in one process, so cases after the failure are still judged —
+    // unlike the per-case path, which stops at the first failing chunk. The verdict matches
+    // either way; only the passed-count is more informative here.
+    expect(result.passedCount).toBe(2);
+    expect(result.totalCount).toBe(3);
+    expect(client.payloads).toHaveLength(1);
+  });
+
+  it("falls back to per-case execution when the batch output misaligns", async () => {
+    // A student printing debug output breaks the segment framing; the verdict must come
+    // from re-running the cases individually rather than from a misaligned batch.
+    const client = new ScriptedJudge0Client((callIndex) =>
+      callIndex === 0
+        ? { statusId: 3, stdout: `noise\n1\n${SEP}\n2\n${SEP}\n` }
+        : { statusId: 3, stdout: null },
+    );
+    const provider = new Judge0ExecutionProvider(client as never);
+
+    const result = await provider.executeSubmission(batchRequest(["1", "2", "3"]));
+
+    // 1 batched attempt + 3 per-case runs.
+    expect(client.payloads).toHaveLength(4);
+    expect(result.totalCount).toBe(3);
+    // The fallback runs the ORIGINAL single-case program, not the batched one.
+    expect(client.payloads[1].source_code).toBe("single-case program");
+  });
+
+  it("falls back when the batched run does not finish cleanly", async () => {
+    // A timeout says nothing about which case was slow, so per-case execution decides.
+    const client = new ScriptedJudge0Client((callIndex) =>
+      callIndex === 0 ? { statusId: 5, stdout: null } : { statusId: 3, stdout: null },
+    );
+    const provider = new Judge0ExecutionProvider(client as never);
+
+    const result = await provider.executeSubmission(batchRequest(["1", "2"]));
+
+    expect(client.payloads.length).toBeGreaterThan(1);
+    expect(result.status).not.toBe("INTERNAL_ERROR");
+  });
+
+  it("ignores the batch program when batching is not offered", async () => {
+    const client = new ScriptedJudge0Client(() => ({ statusId: 3, stdout: null }));
+    const provider = new Judge0ExecutionProvider(client as never);
+
+    const { batchProgram: _omitted, ...withoutBatch } = batchRequest(["1", "2"]);
+    await provider.executeSubmission(withoutBatch);
+
+    // Straight to the per-case path: one job per test case.
+    expect(client.payloads).toHaveLength(2);
   });
 });

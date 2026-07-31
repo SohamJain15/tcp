@@ -540,6 +540,88 @@ describe("TCET Coding Platform backend APIs", () => {
     expect(stored?.id).toBe(firstSubmit.body.feedback.id);
   });
 
+  it("withholds attempt scores from faculty until results are published, then grades at publish", async () => {
+    const { app, repositories } = createTestApp();
+    // Live contest: the student answers, then submits.
+    const contest = await createContest(app, { startTime: "2026-05-07T00:00:00.000Z", duration: 60 });
+    await registerForContest(app, contest.id);
+    await request(app).post(`/api/contests/${contest.id}/attempts`);
+    await request(app)
+      .post(`/api/contests/${contest.id}/answers`)
+      .send({ questionId: "q_mcq_1", answer: "B" });
+    const submitResponse = await request(app).post(`/api/contests/${contest.id}/attempts/submit`);
+    expect(submitResponse.status).toBe(200);
+
+    // Submitted, but the contest is not published: faculty sees the attempt and its integrity
+    // signals, and no score at all — an unpublished contest is never a live scoreboard.
+    const beforePublish = await request(app)
+      .get(`/api/contests/${contest.id}/attempts`)
+      .set(facultyHeaders);
+    expect(beforePublish.status).toBe(200);
+    expect(beforePublish.body.items[0].status).toBe("SUBMITTED");
+    expect(beforePublish.body.items[0].score).toBeNull();
+    expect(beforePublish.body.items[0].timeTakenMs).not.toBeNull();
+
+    // Students cannot reach standings either, published or not, until both gates open.
+    const standingsBefore = await request(app).get(`/api/contests/${contest.id}/standings`);
+    expect(standingsBefore.status).toBe(403);
+
+    // Let the contest window close (the test clock only advances in seconds), since results
+    // can only be published after the deadline.
+    const storedContest = await repositories.contestRepository.getById(contest.id);
+    await repositories.contestRepository.save({
+      ...storedContest!,
+      startAt: new Date("2026-05-06T22:00:00.000Z"),
+      endAt: new Date("2026-05-06T23:00:00.000Z"),
+    });
+
+    const publishResponse = await request(app)
+      .patch(`/api/contests/${contest.id}/results`)
+      .set(facultyHeaders)
+      .send({ resultsPublished: true });
+    expect(publishResponse.status).toBe(200);
+
+    // Publish is the authoritative grading pass — the MCQ answered "B" is worth 10 points, and
+    // it is scored here rather than at submit time.
+    const afterPublish = await request(app)
+      .get(`/api/contests/${contest.id}/attempts`)
+      .set(facultyHeaders);
+    expect(afterPublish.status).toBe(200);
+    expect(afterPublish.body.items[0].score).toBe(10);
+  });
+
+  it("refuses faculty standings and CSV export until results are published", async () => {
+    const { app } = createTestApp();
+    const contest = await createContest(app, {
+      startTime: "2026-05-06T23:00:00.000Z",
+      duration: 30,
+      lifecycleState: "Published",
+    });
+
+    // Ended but unpublished: nothing is graded yet, so a ranked view would be all zeros.
+    // Faculty get a clear 409 instead of a misleading table.
+    const standings = await request(app).get(`/api/contests/${contest.id}/standings`).set(facultyHeaders);
+    expect(standings.status).toBe(409);
+
+    const csv = await request(app).get(`/api/contests/${contest.id}/standings/export`).set(facultyHeaders);
+    expect(csv.status).toBe(409);
+
+    await request(app)
+      .patch(`/api/contests/${contest.id}/results`)
+      .set(facultyHeaders)
+      .send({ resultsPublished: true });
+
+    const publishedStandings = await request(app)
+      .get(`/api/contests/${contest.id}/standings`)
+      .set(facultyHeaders);
+    expect(publishedStandings.status).toBe(200);
+
+    const publishedCsv = await request(app)
+      .get(`/api/contests/${contest.id}/standings/export`)
+      .set(facultyHeaders);
+    expect(publishedCsv.status).toBe(200);
+  });
+
   it("refuses contest feedback before results are published", async () => {
     const { app } = createTestApp();
     const contest = await createContest(app, {
@@ -724,8 +806,10 @@ describe("TCET Coding Platform backend APIs", () => {
       .set(facultyHeaders);
     expect(attemptsResponse.status).toBe(200);
     expect(attemptsResponse.body.items[0].violationCount).toBe(4);
-    // Auto-submit finalised the attempt: MCQ "B" (10) + coding accepted (100) − 20 violation penalty.
-    expect(attemptsResponse.body.items[0].score).toBe(90);
+    // Auto-submit freezes the attempt but must NOT grade it: no score exists before publish,
+    // so an unpublished contest can never be read as a live scoreboard. Violations still show,
+    // because faculty need those during the contest.
+    expect(attemptsResponse.body.items[0].score).toBeNull();
   });
 
   it("auto-submits unsubmitted code drafts when the test is submitted", async () => {

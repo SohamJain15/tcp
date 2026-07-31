@@ -382,7 +382,12 @@ export interface ContestAttemptSummary {
   userDepartment: Department | null;
   year: StudentYear | null;
   status: ContestAttemptStatus;
-  score: number;
+  /**
+   * `null` until the contest's results are published. Grading only happens at publish, so
+   * before that there is no score to report — and faculty must not be able to read an
+   * in-progress contest as a live scoreboard.
+   */
+  score: number | null;
   violationCount: number;
   violationPenaltyPoints: number;
   timeTakenMs: number | null;
@@ -794,7 +799,10 @@ export function toFacultyContestDetailResponse(
   };
 }
 
-export function toContestAttemptSummary(attempt: ContestAttemptRecord): ContestAttemptSummary {
+export function toContestAttemptSummary(
+  attempt: ContestAttemptRecord,
+  resultsPublished: boolean,
+): ContestAttemptSummary {
   return {
     id: attempt.id,
     userEmail: attempt.userEmail,
@@ -803,7 +811,8 @@ export function toContestAttemptSummary(attempt: ContestAttemptRecord): ContestA
     userDepartment: attempt.userDepartment,
     year: null,
     status: attempt.status,
-    score: attempt.score,
+    // Withheld until publish — see ContestAttemptSummary.score.
+    score: resultsPublished ? attempt.score : null,
     violationCount: attempt.violationCount,
     violationPenaltyPoints: attempt.violationPenaltyPoints,
     timeTakenMs: attempt.timeTakenMs,

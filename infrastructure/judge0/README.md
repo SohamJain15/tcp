@@ -79,7 +79,45 @@ Relevant API `.env` settings:
 | `JUDGE0_POLL_TIMEOUT_MS` | `30000` | Fallback-path ceiling. A run is capped at 5 s CPU / 10 s wall, so 120 s only pinned a worker to a dead job. |
 | `SUBMISSION_CHUNK_SIZE` | `5` (tune to `COUNT`) | Test cases dispatched in parallel per submission. |
 | `SUBMISSION_WORKER_CONCURRENCY` | `3` | Submissions processed in parallel per worker process. |
+| `JUDGE0_BATCH_TEST_CASES` | `true` | Compile once and run every test case in a single job. See "Batched execution" below. |
+| `SUBMISSION_BATCH_SIZE` | `25` | Max cases per batched job; automatically reduced to keep a batch under 20s CPU. |
 | `EMBED_SUBMISSION_WORKER` | `false` | The worker runs as its **own process** — restart it separately after changing any of the above. |
+
+### Batched execution
+
+Compiling is ~97% of the cost of judging a test case (measured: 0.36s to compile a generated
+C++ program, 0.01s to run it). With batching, the harness emits a program that reads a leading
+case count and loops, so a submission compiles **once per batch** instead of once per case.
+
+Measured on a 40-case C++ submission (same `ACCEPTED` verdict both ways):
+
+| | Judge0 jobs | Compile time |
+|---|---|---|
+| Per-case | 40 | 14.9 s |
+| Batched | 2 | 0.77 s |
+
+The compile-time figure is the one that matters for capacity: it is CPU taken from every other
+student on the box. Wall-clock gain per submission is smaller in practice, because the per-case
+path already runs `SUBMISSION_CHUNK_SIZE` cases in parallel.
+
+Supported today in **Python, C++ and Java**. Other languages have harness adapters but no batch
+main yet, and transparently keep the per-case path.
+
+Batch size shrinks automatically when the per-case time limit is high, so a batch never exceeds
+20s CPU — Python carries a 3× multiplier, so it batches 6 cases at a time where C++ batches 20.
+
+The batch result is discarded and the cases re-run individually whenever it cannot be trusted:
+
+- the job did not finish cleanly (compile error, runtime error, timeout — these say nothing
+  about *which* case failed), or
+- stdout did not split into exactly one segment per case (a student printing debug output).
+
+So batching only ever changes how fast a verdict is reached, never the verdict itself. Set
+`JUDGE0_BATCH_TEST_CASES=false` to disable it entirely.
+
+Batching applies only to harness (metadata-driven) problems in languages with a batch adapter.
+Legacy problems and passthrough submissions (a student's own full program) always use the
+per-case path.
 
 ### Why `wait=true` matters
 

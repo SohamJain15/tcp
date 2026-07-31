@@ -58,6 +58,12 @@ export interface HarnessRequest {
   spec: HarnessSpec;
   userSource: string;
   language: ExecutableLanguage;
+  /**
+   * Ask for a program that reads a leading case count and runs every case in one process.
+   * Adapters that cannot emit one ignore this and produce the single-case program, so the
+   * caller must check {@link GeneratedHarness.batched} rather than assume.
+   */
+  batch?: boolean;
 }
 
 export interface GeneratedHarness {
@@ -65,6 +71,8 @@ export interface GeneratedHarness {
   source: string;
   /** Echoed so the provider knows whether to delegate comparison to Judge0 or run locally. */
   comparison: ComparisonMode;
+  /** True only when the program actually consumes batched stdin and emits separators. */
+  batched?: boolean;
 }
 
 /** One per language. Turns a {@link HarnessRequest} into a runnable program. */

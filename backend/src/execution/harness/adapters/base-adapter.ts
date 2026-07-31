@@ -86,7 +86,9 @@ export abstract class BaseAdapter implements LanguageAdapter {
     }
     this.injectRuntime(output.serializer, ctx);
 
-    const mainBody = this.emitMain(spec, parameters, output, ctx);
+    // Batching is opt-in per language; fall back to the single-case main when unsupported.
+    const batchBody = req.batch ? this.emitBatchMain(spec, parameters, output, ctx) : null;
+    const mainBody = batchBody ?? this.emitMain(spec, parameters, output, ctx);
     const runtime = ctx.collectRuntime();
     const source = this.assembleProgram({
       spec,
@@ -96,7 +98,7 @@ export abstract class BaseAdapter implements LanguageAdapter {
       mainBody,
     });
 
-    return { source, comparison: resolveComparison(spec) };
+    return { source, comparison: resolveComparison(spec), batched: batchBody !== null };
   }
 
   abstract generateStarter(spec: HarnessSpec): string;
@@ -110,6 +112,20 @@ export abstract class BaseAdapter implements LanguageAdapter {
     output: ResolvedOutput,
     ctx: CodegenContext,
   ): string;
+
+  /**
+   * Optional: render an entry point that reads a leading case count and loops, printing
+   * {@link BATCH_CASE_SEPARATOR} after each case's output. Returning `null` (the default)
+   * means this language has no batch support yet and keeps the one-case-per-run path.
+   */
+  protected emitBatchMain(
+    _spec: HarnessSpec,
+    _parameters: ResolvedParameter[],
+    _output: ResolvedOutput,
+    _ctx: CodegenContext,
+  ): string | null {
+    return null;
+  }
 
   /** Stitch the runtime preamble, user source, and generated main into one program. */
   protected abstract assembleProgram(parts: {

@@ -1,5 +1,5 @@
 import type { ExecutableLanguage } from "../../../shared/types/domain";
-import type { HarnessSpec } from "../contract";
+import { BATCH_CASE_SEPARATOR, type HarnessSpec } from "../contract";
 import { BaseAdapter, type ResolvedOutput, type ResolvedParameter } from "./base-adapter";
 import type { CodegenContext } from "./language-adapter";
 import { getLangPrimitives } from "./lang-primitives";
@@ -43,6 +43,54 @@ export class PythonAdapter extends BaseAdapter {
       lines.push(`    sys.stdout.write(${output.serializerFragment.render("__t_res")})`);
     }
 
+    lines.push("__t_main()");
+    return lines.join("\n");
+  }
+
+  /**
+   * Batched entry point: the first stdin line is the case count, then each case supplies the
+   * same fixed number of parameter lines as the single-case program. Output for each case is
+   * followed by the separator line, so the caller can split the run back into per-case results.
+   */
+  protected emitBatchMain(
+    spec: HarnessSpec,
+    parameters: ResolvedParameter[],
+    output: ResolvedOutput,
+    _ctx: CodegenContext,
+  ): string | null {
+    const cls = this.className(spec);
+    const method = this.entryMethod(spec);
+    const parameterCount = parameters.length;
+    const lines: string[] = [];
+
+    lines.push("def __t_main():");
+    lines.push("    __t_all = sys.stdin.read().split('\\n')");
+    lines.push("    __t_n = int(__t_all[0].strip() or '0')");
+    lines.push(`    __t_width = ${parameterCount}`);
+    lines.push("    for __t_i in range(__t_n):");
+    lines.push("        __t_base = 1 + __t_i * __t_width");
+    lines.push("        __t_lines = __t_all[__t_base:__t_base + __t_width]");
+
+    const argNames = parameters.map((p, i) => {
+      const value = p.deserializerFragment.render(`__t_lines[${i}]`);
+      lines.push(`        ${p.spec.name} = ${value}`);
+      return p.spec.name;
+    });
+
+    const call = `${cls}().${method}(${argNames.join(", ")})`;
+
+    if (output.channel.kind === "VOID") {
+      lines.push(`        ${call}`);
+    } else if (output.channel.kind === "MUTATION") {
+      const target = parameters[output.channel.parameterIndex].spec.name;
+      lines.push(`        ${call}`);
+      lines.push(`        sys.stdout.write(${output.serializerFragment.render(target)})`);
+    } else {
+      lines.push(`        __t_res = ${call}`);
+      lines.push(`        sys.stdout.write(${output.serializerFragment.render("__t_res")})`);
+    }
+
+    lines.push(`        sys.stdout.write('\\n${BATCH_CASE_SEPARATOR}\\n')`);
     lines.push("__t_main()");
     return lines.join("\n");
   }

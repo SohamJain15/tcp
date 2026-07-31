@@ -119,6 +119,16 @@ export interface HarnessSpec {
   customTypes?: CustomTypeSpec[];
 }
 
+/**
+ * Marker a batched program prints after each test case's output.
+ *
+ * Compiling is ~97% of the cost of judging one test case, so a batched program compiles
+ * once and runs every case in a single process, delimiting the results with this line.
+ * It is deliberately long and improbable: if a student's own output ever contained it the
+ * segments would misalign, and the provider detects that and re-runs the tests one by one.
+ */
+export const BATCH_CASE_SEPARATOR = "__TCET_CASE_END_9f3a2c__";
+
 export const DEFAULT_CLASS_NAME = "Solution";
 export const DEFAULT_RETURN_CHANNEL: ReturnChannel = { kind: "RETURN" };
 export const DEFAULT_COMPARISON: ComparisonMode = { mode: "EXACT" };

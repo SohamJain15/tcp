@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { env } from "../../config/env";
-import { generateSubmissionProgram, harnessLanguageSupported, submissionUsesOwnProgram } from "../../execution/harness";
+import {
+  generateSubmissionProgram,
+  harnessLanguageSupported,
+  submissionUsesOwnProgram,
+} from "../../execution/harness";
+import type { ExecutionRequest } from "../../execution/execution-provider";
+import type { HarnessSpec } from "../../execution/harness/contract";
 import { DIFFICULTY_RATING_WEIGHTS } from "../../shared/constants/domain";
 import { AppError } from "../../shared/errors/app-error";
 import type { AuthenticatedUser } from "../../shared/types/auth";
@@ -178,6 +184,29 @@ function ensureLanguageSupported(problem: ProblemRecord, language: SubmissionRec
   if (!harnessLanguageSupported(language, problem.harness)) {
     throw new AppError(400, `This problem is not available in ${language}. Please choose a supported language.`);
   }
+}
+
+/**
+ * Build the optional compile-once program for a submission.
+ *
+ * Only offered for harness problems whose language has a batch adapter — a passthrough
+ * (student-written full program) reads stdin its own way and can never be batched. The
+ * provider treats this as a fast path and falls back to per-case execution if the batched
+ * run is inconclusive.
+ */
+function buildBatchProgram(
+  language: SubmissionRecord["language"],
+  code: string,
+  harness: HarnessSpec | undefined,
+): ExecutionRequest["batchProgram"] {
+  if (!harness || submissionUsesOwnProgram(language, code)) {
+    return undefined;
+  }
+
+  const batch = generateSubmissionProgram(language, code, harness, { batch: true });
+  return batch.batched
+    ? { source: batch.source, parameterCount: harness.parameters.length }
+    : undefined;
 }
 
 function buildSubmissionRunResponse(
@@ -559,6 +588,11 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
             result = await dependencies.executionProvider.executeSubmission({
               code: program.source,
               comparison: program.comparison,
+              batchProgram: buildBatchProgram(
+                runningSubmission.language,
+                runningSubmission.code,
+                question.harness,
+              ),
               language: runningSubmission.language,
               testCases: [...question.sampleTestCases, ...question.hiddenTestCases],
               problemId: `${contest.id}:${question.id}`,
@@ -581,6 +615,11 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
             result = await dependencies.executionProvider.executeSubmission({
               code: program.source,
               comparison: program.comparison,
+              batchProgram: buildBatchProgram(
+                runningSubmission.language,
+                runningSubmission.code,
+                problem.harness,
+              ),
               language: runningSubmission.language,
               testCases: [...problem.sampleTestCases, ...problem.hiddenTestCases],
               problemId: problem.id,

@@ -66,6 +66,13 @@ const envSchema = z.object({
   // (worker processes) x SUBMISSION_WORKER_CONCURRENCY x this, and should be sized against
   // the isolate worker count (`COUNT` in judge0.conf) so requests don't queue inside Judge0.
   SUBMISSION_CHUNK_SIZE: z.coerce.number().int().min(1).max(20).default(5),
+  // Compile once and run every test case in a single job (harness problems in languages with
+  // batch support). Any inconclusive batch silently re-runs case-by-case, so this only changes
+  // how fast a verdict is reached, never the verdict.
+  JUDGE0_BATCH_TEST_CASES: z.unknown().transform((value) => parseBoolean(value, true)),
+  // Cases per batched job. Automatically reduced when the per-case time limit is high enough
+  // that a full batch would exceed the batch time ceiling.
+  SUBMISSION_BATCH_SIZE: z.coerce.number().int().min(2).max(200).default(25),
   SUBMISSION_RECOVERY_STALE_MS: z.coerce.number().int().positive().default(30000),
   // How often the background finaliser sweeps for ACTIVE attempts past their deadline. 0 disables it.
   ATTEMPT_FINALIZER_INTERVAL_MS: z.coerce.number().int().nonnegative().default(60000),

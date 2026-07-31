@@ -1,5 +1,6 @@
 import type { ExecutableLanguage } from "../../../shared/types/domain";
 import {
+  BATCH_CASE_SEPARATOR,
   resolveClassName,
   resolveComparison,
   resolveEntryMethod,
@@ -101,22 +102,28 @@ export class CppAdapter implements LanguageAdapter {
     const method = resolveEntryMethod(spec, this.language);
     const channel = resolveReturnChannel(spec);
 
+    // In batch mode the same declarations are emitted inside a per-case loop, reading from a
+    // sliding offset into the input lines instead of from the top of the file.
+    const batch = req.batch === true;
+    const lineAt = (index: number) => (batch ? `__t_lines[__t_base + ${index}]` : `__t_lines[${index}]`);
+    const indent = batch ? "        " : "    ";
+
     const decls: string[] = [];
     const argNames: string[] = [];
     spec.parameters.forEach((p, i) => {
-      decls.push(`    auto ${p.name} = ${this.deserialize(p.type, `__t_lines[${i}]`)};`);
+      decls.push(`${indent}auto ${p.name} = ${this.deserialize(p.type, lineAt(i))};`);
       argNames.push(p.name);
     });
 
     const call = `sol.${method}(${argNames.join(", ")})`;
     let invoke: string;
     if (channel.kind === "VOID") {
-      invoke = `    ${call};`;
+      invoke = `${indent}${call};`;
     } else if (channel.kind === "MUTATION") {
       const target = spec.parameters[channel.parameterIndex];
-      invoke = `    ${call};\n    cout << ${this.serialize(target.type, target.name)};`;
+      invoke = `${indent}${call};\n${indent}cout << ${this.serialize(target.type, target.name)};`;
     } else {
-      invoke = `    auto __t_res = ${call};\n    cout << ${this.serialize(spec.returnType, "__t_res")};`;
+      invoke = `${indent}auto __t_res = ${call};\n${indent}cout << ${this.serialize(spec.returnType, "__t_res")};`;
     }
 
     const source = [
@@ -133,15 +140,26 @@ export class CppAdapter implements LanguageAdapter {
       "    ios::sync_with_stdio(false); cin.tie(nullptr);",
       "    string __t_all((istreambuf_iterator<char>(cin)), istreambuf_iterator<char>());",
       "    vector<string> __t_lines; { string cur; for (char c : __t_all) { if (c == '\\n') { __t_lines.push_back(cur); cur.clear(); } else cur += c; } __t_lines.push_back(cur); }",
-      `    ${cls} sol;`,
-      ...decls,
-      invoke,
+      ...(batch
+        ? [
+            // Batched: leading case count, then a fixed-width block of lines per case.
+            "    int __t_n = __t_lines.empty() ? 0 : atoi(__t_lines[0].c_str());",
+            `    const int __t_width = ${spec.parameters.length};`,
+            "    for (int __t_i = 0; __t_i < __t_n; ++__t_i) {",
+            "        const int __t_base = 1 + __t_i * __t_width;",
+            `        ${cls} sol;`,
+            ...decls,
+            invoke,
+            `        cout << "\\n${BATCH_CASE_SEPARATOR}\\n";`,
+            "    }",
+          ]
+        : [`    ${cls} sol;`, ...decls, invoke]),
       "    return 0;",
       "}",
       "",
     ].join("\n");
 
-    return { source, comparison: resolveComparison(spec) };
+    return { source, comparison: resolveComparison(spec), batched: batch };
   }
 
   generateStarter(spec: HarnessSpec): string {

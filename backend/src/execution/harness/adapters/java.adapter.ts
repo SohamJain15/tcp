@@ -1,5 +1,6 @@
 import type { ExecutableLanguage } from "../../../shared/types/domain";
 import {
+  BATCH_CASE_SEPARATOR,
   resolveClassName,
   resolveComparison,
   resolveEntryMethod,
@@ -128,22 +129,28 @@ export class JavaAdapter implements LanguageAdapter {
     const method = resolveEntryMethod(spec, "java");
     const channel = resolveReturnChannel(spec);
 
+    // In batch mode the same declarations run inside a per-case loop, reading from a sliding
+    // offset into the input lines instead of from the top of the file.
+    const batch = req.batch === true;
+    const lineAt = (index: number) => (batch ? `__t_lines[__t_base + ${index}]` : `__t_lines[${index}]`);
+    const indent = batch ? "      " : "    ";
+
     const decls: string[] = [];
     const argNames: string[] = [];
     spec.parameters.forEach((p, i) => {
-      decls.push(`    ${this.nativeType(p.type)} ${p.name} = ${this.deserialize(p.type, `__t_lines[${i}]`)};`);
+      decls.push(`${indent}${this.nativeType(p.type)} ${p.name} = ${this.deserialize(p.type, lineAt(i))};`);
       argNames.push(p.name);
     });
 
     const call = `new ${cls}().${method}(${argNames.join(", ")})`;
     let invoke: string;
     if (channel.kind === "VOID") {
-      invoke = `    ${call};`;
+      invoke = `${indent}${call};`;
     } else if (channel.kind === "MUTATION") {
       const target = spec.parameters[channel.parameterIndex];
-      invoke = `    ${call};\n    System.out.print(${this.serialize(target.type, target.name)});`;
+      invoke = `${indent}${call};\n${indent}System.out.print(${this.serialize(target.type, target.name)});`;
     } else {
-      invoke = `    ${this.nativeType(spec.returnType)} __t_res = ${call};\n    System.out.print(${this.serialize(spec.returnType, "__t_res")});`;
+      invoke = `${indent}${this.nativeType(spec.returnType)} __t_res = ${call};\n${indent}System.out.print(${this.serialize(spec.returnType, "__t_res")});`;
     }
 
     // Java requires imports before any type declaration, so hoist any imports the
@@ -164,15 +171,26 @@ export class JavaAdapter implements LanguageAdapter {
       "  public static void main(String[] args) throws Exception {",
       '    String all = new String(System.in.readAllBytes());',
       '    String[] __t_lines = all.split("\\n", -1);',
-      ...decls,
-      invoke,
+      ...(batch
+        ? [
+            // Batched: leading case count, then a fixed-width block of lines per case.
+            '    int __t_n = __t_lines.length == 0 ? 0 : Integer.parseInt(__t_lines[0].trim());',
+            `    final int __t_width = ${spec.parameters.length};`,
+            "    for (int __t_i = 0; __t_i < __t_n; __t_i++) {",
+            "      final int __t_base = 1 + __t_i * __t_width;",
+            ...decls,
+            invoke,
+            `      System.out.print("\\n${BATCH_CASE_SEPARATOR}\\n");`,
+            "    }",
+          ]
+        : [...decls, invoke]),
       "  }",
       JAVA_HELPERS,
       "}",
       "",
     ].join("\n");
 
-    return { source, comparison: resolveComparison(spec) };
+    return { source, comparison: resolveComparison(spec), batched: batch };
   }
 
   private typelib(_spec: HarnessSpec): string[] {

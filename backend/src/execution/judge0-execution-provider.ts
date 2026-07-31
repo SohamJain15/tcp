@@ -3,6 +3,7 @@ import type { ExecutableLanguage, SubmissionStatus } from "../shared/types/domai
 import { isExecutableLanguage, tryNormalizeSupportedLanguage } from "../shared/utils/normalize";
 import type { ExecutionProvider, ExecutionRequest, ExecutionResult, ExecutionTestCase } from "./execution-provider";
 import { compareOutput, isDelegatedComparison } from "./harness";
+import { BATCH_CASE_SEPARATOR } from "./harness/contract";
 import {
   Judge0Client,
   Judge0ClientError,
@@ -12,6 +13,12 @@ import {
 
 const PROVIDER_NAME = "judge0";
 const MAX_CPU_TIME_LIMIT_SECONDS = 5;
+/**
+ * Ceiling for a whole batched run. Judge0's own MAX_CPU_TIME_LIMIT is far higher, but a
+ * batch that outgrows this would hold an isolate worker long enough to hurt everyone else,
+ * so the batch is split instead.
+ */
+const MAX_BATCH_CPU_TIME_LIMIT_SECONDS = 20;
 
 const EDITOR_ONLY_BLOCKLIST = new Set(["react", "html", "css"]);
 
@@ -215,6 +222,17 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
       }
 
       const languageId = await this.resolveLanguageId(request.language);
+
+      // Compiling dominates the cost of judging (roughly 97% for C++), so when the harness
+      // produced a batched program we compile once and run every case in a single job.
+      // Any inconclusive outcome falls through to the per-case path below.
+      if (env.JUDGE0_BATCH_TEST_CASES && request.batchProgram) {
+        const batched = await this.executeBatched(request, request.batchProgram, languageId);
+        if (batched) {
+          return batched;
+        }
+      }
+
       const chunkSize = env.SUBMISSION_CHUNK_SIZE;
       const results: TestExecutionOutcome[] = [];
 
@@ -278,6 +296,144 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
         error instanceof Error ? error.message : "Judge0 submission execution failed.",
       );
     }
+  }
+
+  /**
+   * Run every test case in one compiled program.
+   *
+   * Returns `null` whenever the batch cannot be trusted to describe each case accurately —
+   * a compile/runtime/timeout outcome, or output that does not split into exactly one
+   * segment per case (a student printing debug output would misalign them). The caller then
+   * re-runs the cases individually, so batching can only ever make judging faster, never
+   * change a verdict.
+   */
+  private async executeBatched(
+    request: ExecutionRequest,
+    batchProgram: NonNullable<ExecutionRequest["batchProgram"]>,
+    languageId: number,
+  ): Promise<ExecutionResult | null> {
+    const testCases = request.testCases;
+    const perCaseTimeLimit = this.resolveAdjustedTimeLimitSeconds(request.language, request.timeLimitSeconds);
+
+    // Size the batch so the whole run still fits a sane ceiling: one slow case must not be
+    // able to push the job past the wall clock and take every other case down with it.
+    const maxCasesPerBatch = Math.max(1, Math.floor(MAX_BATCH_CPU_TIME_LIMIT_SECONDS / perCaseTimeLimit));
+    const batchSize = Math.min(env.SUBMISSION_BATCH_SIZE, maxCasesPerBatch);
+    if (batchSize < 2) {
+      // Nothing to gain over the per-case path.
+      return null;
+    }
+
+    const outcomes: TestExecutionOutcome[] = [];
+
+    for (let index = 0; index < testCases.length; index += batchSize) {
+      const group = testCases.slice(index, index + batchSize);
+      const batchOutcome = await this.executeBatchGroup(request, batchProgram, group, languageId, perCaseTimeLimit);
+      if (!batchOutcome) {
+        return null;
+      }
+
+      outcomes.push(...batchOutcome);
+      if (batchOutcome.some((outcome) => outcome.status !== "ACCEPTED")) {
+        break;
+      }
+    }
+
+    const passedCount = outcomes.filter((outcome) => outcome.status === "ACCEPTED").length;
+    const status = this.selectFinalStatus(outcomes);
+    const diagnostic = this.pickAggregateDiagnostic(outcomes, status);
+
+    return {
+      status,
+      runtimeMs: outcomes.reduce((max, outcome) => Math.max(max, outcome.runtimeMs), 0),
+      memoryKb: outcomes.reduce((max, outcome) => Math.max(max, outcome.memoryKb), 0),
+      passedCount,
+      totalCount: outcomes.length,
+      provider: PROVIDER_NAME,
+      stdout: diagnostic?.stdout,
+      stderr: diagnostic?.stderr,
+    };
+  }
+
+  /** One Judge0 job covering `group`, split back into per-case outcomes (or null to fall back). */
+  private async executeBatchGroup(
+    request: ExecutionRequest,
+    batchProgram: NonNullable<ExecutionRequest["batchProgram"]>,
+    group: readonly ExecutionTestCase[],
+    languageId: number,
+    perCaseTimeLimit: number,
+  ): Promise<TestExecutionOutcome[] | null> {
+    // Fixed-width framing: a leading case count, then each case's parameter lines verbatim.
+    const stdin = [
+      String(group.length),
+      ...group.map((testCase) => this.normalizeBatchCaseInput(testCase.input, batchProgram.parameterCount)),
+    ].join("\n");
+
+    const cpuTimeLimit = Math.min(perCaseTimeLimit * group.length, MAX_BATCH_CPU_TIME_LIMIT_SECONDS);
+
+    let response: Judge0SubmissionResponse;
+    try {
+      response = await this.client.createSubmissionAndWait({
+        source_code: batchProgram.source,
+        language_id: languageId,
+        stdin,
+        // Always compared locally: the batch stdout holds every case's output at once.
+        expected_output: undefined,
+        cpu_time_limit: cpuTimeLimit,
+        wall_time_limit: Math.max(cpuTimeLimit * 2, cpuTimeLimit + 1),
+        memory_limit: this.resolveAdjustedMemoryLimitKb(request.language, request.memoryLimitMb),
+        enable_network: false,
+        redirect_stderr_to_stdout: false,
+        enable_per_process_and_thread_time_limit: false,
+        enable_per_process_and_thread_memory_limit: false,
+      });
+    } catch (error) {
+      const judge0Error = error as { response?: { data?: unknown }; message?: string };
+      console.error("JUDGE0_SYSTEM_ERROR:", judge0Error.response?.data || judge0Error.message);
+      return null;
+    }
+
+    const outcome = this.normalizeJudge0Response(response);
+
+    // A non-clean run says nothing about which case failed — re-run them individually so the
+    // student sees an accurate verdict and passed-count.
+    if (outcome.status !== "ACCEPTED") {
+      return null;
+    }
+
+    const segments = (outcome.stdout ?? "").split(BATCH_CASE_SEPARATOR);
+    // The program emits a trailing separator, so a clean run yields group.length + 1 pieces.
+    const caseOutputs = segments.slice(0, -1);
+    if (caseOutputs.length !== group.length) {
+      return null;
+    }
+
+    const comparison = request.comparison ?? { mode: "EXACT" };
+    return group.map((testCase, caseIndex) => {
+      // The separator is written on its own line, so every segment but the first carries the
+      // newline that introduced it. Harness output is canonical single-line JSON, so trimming
+      // the framing whitespace is exactly the un-framing step — not a loosening of comparison.
+      const actual = caseOutputs[caseIndex].trim();
+      const passed = compareOutput(comparison, testCase.output, actual, testCase.input);
+      return {
+        status: passed ? "ACCEPTED" : "WRONG_ANSWER",
+        // Judge0 reports one figure for the whole batch; attribute it per case rather than
+        // pretending we measured each one.
+        runtimeMs: outcome.runtimeMs,
+        memoryKb: outcome.memoryKb,
+        stdout: passed ? undefined : actual,
+        stderr: undefined,
+      } satisfies TestExecutionOutcome;
+    });
+  }
+
+  /** Pads/trims a case to exactly the parameter-line width the batch framing expects. */
+  private normalizeBatchCaseInput(input: string, parameterCount: number): string {
+    const lines = input.replace(/\n+$/, "").split("\n");
+    while (lines.length < parameterCount) {
+      lines.push("");
+    }
+    return lines.slice(0, parameterCount).join("\n");
   }
 
   private async resolveLanguageId(language: ExecutableLanguage): Promise<number> {

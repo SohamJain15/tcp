@@ -316,6 +316,17 @@ function isViolationEvent(type: ContestProctoringEventRecord["type"]): boolean {
   );
 }
 
+/**
+ * Any ranked view is meaningless before publish, because that is when grading happens —
+ * every attempt would sit at zero. Faculty get a 409 telling them to publish rather than a
+ * table of zeros they might read as real results.
+ */
+function ensureResultsPublishedForRanking(contest: ContestRecord | null): void {
+  if (!contest?.resultsPublished) {
+    throw new AppError(409, "Publish the results to view standings");
+  }
+}
+
 function ensureStudentCanViewStandings(contest: ContestRecord, feedbackSubmitted: boolean): void {
   if (!contest.resultsPublished) {
     throw new AppError(403, "Standings are not available yet");
@@ -417,6 +428,23 @@ export function finalizeAttemptScoring(
   });
 
   return withDerivedAttemptFields({ ...attempt, questionStates, updatedAt: now });
+}
+
+/**
+ * Closes an attempt without grading it.
+ *
+ * Submitting (manually, on timeout, or on a violation auto-submit) only freezes what the
+ * student wrote. Points are awarded exclusively by the publish pass, so an in-flight or
+ * finished-but-unpublished contest carries no score anywhere — nothing to leak to the
+ * student, and nothing for faculty to read as a live scoreboard. `finalizeAttemptScoring`
+ * is idempotent and re-derives everything from the saved answers at publish, so deferring
+ * loses no information.
+ */
+function closeAttemptWithoutScoring(
+  attempt: ContestAttemptRecord,
+  now: Date,
+): ContestAttemptRecord {
+  return withDerivedAttemptFields({ ...attempt, updatedAt: now });
 }
 
 function sortStandings(left: ContestAttemptRecord, right: ContestAttemptRecord): number {
@@ -649,9 +677,9 @@ async function resolveAttemptWithinDeadline(
 
   if (contest) {
     // Running out of time still submits whatever the student had written. Judging finishes in the
-    // background; publish re-grades every attempt once the worker is done.
+    // background; publish grades every attempt once the worker is done.
     const { attempt: withDrafts } = await autoSubmitPendingCodingDrafts(contest, expiredAttempt, now, dependencies);
-    await dependencies.contestAttemptRepository.save(finalizeAttemptScoring(withDrafts, contest, now));
+    await dependencies.contestAttemptRepository.save(closeAttemptWithoutScoring(withDrafts, now));
   } else {
     await dependencies.contestAttemptRepository.save(withDerivedAttemptFields(expiredAttempt));
   }
@@ -1219,10 +1247,9 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       // waiting would just hang their Submit Test whenever the queue is busy or the worker is down.
       const { attempt: withDrafts } = await autoSubmitPendingCodingDrafts(contest, attempt, now, dependencies);
 
-      // Grade the saved answers now that the student is done. Publish re-runs this for everyone.
-      const updatedAttempt = finalizeAttemptScoring(
+      // Freeze the attempt without grading it — publish is the only place points are awarded.
+      const updatedAttempt = closeAttemptWithoutScoring(
         { ...withDrafts, status: "SUBMITTED", submittedAt: now },
-        contest,
         now,
       );
       await dependencies.contestAttemptRepository.save(updatedAttempt);
@@ -1263,7 +1290,7 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         try {
           if (contest) {
             const { attempt: withDrafts } = await autoSubmitPendingCodingDrafts(contest, expiredAttempt, now, dependencies);
-            await dependencies.contestAttemptRepository.save(finalizeAttemptScoring(withDrafts, contest, now));
+            await dependencies.contestAttemptRepository.save(closeAttemptWithoutScoring(withDrafts, now));
           } else {
             await dependencies.contestAttemptRepository.save(withDerivedAttemptFields(expiredAttempt));
           }
@@ -1312,7 +1339,7 @@ export function createContestService(dependencies: ContestServiceDependencies): 
           now,
           dependencies,
         );
-        updatedAttempt = finalizeAttemptScoring(withDrafts, contest, now);
+        updatedAttempt = closeAttemptWithoutScoring(withDrafts, now);
       } else {
         updatedAttempt = withDerivedAttemptFields(violatedAttempt);
       }
@@ -1506,6 +1533,7 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       const contest = await dependencies.contestRepository.getById(contestId);
       if (user.role === "FACULTY") {
         ensureFacultyOwnsContest(user, contest);
+        ensureResultsPublishedForRanking(contest);
       } else {
         const visibleContest = ensureStudentCanAccessContest(
           contest,
@@ -1535,6 +1563,7 @@ export function createContestService(dependencies: ContestServiceDependencies): 
 
     async exportStandingsCsv(user, contestId, query = {}) {
       const contest = ensureFacultyOwnsContest(user, await dependencies.contestRepository.getById(contestId));
+      ensureResultsPublishedForRanking(contest);
       const attempts = await dependencies.contestAttemptRepository.listByContest(contestId);
       const userRecords = await Promise.all(
         attempts.map(async (attempt) => ({
@@ -1590,9 +1619,13 @@ export function createContestService(dependencies: ContestServiceDependencies): 
     },
 
     async listAttempts(user, contestId) {
-      ensureFacultyOwnsContest(user, await dependencies.contestRepository.getById(contestId));
+      const contest = ensureFacultyOwnsContest(user, await dependencies.contestRepository.getById(contestId));
       const attempts = await dependencies.contestAttemptRepository.listByContest(contestId);
-      return attempts.sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime()).map(toContestAttemptSummary);
+      // Scores stay hidden until publish; status, timing and violations remain visible so
+      // faculty can still proctor the contest while it runs.
+      return attempts
+        .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime())
+        .map((attempt) => toContestAttemptSummary(attempt, contest.resultsPublished));
     },
 
     async getAttemptReview(user, contestId, attemptId) {

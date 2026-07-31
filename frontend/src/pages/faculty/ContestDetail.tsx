@@ -35,10 +35,14 @@ export default function FacultyContestDetail() {
     enabled: Boolean(id),
   });
 
+  // Grading happens at publish, so standings simply do not exist before then — asking for
+  // them would 409. Fetch only once results are published.
+  const resultsPublished = contestQuery.data?.contest.resultsPublished ?? false;
+
   const standingsQuery = useQuery({
     queryKey: ["faculty-contest-standings", id],
     queryFn: () => contestsApi.getStandings(id, pathname),
-    enabled: Boolean(id),
+    enabled: Boolean(id) && resultsPublished,
   });
 
   const attemptsQuery = useQuery({
@@ -141,7 +145,12 @@ export default function FacultyContestDetail() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => exportMutation.mutate()} disabled={exportMutation.isPending}>
+            <Button
+              variant="outline"
+              onClick={() => exportMutation.mutate()}
+              disabled={exportMutation.isPending || !resultsPublished}
+              title={resultsPublished ? undefined : "Publish results to export the leaderboard"}
+            >
               <Download className="mr-2 h-4 w-4" /> {exportMutation.isPending ? "Exporting..." : "Download CSV"}
             </Button>
             <Button asChild variant="outline">
@@ -292,7 +301,15 @@ export default function FacultyContestDetail() {
                     </Link>
                   </TableCell>
                   <TableCell>{attempt.status}</TableCell>
-                  <TableCell>{attempt.score}</TableCell>
+                  <TableCell>
+                    {attempt.score !== null ? (
+                      attempt.score
+                    ) : (
+                      <span className="text-muted-foreground" title="Scores are calculated when you publish results">
+                        Not graded
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell>{attempt.timeTakenMs !== null ? `${Math.ceil(attempt.timeTakenMs / 1000)} sec` : "-"}</TableCell>
                   <TableCell>{attempt.violationCount} ({attempt.violationPenaltyPoints} pts)</TableCell>
                   <TableCell className="text-right">
@@ -342,7 +359,11 @@ export default function FacultyContestDetail() {
               ))}
               {standings.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">No standings available yet.</TableCell>
+                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                    {resultsPublished
+                      ? "No standings available yet."
+                      : "Attempts are graded when you publish results — standings appear then."}
+                  </TableCell>
                 </TableRow>
               )}
             </TableBody>
