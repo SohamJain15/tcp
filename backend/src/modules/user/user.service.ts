@@ -8,6 +8,7 @@ import type { AuthenticatedUser } from "../../shared/types/auth";
 import { AppError } from "../../shared/errors/app-error";
 import { estimateActiveMinutes } from "../../shared/utils/activity";
 import { normalizeDepartment, normalizeRole } from "../../shared/utils/normalize";
+import { uidMatchesDepartment } from "../../shared/utils/uid-department";
 import type { Department } from "../../shared/types/domain";
 import type { SubmissionAnalyticsRecord, SubmissionRepository } from "../submission/submission.repository";
 import type {
@@ -67,7 +68,7 @@ function createDefaultUser(authUser: AuthenticatedUser, now: Date): UserRecord {
     uid: authUser.uid ?? null,
     isProfileComplete: false,
     designation: null,
-    isHod: false,
+    isHod: authUser.isHod ?? false,
     rollNumber: null,
     department: normalizeDepartment(authUser.department) ?? null,
     semester: null,
@@ -93,12 +94,13 @@ function mergeUser(existing: UserRecord, authUser: AuthenticatedUser, now: Date)
     email: authUser.email,
     role: normalizeRole(authUser.role),
     name: authUser.name ?? existing.name,
+    // The CoE JWT is the trusted source for uid/isHod: when present it overwrites
+    // any stored value (auto-correcting mismatches on every login).
     uid: authUser.uid ?? existing.uid,
     department: existing.department ?? normalizeDepartment(authUser.department) ?? null,
     isProfileComplete: existing.isProfileComplete,
     designation: existing.designation,
-    // Only ever set from the saved profile — CoE/SSO headers must never grant HOD.
-    isHod: existing.isHod,
+    isHod: authUser.isHod ?? existing.isHod,
     rollNumber: existing.rollNumber,
     semester: existing.semester,
     linkedInUrl: existing.linkedInUrl,
@@ -284,16 +286,30 @@ export function createUserService(dependencies: UserServiceDependencies): UserSe
       const now = dependencies.now();
       const baseUser = await this.syncAuthenticatedUser(authUser);
 
+      // Students: the UID is authoritative from the CoE payload (auto-filled, not
+      // typed). Fall back to the submitted value only if the payload has none.
+      const resolvedUid = authUser.role === "STUDENT" ? baseUser.uid ?? input.uid ?? null : baseUser.uid;
+
+      // Enforce that a student's UID branch matches the chosen department.
+      if (authUser.role === "STUDENT" && resolvedUid && !uidMatchesDepartment(resolvedUid, input.department)) {
+        throw new AppError(
+          400,
+          `Your UID (${resolvedUid}) does not match the selected department. Please choose the department that matches your UID.`,
+        );
+      }
+
       const updatedUserBase: UserRecord = {
         ...baseUser,
         name: input.name,
         designation: authUser.role === "FACULTY" ? input.designation ?? null : null,
-        uid: authUser.role === "STUDENT" ? input.uid ?? null : baseUser.uid,
+        uid: resolvedUid,
         rollNumber: authUser.role === "STUDENT" ? input.rollNumber ?? null : null,
         department: input.department,
         semester: authUser.role === "STUDENT" ? input.semester ?? null : null,
         linkedInUrl: input.linkedInUrl,
         githubUrl: input.githubUrl,
+        // isHod is never editable here — it comes solely from the trusted CoE payload.
+        isHod: baseUser.isHod,
         updatedAt: now,
       };
       const updatedUser: UserRecord = {

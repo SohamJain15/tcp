@@ -6,4 +6,10 @@ export interface AuthenticatedUser {
   name: string;
   uid?: string;
   department?: string;
+  /**
+   * Head-of-Department flag sourced from the trusted CoE JWT payload. When present
+   * it is authoritative (overrides any stored value). Absent for students / older
+   * tokens.
+   */
+  isHod?: boolean;
 }

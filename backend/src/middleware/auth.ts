@@ -16,6 +16,9 @@ type CoeTokenPayload = {
   name: string;
   role: CoeHeaderRole;
   status: string;
+  // New optional CoE claims: stable user id and HOD flag (JWT-only, no headers).
+  uid?: string;
+  isHod?: boolean;
 };
 
 const ALLOWED_COE_ROLES = new Set<CoeHeaderRole>(["ADMIN", "FACULTY", "INDUSTRY", "STUDENT"]);
@@ -122,7 +125,37 @@ function decodeAndValidateToken(token: string): CoeTokenPayload | null {
     role: normalizedRole,
     status,
     name: tokenName || defaultNameFromEmail(email),
+    ...extractExtraClaims(payload),
   };
+}
+
+/**
+ * Read the new optional CoE claims (`uid`, `isHod`) from a verified JWT payload.
+ * These live only in the JWT (not the x-coe-* headers), so we also read them on the
+ * header path (best-effort) from the forwarded token cookie.
+ */
+function extractExtraClaims(payload: JwtPayload): { uid?: string; isHod?: boolean } {
+  const result: { uid?: string; isHod?: boolean } = {};
+  const uid = normalizeHeaderValue(payload.uid);
+  if (uid) {
+    result.uid = uid;
+  }
+  if (typeof payload.isHod === "boolean") {
+    result.isHod = payload.isHod;
+  } else if (typeof payload.isHod === "string") {
+    result.isHod = payload.isHod.trim().toLowerCase() === "true";
+  }
+  return result;
+}
+
+/**
+ * Best-effort decode of the CoE token purely to enrich identity with `uid`/`isHod`.
+ * Returns nothing if the token is absent/invalid — enrichment is optional and must
+ * never block a request that authenticated via headers.
+ */
+function readExtraClaimsFromToken(token: string): { uid?: string; isHod?: boolean } {
+  const decoded = decodeAndValidateToken(token);
+  return decoded ? { uid: decoded.uid, isHod: decoded.isHod } : {};
 }
 
 function parseTrustedProxyEntries(entries: string[]): BlockList {
@@ -253,6 +286,9 @@ export function createAuthMiddleware(userService: Pick<UserService, "syncAuthent
       let authenticatedName = name;
       let authenticatedRole: CoeHeaderRole | null = null;
       let authenticatedStatus = status;
+      // uid/isHod live only in the JWT payload; capture them regardless of which
+      // path authenticated the request.
+      let extraClaims: { uid?: string; isHod?: boolean } = {};
 
       if (missingHeaders.length === 0) {
         if (!isValidEmail(email)) {
@@ -274,6 +310,9 @@ export function createAuthMiddleware(userService: Pick<UserService, "syncAuthent
           res.status(401).json({ message: "Unauthorized: invalid authentication headers." });
           return;
         }
+
+        // Enrich with uid/isHod from the forwarded JWT cookie (best-effort).
+        extraClaims = readExtraClaimsFromToken(getCoeTokenFromRequest(req));
       } else {
         const token = getCoeTokenFromRequest(req);
         const tokenPayload = decodeAndValidateToken(token);
@@ -291,6 +330,7 @@ export function createAuthMiddleware(userService: Pick<UserService, "syncAuthent
         authenticatedName = tokenPayload.name;
         authenticatedRole = tokenPayload.role;
         authenticatedStatus = tokenPayload.status;
+        extraClaims = { uid: tokenPayload.uid, isHod: tokenPayload.isHod };
       }
 
       if (authenticatedRole === null) {
@@ -314,12 +354,17 @@ export function createAuthMiddleware(userService: Pick<UserService, "syncAuthent
         email: authenticatedEmail,
         role: mapCoeRoleToPlatformRole(authenticatedRole),
         name: authenticatedName || defaultNameFromEmail(authenticatedEmail),
+        uid: extraClaims.uid,
+        isHod: extraClaims.isHod,
       });
 
       req.user = {
         email: resolvedUser.email,
         role: resolvedUser.role,
         name: resolvedUser.name ?? authenticatedName,
+        uid: resolvedUser.uid ?? undefined,
+        department: resolvedUser.department ?? undefined,
+        isHod: resolvedUser.isHod,
       };
 
       return next();

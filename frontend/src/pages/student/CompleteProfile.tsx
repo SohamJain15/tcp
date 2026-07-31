@@ -6,10 +6,9 @@ import { z } from "zod";
 import { toast } from "sonner";
 
 import { userApi } from "@/api/services";
-import { DEPARTMENTS, type CompleteProfilePayload } from "@/api/types";
+import { DEPARTMENTS, type CompleteProfilePayload, type Department } from "@/api/types";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Form,
@@ -21,7 +20,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { UID_REGEX, parseUid } from "@/lib/uid";
+import { UID_REGEX, parseUid, departmentsForUid } from "@/lib/uid";
 
 const optionalUrlSchema = z
   .string()
@@ -52,9 +51,8 @@ const facultyProfileSchema = z.object({
   designation: z.enum(DESIGNATIONS, { required_error: "Designation is required" }),
   linkedInUrl: optionalUrlSchema,
   githubUrl: optionalUrlSchema,
-  // A faculty member may self-declare as Head of Department. Grants a read-only
-  // department participation view; never any additional content access.
-  isHod: z.boolean().default(false),
+  // HOD status is no longer self-declared — it is provided by the trusted CoE
+  // login payload (`isHod`) and applied automatically on every sign-in.
 });
 
 type StudentProfileFormValues = z.infer<typeof studentProfileSchema>;
@@ -174,12 +172,22 @@ export default function CompleteProfile() {
   const role = userData?.user.role ?? "STUDENT";
   const isFaculty = role === "FACULTY";
 
+  // The UID comes from the trusted CoE login payload — auto-filled and locked, and
+  // it dictates which department(s) the student may pick.
+  const payloadUid = (userData?.user.uid ?? "").trim();
+  const uidLocked = payloadUid.length > 0 && parseUid(payloadUid) !== null;
+  const uidDepartments = uidLocked ? (departmentsForUid(payloadUid) as Department[]) : [];
+  const studentDepartmentOptions: Department[] = uidDepartments.length > 0 ? uidDepartments : DEPARTMENTS;
+  const defaultStudentDepartment: Department | undefined =
+    (userData?.user.department as Department | undefined) ??
+    (uidDepartments.length === 1 ? uidDepartments[0] : undefined);
+
   const studentForm = useForm<StudentProfileFormValues>({
     resolver: zodResolver(studentProfileSchema),
     defaultValues: {
       name: userData?.user.name ?? "",
       uid: userData?.user.uid ?? "",
-      department: userData?.user.department ?? undefined,
+      department: defaultStudentDepartment,
       semester: userData?.user.semester ?? 1,
       linkedInUrl: userData?.user.linkedInUrl ?? "",
       githubUrl: userData?.user.githubUrl ?? "",
@@ -187,7 +195,7 @@ export default function CompleteProfile() {
     values: {
       name: userData?.user.name ?? "",
       uid: userData?.user.uid ?? "",
-      department: userData?.user.department ?? undefined,
+      department: defaultStudentDepartment,
       semester: userData?.user.semester ?? 1,
       linkedInUrl: userData?.user.linkedInUrl ?? "",
       githubUrl: userData?.user.githubUrl ?? "",
@@ -202,7 +210,6 @@ export default function CompleteProfile() {
       designation: (userData?.user.designation ?? undefined) as (typeof DESIGNATIONS)[number] | undefined,
       linkedInUrl: userData?.user.linkedInUrl ?? "",
       githubUrl: userData?.user.githubUrl ?? "",
-      isHod: userData?.user.isHod ?? false,
     },
     values: {
       name: userData?.user.name ?? "",
@@ -210,7 +217,6 @@ export default function CompleteProfile() {
       designation: (userData?.user.designation ?? undefined) as (typeof DESIGNATIONS)[number] | undefined,
       linkedInUrl: userData?.user.linkedInUrl ?? "",
       githubUrl: userData?.user.githubUrl ?? "",
-      isHod: userData?.user.isHod ?? false,
     },
   });
 
@@ -280,7 +286,6 @@ export default function CompleteProfile() {
                       department: values.department,
                       linkedInUrl: toNullableUrl(values.linkedInUrl),
                       githubUrl: toNullableUrl(values.githubUrl),
-                      isHod: values.isHod,
                     }),
                   )}
                   className="space-y-6"
@@ -381,31 +386,6 @@ export default function CompleteProfile() {
                     />
                   </div>
 
-                  <FormField
-                    control={facultyForm.control}
-                    name="isHod"
-                    render={({ field }) => (
-                      <FormItem>
-                        <div className="flex items-start gap-3 border border-border p-4">
-                          <FormControl>
-                            <Checkbox
-                              id="faculty-is-hod-init"
-                              checked={field.value}
-                              onCheckedChange={(checked) => field.onChange(checked === true)}
-                              className="mt-0.5"
-                            />
-                          </FormControl>
-                          <div className="space-y-1">
-                            <FormLabel htmlFor="faculty-is-hod-init" className="cursor-pointer">
-                              I am the Head of Department
-                            </FormLabel>
-                            <FormMessage />
-                          </div>
-                        </div>
-                      </FormItem>
-                    )}
-                  />
-
                   <Button
                     type="submit"
                     className="w-full bg-accent text-accent-foreground hover:bg-accent/90 md:w-auto md:px-10"
@@ -422,6 +402,13 @@ export default function CompleteProfile() {
                     const parsed = parseUid(values.uid);
                     if (!parsed) {
                       studentForm.setError("uid", { message: "Invalid UID format, e.g. 24-AIDSA51-28" });
+                      return;
+                    }
+                    const allowed = departmentsForUid(values.uid);
+                    if (allowed.length > 0 && !allowed.includes(values.department)) {
+                      studentForm.setError("department", {
+                        message: "This department does not match your UID branch.",
+                      });
                       return;
                     }
                     saveMutation.mutate({
@@ -462,12 +449,18 @@ export default function CompleteProfile() {
                             className="font-mono-code uppercase"
                             autoComplete="off"
                             spellCheck={false}
+                            readOnly={uidLocked}
                             {...field}
-                            onChange={(event) => field.onChange(event.target.value.toUpperCase())}
+                            onChange={(event) => {
+                              if (uidLocked) return;
+                              field.onChange(event.target.value.toUpperCase());
+                            }}
                           />
                         </FormControl>
                         <FormDescription className="font-mono-code text-xs">
-                          admission_year-branch+div+rollno-passout_year — roll number is derived automatically.
+                          {uidLocked
+                            ? "Provided by your institute account — it sets your department automatically."
+                            : "admission_year-branch+div+rollno-passout_year — roll number is derived automatically."}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -488,13 +481,16 @@ export default function CompleteProfile() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {DEPARTMENTS.map((department) => (
+                              {studentDepartmentOptions.map((department) => (
                                 <SelectItem key={department} value={department}>
                                   {department}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
+                          <FormDescription className="text-xs">
+                            {uidLocked ? "Restricted to the department that matches your UID." : null}
+                          </FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}
