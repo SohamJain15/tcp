@@ -83,6 +83,10 @@ export type SubmissionsQuery = PaginationQuery & {
   studentDepartment?: Department;
   status?: SubmissionStatus;
   language?: SupportedLanguage;
+  /** ISO timestamp; only submissions created at or after this instant are returned. */
+  createdFrom?: string;
+  /** ISO timestamp; only submissions created at or before this instant are returned. */
+  createdTo?: string;
 };
 
 export const userApi = {

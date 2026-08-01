@@ -22,6 +22,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface DepartmentOverviewSectionProps {
   query: UseQueryResult<DepartmentOverviewEnvelope>;
@@ -282,7 +288,20 @@ export function DepartmentOverviewSection({
                         <TableCell className="text-right font-mono-code">{contest.registeredCount}</TableCell>
                         <TableCell className="text-right font-mono-code">{contest.attemptedCount}</TableCell>
                         <TableCell className="text-right font-mono-code">{contest.completedCount}</TableCell>
-                        <TableCell className="text-right font-mono-code">{contest.averageScore}</TableCell>
+                        <TableCell className="text-right font-mono-code">
+                          {contest.resultsPublished ? (
+                            contest.averageScore
+                          ) : (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="cursor-default text-muted-foreground">—</span>
+                                </TooltipTrigger>
+                                <TooltipContent>Result not published</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                        </TableCell>
                       </TableRow>
                     ))
                   )}

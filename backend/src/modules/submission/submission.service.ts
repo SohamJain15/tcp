@@ -84,6 +84,8 @@ export interface SubmissionListQuery extends PaginationInput {
   studentDepartment?: Department;
   status?: SubmissionRecord["status"];
   language?: SupportedLanguage;
+  createdFrom?: Date;
+  createdTo?: Date;
 }
 
 function calculateAccuracy(acceptedSubmissionCount: number, submissionCount: number): number {
@@ -761,6 +763,8 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
         status: query.status,
         language: query.language,
         userEmail: user.role === "FACULTY" ? query.userEmail : user.email,
+        createdFrom: query.createdFrom,
+        createdTo: query.createdTo,
       };
       const submissions = await dependencies.submissionRepository.list(filters);
       const visibleSubmissions = submissions.filter((submission) =>
