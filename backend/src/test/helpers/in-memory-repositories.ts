@@ -1,3 +1,13 @@
+import type {
+  ClassTestAttemptRecord,
+  ClassTestProctoringEventRecord,
+  ClassTestRecord,
+} from "../../modules/classtest/classtest.model";
+import type {
+  ClassTestAttemptRepository,
+  ClassTestProctoringRepository,
+  ClassTestRepository,
+} from "../../modules/classtest/classtest.repository";
 import type { LeaderboardEntry } from "../../modules/leaderboard/leaderboard.model";
 import type { LeaderboardRepository } from "../../modules/leaderboard/leaderboard.repository";
 import type {
@@ -424,5 +434,113 @@ export class InMemoryContestProctoringRepository implements ContestProctoringRep
     return Array.from(this.events.values())
       .filter((event) => event.attemptId === attemptId)
       .map(cloneProctoringEvent);
+  }
+}
+
+// --- class tests -------------------------------------------------------------
+
+function cloneClassTest(test: ClassTestRecord): ClassTestRecord {
+  return {
+    ...test,
+    startAt: new Date(test.startAt),
+    createdAt: new Date(test.createdAt),
+    updatedAt: new Date(test.updatedAt),
+    managerEmails: [...test.managerEmails],
+    audience: { ...test.audience },
+    assignedStudents: test.assignedStudents.map((student) => ({ ...student })),
+    questions: test.questions.map((question) => ({ ...question })),
+  };
+}
+
+function cloneClassTestAttempt(attempt: ClassTestAttemptRecord): ClassTestAttemptRecord {
+  return {
+    ...attempt,
+    questionStates: attempt.questionStates.map((state) => ({
+      ...state,
+      gradedAt: state.gradedAt ? new Date(state.gradedAt) : null,
+      submittedAnswer: Array.isArray(state.submittedAnswer)
+        ? [...state.submittedAnswer]
+        : state.submittedAnswer,
+    })),
+    startedAt: new Date(attempt.startedAt),
+    deadlineAt: new Date(attempt.deadlineAt),
+    submittedAt: attempt.submittedAt ? new Date(attempt.submittedAt) : null,
+    autoSubmittedAt: attempt.autoSubmittedAt ? new Date(attempt.autoSubmittedAt) : null,
+    createdAt: new Date(attempt.createdAt),
+    updatedAt: new Date(attempt.updatedAt),
+  };
+}
+
+export class InMemoryClassTestRepository implements ClassTestRepository {
+  private readonly tests = new Map<string, ClassTestRecord>();
+
+  constructor(seed: ClassTestRecord[] = []) {
+    seed.forEach((test) => this.tests.set(test.id, cloneClassTest(test)));
+  }
+
+  async getById(classTestId: string): Promise<ClassTestRecord | null> {
+    const test = this.tests.get(classTestId);
+    return test ? cloneClassTest(test) : null;
+  }
+
+  async save(test: ClassTestRecord): Promise<ClassTestRecord> {
+    this.tests.set(test.id, cloneClassTest(test));
+    return cloneClassTest(test);
+  }
+
+  async list(): Promise<ClassTestRecord[]> {
+    return Array.from(this.tests.values()).map(cloneClassTest);
+  }
+}
+
+export class InMemoryClassTestAttemptRepository implements ClassTestAttemptRepository {
+  private readonly attempts = new Map<string, ClassTestAttemptRecord>();
+
+  constructor(seed: ClassTestAttemptRecord[] = []) {
+    seed.forEach((attempt) => this.attempts.set(attempt.id, cloneClassTestAttempt(attempt)));
+  }
+
+  async getById(attemptId: string): Promise<ClassTestAttemptRecord | null> {
+    const attempt = this.attempts.get(attemptId);
+    return attempt ? cloneClassTestAttempt(attempt) : null;
+  }
+
+  async getByTestAndUser(classTestId: string, userEmail: string): Promise<ClassTestAttemptRecord | null> {
+    const attempt = Array.from(this.attempts.values()).find(
+      (entry) => entry.classTestId === classTestId && entry.userEmail === userEmail,
+    );
+    return attempt ? cloneClassTestAttempt(attempt) : null;
+  }
+
+  async listByTest(classTestId: string): Promise<ClassTestAttemptRecord[]> {
+    return Array.from(this.attempts.values())
+      .filter((attempt) => attempt.classTestId === classTestId)
+      .map(cloneClassTestAttempt);
+  }
+
+  async save(attempt: ClassTestAttemptRecord): Promise<ClassTestAttemptRecord> {
+    this.attempts.set(attempt.id, cloneClassTestAttempt(attempt));
+    return cloneClassTestAttempt(attempt);
+  }
+
+  async listActiveExpired(now: Date): Promise<ClassTestAttemptRecord[]> {
+    return Array.from(this.attempts.values())
+      .filter((attempt) => attempt.status === "ACTIVE" && attempt.deadlineAt.getTime() <= now.getTime())
+      .map(cloneClassTestAttempt);
+  }
+}
+
+export class InMemoryClassTestProctoringRepository implements ClassTestProctoringRepository {
+  private readonly events = new Map<string, ClassTestProctoringEventRecord>();
+
+  async create(event: ClassTestProctoringEventRecord): Promise<ClassTestProctoringEventRecord> {
+    this.events.set(event.id, { ...event, createdAt: new Date(event.createdAt) });
+    return { ...event };
+  }
+
+  async listByAttempt(attemptId: string): Promise<ClassTestProctoringEventRecord[]> {
+    return Array.from(this.events.values())
+      .filter((event) => event.attemptId === attemptId)
+      .map((event) => ({ ...event, createdAt: new Date(event.createdAt) }));
   }
 }

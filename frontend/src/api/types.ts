@@ -1109,3 +1109,149 @@ export interface ApiErrorPayload {
   loginUrl?: string;
   details?: unknown;
 }
+
+// --- Class Tests -------------------------------------------------------------
+
+export type ClassTestQuestionType = "MCQ" | "MSQ" | "Coding" | "ShortAnswer";
+
+export interface ClassTestAudienceFilter {
+  department: Department;
+  division: string | null;
+  semester: number | null;
+  rollFrom: number | null;
+  rollTo: number | null;
+}
+
+export interface AssignedStudent {
+  email: string;
+  name: string | null;
+  uid: string | null;
+  rollNumber: string | null;
+  division: string | null;
+}
+
+export interface AudiencePreviewItem extends AssignedStudent {
+  semester: number | null;
+}
+
+export interface ClassTestSummary {
+  id: string;
+  title: string;
+  subject: string;
+  startAt: string;
+  endAt: string;
+  durationMinutes: number;
+  computedStatus: string;
+  lifecycleState: string;
+  resultsPublished: boolean;
+  questionCount: number;
+  totalPoints: number;
+  assignedCount: number;
+  attemptedCount?: number;
+}
+
+/** A question as a student sees it — carries no correct answer, model answer or hidden tests. */
+export interface StudentClassTestQuestion {
+  id: string;
+  type: ClassTestQuestionType;
+  points: number;
+  statement: string;
+  options?: string[];
+  expectedSentences?: number;
+  problemTitle?: string;
+  difficulty?: Difficulty;
+  constraints?: string;
+  inputFormat?: string;
+  outputFormat?: string;
+  sampleTestCases?: { input: string; output: string; explanation?: string }[];
+  supportedLanguages?: string[];
+  timeLimitSeconds?: number;
+  memoryLimitMb?: number;
+}
+
+export interface StudentClassTestSummary {
+  id: string;
+  title: string;
+  subject: string;
+  startAt: string;
+  endAt: string;
+  durationMinutes: number;
+  computedStatus: string;
+  questionCount: number;
+  totalPoints: number;
+  attemptStatus: "NOT_STARTED" | "ACTIVE" | "SUBMITTED" | "AUTO_SUBMITTED";
+  resultsPublished: boolean;
+}
+
+export interface StudentClassTestDetail extends StudentClassTestSummary {
+  instructions: string | null;
+  questions: StudentClassTestQuestion[];
+  identity: {
+    name: string | null;
+    uid: string | null;
+    rollNumber: string | null;
+    division: string | null;
+    department: string | null;
+  };
+  answers: { questionId: string; submittedAnswer: string | string[] | null }[];
+  deadlineAt: string | null;
+}
+
+export interface StudentClassTestResult {
+  classTestId: string;
+  title: string;
+  subject: string;
+  finalScore: number;
+  totalPoints: number;
+  questions: {
+    questionId: string;
+    statement: string;
+    type: string;
+    maxPoints: number;
+    awardedPoints: number;
+    submittedAnswer: string | string[] | null;
+    graderNote: string | null;
+  }[];
+}
+
+export interface FacultyClassTestAttempt {
+  attemptId: string;
+  email: string;
+  name: string | null;
+  uid: string | null;
+  rollNumber: string | null;
+  division: string | null;
+  status: string;
+  violationCount: number;
+  suspectedMalpractice: boolean;
+  gradingStatus: string;
+  /** Null while the test is still running — no score exists yet. */
+  autoScore: number | null;
+  manualScore: number | null;
+  finalScore: number | null;
+  timeTakenMs: number | null;
+}
+
+export interface FacultyClassTestAttemptDetail extends FacultyClassTestAttempt {
+  answers: {
+    questionId: string;
+    type: string;
+    statement: string;
+    maxPoints: number;
+    awardedPoints: number;
+    submittedAnswer: string | string[] | null;
+    modelAnswer?: string;
+    graderNote: string | null;
+    requiresManualGrading: boolean;
+  }[];
+}
+
+export interface ClassTestRecordEnvelope {
+  classTest: ClassTestSummary & {
+    instructions: string | null;
+    audience: ClassTestAudienceFilter;
+    assignedStudents: AssignedStudent[];
+    maxViolations: number;
+    questions: Array<Record<string, unknown>>;
+  };
+}

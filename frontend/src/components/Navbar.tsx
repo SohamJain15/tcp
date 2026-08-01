@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { userApi } from "@/api/services";
+import { classTestApi, userApi } from "@/api/services";
 import type { UserRole } from "@/api/types";
 import { getSessionCloseUrl } from "@/lib/sso";
 
@@ -23,6 +23,7 @@ const linksByRole: Record<UserRole, Array<{ to: string; label: string }>> = {
     { to: "/student/dashboard", label: "Dashboard" },
     { to: "/student/problems", label: "Problems" },
     { to: "/student/contests", label: "Contests" },
+    { to: "/student/class-tests", label: "Class Tests" },
     { to: "/student/leaderboard", label: "Leaderboard" },
     { to: "/student/profile", label: "Profile" },
   ],
@@ -30,6 +31,7 @@ const linksByRole: Record<UserRole, Array<{ to: string; label: string }>> = {
     { to: "/faculty/dashboard", label: "Dashboard" },
     { to: "/faculty/problems", label: "Problems" },
     { to: "/faculty/contests", label: "Contests" },
+    { to: "/faculty/class-tests", label: "CT" },
     { to: "/faculty/submissions", label: "Submissions" },
     { to: "/faculty/leaderboard", label: "Leaderboard" },
     { to: "/faculty/profile", label: "Profile" },
@@ -95,6 +97,21 @@ export function Navbar() {
       ]
     : linksByRole[role];
   const showLinks = pathname.startsWith("/student") || pathname.startsWith("/faculty");
+
+  // Only tests that are still actionable are worth a badge — a submitted or finished one is not.
+  const assignedClassTestsQuery = useQuery({
+    queryKey: ["assigned-class-tests"],
+    queryFn: () => classTestApi.listAssigned(pathname),
+    enabled: role === "STUDENT" && showLinks,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const assignedClassTestCount = (assignedClassTestsQuery.data?.items ?? []).filter(
+    (test) =>
+      test.computedStatus !== "Ended" &&
+      test.attemptStatus !== "SUBMITTED" &&
+      test.attemptStatus !== "AUTO_SUBMITTED",
+  ).length;
   const avatarText = getAvatarFallback(userQuery.data?.user.name, role);
 
   // NOTE: logout is explicit-only (avatar menu). A previous pagehide listener
@@ -125,6 +142,13 @@ export function Navbar() {
               )}
             >
               {l.label}
+              {/* Assigned class tests are the one thing a student is expected to act on at a
+                  specific time, so the count is surfaced rather than left to be discovered. */}
+              {l.to === "/student/class-tests" && assignedClassTestCount > 0 && (
+                <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
+                  {assignedClassTestCount}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>

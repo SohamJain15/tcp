@@ -72,3 +72,29 @@ export function uidMatchesDepartment(uid: string | null | undefined, department:
 export function departmentsForUid(uid: string | null | undefined): Department[] {
   return resolveUidBranch(uid).departments;
 }
+
+/**
+ * Division letter from a UID, e.g. `24-AIDSA49-28` -> `"A"`.
+ *
+ * The division sits between the branch code and the roll number, so it is found by
+ * stripping the branch prefix and taking the next letter — the same decomposition
+ * `deriveRollNumberFromUid` relies on. Returns null when the UID is malformed or its
+ * branch is unrecognised, which callers treat as "does not match any division".
+ */
+export function deriveDivisionFromUid(uid: string | null | undefined): string | null {
+  const value = (uid ?? "").trim();
+  if (!value) {
+    return null;
+  }
+
+  const { code } = resolveUidBranch(value);
+  if (!code) {
+    return null;
+  }
+
+  const parts = value.split("-");
+  const middle = (parts.length >= 3 ? parts[1] : parts[0]).toUpperCase();
+  const division = middle.charAt(code.length);
+  // Must be a letter followed by the roll digits; anything else is a malformed UID.
+  return /^[A-Z]$/.test(division) && /^\d+$/.test(middle.slice(code.length + 1)) ? division : null;
+}

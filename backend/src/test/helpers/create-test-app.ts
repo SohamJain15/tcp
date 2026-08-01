@@ -3,6 +3,7 @@ import { createApp } from "../../app";
 import { env } from "../../config/env";
 import { createRequireCompleteProfile } from "../../middleware/require-complete-profile";
 import { createRequireHod } from "../../middleware/require-hod";
+import { createClassTestService } from "../../modules/classtest/classtest.service";
 import { createDepartmentService } from "../../modules/department/department.service";
 import { createContestService } from "../../modules/contest/contest.service";
 import { createLeaderboardService } from "../../modules/leaderboard/leaderboard.service";
@@ -14,6 +15,9 @@ import { StubExecutionProvider } from "../../execution/stub-execution-provider";
 import type { ApplicationDependencies } from "../../bootstrap/dependencies";
 import {
   InMemoryContestAttemptRepository,
+  InMemoryClassTestAttemptRepository,
+  InMemoryClassTestProctoringRepository,
+  InMemoryClassTestRepository,
   InMemoryContestFeedbackRepository,
   InMemoryContestProctoringRepository,
   InMemoryContestRegistrationRepository,
@@ -164,6 +168,9 @@ export function createTestApp() {
   const contestProctoringRepository = new InMemoryContestProctoringRepository();
   const contestRegistrationRepository = new InMemoryContestRegistrationRepository();
   const contestFeedbackRepository = new InMemoryContestFeedbackRepository();
+  const classTestRepository = new InMemoryClassTestRepository();
+  const classTestAttemptRepository = new InMemoryClassTestAttemptRepository();
+  const classTestProctoringRepository = new InMemoryClassTestProctoringRepository();
   let tick = 0;
 
   const now = () => {
@@ -246,6 +253,14 @@ export function createTestApp() {
       contestAttemptRepository,
       now,
     }),
+    classTestService: createClassTestService({
+      classTestRepository,
+      classTestAttemptRepository,
+      classTestProctoringRepository,
+      userRepository,
+      submissionRepository,
+      now,
+    }),
   };
 
   // supertest sends no Origin header, which the app's mutation origin guard rejects outright.
@@ -270,6 +285,9 @@ export function createTestApp() {
       contestProctoringRepository,
       contestRegistrationRepository,
       contestFeedbackRepository,
+      classTestRepository,
+      classTestAttemptRepository,
+      classTestProctoringRepository,
     },
     services: {
       userService: dependencies.userService,

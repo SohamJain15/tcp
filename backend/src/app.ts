@@ -10,6 +10,7 @@ import { createDepartmentRouter } from "./modules/department/department.routes";
 import { createLeaderboardRouter } from "./modules/leaderboard/leaderboard.routes";
 import { createProblemRouter } from "./modules/problem/problem.routes";
 import { createSubmissionRouter } from "./modules/submission/submission.routes";
+import { createClassTestRouter } from "./modules/classtest/classtest.routes";
 import { createContestRouter } from "./modules/contest/contest.routes";
 import { createAuthRouter, createLegacyUserRouter, createUserRouter } from "./modules/user/user.routes";
 import { errorHandler, notFoundHandler } from "./shared/middleware/error-handler";
@@ -235,6 +236,7 @@ export function createApp(dependencies: ApplicationDependencies): Express {
   app.use("/api/submissions", createSubmissionRouter(dependencies));
   app.use("/api/leaderboard", createLeaderboardRouter(dependencies));
   app.use("/api/department", createDepartmentRouter(dependencies));
+  app.use("/api/class-tests", createClassTestRouter(dependencies));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

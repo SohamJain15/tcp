@@ -1,7 +1,16 @@
 import { apiRequest } from "@/api/client";
 import type {
+  AudiencePreviewItem,
+  ClassTestAudienceFilter,
+  ClassTestRecordEnvelope,
+  ClassTestSummary,
   CompleteProfilePayload,
   ContestAnswerPayload,
+  FacultyClassTestAttempt,
+  FacultyClassTestAttemptDetail,
+  StudentClassTestDetail,
+  StudentClassTestResult,
+  StudentClassTestSummary,
   ContestAttemptEnvelope,
   ContestCodingSubmissionPayload,
   ContestCodingSubmissionReceipt,
@@ -320,4 +329,93 @@ export const contestsApi = {
     apiRequest<FacultyContestAttemptReviewEnvelope>(`/api/contests/${contestId}/attempts/${attemptId}`, {
       pathname,
     }),
+};
+
+/**
+ * Class Tests.
+ *
+ * Note there is deliberately no standings or leaderboard call here — a class test assesses
+ * individuals and ranks nobody.
+ */
+export const classTestApi = {
+  // faculty
+  list: (pathname?: string) =>
+    apiRequest<{ items: ClassTestSummary[] }>("/api/class-tests", { pathname }),
+  get: (classTestId: string, pathname?: string) =>
+    apiRequest<ClassTestRecordEnvelope>(`/api/class-tests/${encodeURIComponent(classTestId)}`, { pathname }),
+  previewAudience: (filter: ClassTestAudienceFilter, pathname?: string) =>
+    apiRequest<{ students: AudiencePreviewItem[] }>("/api/class-tests/audience-preview", {
+      method: "POST",
+      body: filter,
+      pathname,
+    }),
+  create: (payload: Record<string, unknown>, pathname?: string) =>
+    apiRequest<ClassTestRecordEnvelope>("/api/class-tests", { method: "POST", body: payload, pathname }),
+  update: (classTestId: string, payload: Record<string, unknown>, pathname?: string) =>
+    apiRequest<ClassTestRecordEnvelope>(`/api/class-tests/${encodeURIComponent(classTestId)}`, {
+      method: "PATCH",
+      body: payload,
+      pathname,
+    }),
+  listAttempts: (classTestId: string, pathname?: string) =>
+    apiRequest<{ items: FacultyClassTestAttempt[] }>(
+      `/api/class-tests/${encodeURIComponent(classTestId)}/attempts`,
+      { pathname },
+    ),
+  getAttempt: (classTestId: string, attemptId: string, pathname?: string) =>
+    apiRequest<{ attempt: FacultyClassTestAttemptDetail }>(
+      `/api/class-tests/${encodeURIComponent(classTestId)}/attempts/${encodeURIComponent(attemptId)}`,
+      { pathname },
+    ),
+  gradeShortAnswer: (
+    classTestId: string,
+    attemptId: string,
+    body: { questionId: string; awardedPoints: number; graderNote?: string | null },
+    pathname?: string,
+  ) =>
+    apiRequest<{ attempt: FacultyClassTestAttemptDetail }>(
+      `/api/class-tests/${encodeURIComponent(classTestId)}/attempts/${encodeURIComponent(attemptId)}/grade`,
+      { method: "PATCH", body, pathname },
+    ),
+  publishResults: (classTestId: string, resultsPublished: boolean, pathname?: string) =>
+    apiRequest<ClassTestRecordEnvelope>(`/api/class-tests/${encodeURIComponent(classTestId)}/results`, {
+      method: "PATCH",
+      body: { resultsPublished },
+      pathname,
+    }),
+
+  // student
+  listAssigned: (pathname?: string) =>
+    apiRequest<{ items: StudentClassTestSummary[] }>("/api/class-tests/assigned", { pathname }),
+  getMine: (classTestId: string, pathname?: string) =>
+    apiRequest<{ classTest: StudentClassTestDetail }>(
+      `/api/class-tests/mine/${encodeURIComponent(classTestId)}`,
+      { pathname },
+    ),
+  startAttempt: (classTestId: string, pathname?: string) =>
+    apiRequest<{ classTest: StudentClassTestDetail }>(
+      `/api/class-tests/mine/${encodeURIComponent(classTestId)}/attempts`,
+      { method: "POST", pathname },
+    ),
+  saveAnswer: (classTestId: string, questionId: string, answer: string | string[], pathname?: string) =>
+    apiRequest<{ saved: boolean }>(`/api/class-tests/mine/${encodeURIComponent(classTestId)}/answers`, {
+      method: "POST",
+      body: { questionId, answer },
+      pathname,
+    }),
+  submitAttempt: (classTestId: string, pathname?: string) =>
+    apiRequest<{ submitted: boolean }>(
+      `/api/class-tests/mine/${encodeURIComponent(classTestId)}/attempts/submit`,
+      { method: "POST", pathname },
+    ),
+  recordProctorEvent: (classTestId: string, type: string, pathname?: string) =>
+    apiRequest<{ autoSubmitted: boolean; violationCount: number }>(
+      `/api/class-tests/mine/${encodeURIComponent(classTestId)}/proctor-events`,
+      { method: "POST", body: { type }, pathname },
+    ),
+  getResult: (classTestId: string, pathname?: string) =>
+    apiRequest<{ result: StudentClassTestResult }>(
+      `/api/class-tests/mine/${encodeURIComponent(classTestId)}/result`,
+      { pathname },
+    ),
 };

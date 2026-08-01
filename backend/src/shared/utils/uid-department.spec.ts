@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveUidBranch, uidMatchesDepartment } from "./uid-department";
+import { deriveDivisionFromUid, resolveUidBranch, uidMatchesDepartment } from "./uid-department";
 
 describe("resolveUidBranch", () => {
   it("parses the branch code from a well-formed UID", () => {
@@ -47,5 +47,41 @@ describe("uidMatchesDepartment", () => {
   it("rejects when UID has no recognisable branch or no department", () => {
     expect(uidMatchesDepartment("mock-uid", "B.E. Computer Engineering")).toBe(false);
     expect(uidMatchesDepartment("24-AIDSA49-28", null)).toBe(false);
+  });
+});
+
+describe("deriveDivisionFromUid", () => {
+  it("reads the division letter that sits between the branch code and the roll number", () => {
+    expect(deriveDivisionFromUid("24-AIDSA49-28")).toBe("A");
+    expect(deriveDivisionFromUid("24-COMPB7-28")).toBe("B");
+    expect(deriveDivisionFromUid("24-CSED12-28")).toBe("D");
+  });
+
+  it("uses the longest matching branch code so the division is not read from it", () => {
+    // "CIVIL" must win over any shorter prefix, otherwise "I" would be read as the division.
+    expect(deriveDivisionFromUid("24-CIVILC102-28")).toBe("C");
+    expect(deriveDivisionFromUid("24-IOTA1-28")).toBe("A");
+  });
+
+  it("is case-insensitive, matching the rest of the UID helpers", () => {
+    expect(deriveDivisionFromUid("24-aidsa49-28")).toBe("A");
+  });
+
+  it("returns null for a UID with no recognisable branch", () => {
+    expect(deriveDivisionFromUid("24-XXXA1-28")).toBeNull();
+    expect(deriveDivisionFromUid("mock-uid")).toBeNull();
+  });
+
+  it("returns null when the roll segment is missing or not numeric", () => {
+    // Without digits after the division letter this is not a well-formed UID, and
+    // guessing a division from it would silently mis-target a class test.
+    expect(deriveDivisionFromUid("24-AIDSAB-28")).toBeNull();
+    expect(deriveDivisionFromUid("24-AIDSA-28")).toBeNull();
+  });
+
+  it("returns null for empty or missing input", () => {
+    expect(deriveDivisionFromUid("")).toBeNull();
+    expect(deriveDivisionFromUid(null)).toBeNull();
+    expect(deriveDivisionFromUid(undefined)).toBeNull();
   });
 });

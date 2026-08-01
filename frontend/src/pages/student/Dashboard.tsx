@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ContestTimer } from "@/components/ContestTimer";
 import { StatusBadge, DifficultyBadge } from "@/components/Badges";
-import { contestsApi, problemsApi, submissionsApi, userApi } from "@/api/services";
+import { classTestApi, contestsApi, problemsApi, submissionsApi, userApi } from "@/api/services";
 import type { ContestListItem } from "@/api/types";
 import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
@@ -145,6 +145,15 @@ export default function StudentDashboard() {
     queryFn: () => userApi.me("/student/dashboard"),
   });
 
+  // An assigned class test runs at a fixed time, so it is surfaced at the top of the dashboard
+  // rather than left for the student to find.
+  const assignedClassTestsQuery = useQuery({
+    queryKey: ["assigned-class-tests"],
+    queryFn: () => classTestApi.listAssigned("/student/dashboard"),
+    retry: false,
+    refetchInterval: 60_000,
+  });
+
   const submissionsQuery = useQuery({
     queryKey: ["student-dashboard", "submissions"],
     queryFn: () => submissionsApi.list({ pageSize: 8 }, "/student/dashboard"),
@@ -217,9 +226,46 @@ export default function StudentDashboard() {
       ]
     : [];
 
+  const upcomingClassTests = (assignedClassTestsQuery.data?.items ?? []).filter(
+    (test) =>
+      test.computedStatus !== "Ended" &&
+      test.attemptStatus !== "SUBMITTED" &&
+      test.attemptStatus !== "AUTO_SUBMITTED",
+  );
+
   return (
     <AppLayout>
       <div className="container mx-auto space-y-6 p-6 md:p-8">
+        {upcomingClassTests.map((test) => (
+          <Card key={test.id} className="border-l-4 border-l-accent p-5 shadow-card">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-accent">
+                  Class Test · {test.subject}
+                </p>
+                <h2 className="mt-1 font-display text-lg font-bold">{test.title}</h2>
+                <p className="text-sm text-muted-foreground">
+                  {new Date(test.startAt).toLocaleString()} · {test.durationMinutes} min ·{" "}
+                  {test.questionCount} question{test.questionCount === 1 ? "" : "s"}
+                </p>
+              </div>
+              <Button
+                asChild={test.computedStatus === "Live"}
+                disabled={test.computedStatus !== "Live"}
+                className="bg-accent text-accent-foreground hover:bg-accent/90"
+              >
+                {test.computedStatus === "Live" ? (
+                  <Link to={`/student/class-tests/${test.id}`}>
+                    {test.attemptStatus === "ACTIVE" ? "Resume test" : "Start test"}
+                  </Link>
+                ) : (
+                  <span>Starts {new Date(test.startAt).toLocaleTimeString()}</span>
+                )}
+              </Button>
+            </div>
+          </Card>
+        ))}
+
         <Card className="overflow-hidden border-0 shadow-elevated">
           <div className="relative bg-gradient-hero p-8 text-primary-foreground">
             <div className="absolute inset-0 opacity-10 [background-image:radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] [background-size:24px_24px]" />

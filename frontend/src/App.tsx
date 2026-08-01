@@ -18,6 +18,11 @@ import ContestDetail from "./pages/student/ContestDetail.tsx";
 import ContestFeedback from "./pages/student/ContestFeedback.tsx";
 import ContestQuestionPage from "./pages/student/ContestQuestionPage.tsx";
 import CompleteProfile from "./pages/student/CompleteProfile.tsx";
+import StudentClassTests from "./pages/student/ClassTests.tsx";
+import ClassTestAttempt from "./pages/student/ClassTestAttempt.tsx";
+import FacultyClassTests from "./pages/faculty/ClassTests.tsx";
+import CreateClassTest from "./pages/faculty/CreateClassTest.tsx";
+import ClassTestDetail from "./pages/faculty/ClassTestDetail.tsx";
 import FacultyDashboard from "./pages/faculty/Dashboard.tsx";
 import FacultyDepartment from "./pages/faculty/Department.tsx";
 import CreateProblem from "./pages/faculty/CreateProblem.tsx";
@@ -51,9 +56,14 @@ const App = () => (
             <Route path="/student/contests/:id/questions/:questionId" element={<RoleRoute allowedRole="STUDENT"><ContestQuestionPage /></RoleRoute>} />
             <Route path="/student/leaderboard" element={<RoleRoute allowedRole="STUDENT"><StudentLeaderboard /></RoleRoute>} />
             <Route path="/student/profile" element={<RoleRoute allowedRole="STUDENT"><StudentProfile /></RoleRoute>} />
+            <Route path="/student/class-tests" element={<RoleRoute allowedRole="STUDENT"><StudentClassTests /></RoleRoute>} />
+            <Route path="/student/class-tests/:id" element={<RoleRoute allowedRole="STUDENT"><ClassTestAttempt /></RoleRoute>} />
             <Route path="/complete-profile" element={<RoleRoute allowedRole={["STUDENT", "FACULTY"]}><CompleteProfile /></RoleRoute>} />
             <Route path="/faculty/dashboard" element={<RoleRoute allowedRole="FACULTY"><FacultyDashboard /></RoleRoute>} />
             <Route path="/faculty/department" element={<RoleRoute allowedRole="FACULTY"><FacultyDepartment /></RoleRoute>} />
+            <Route path="/faculty/class-tests" element={<RoleRoute allowedRole="FACULTY"><FacultyClassTests /></RoleRoute>} />
+            <Route path="/faculty/class-tests/create" element={<RoleRoute allowedRole="FACULTY"><CreateClassTest /></RoleRoute>} />
+            <Route path="/faculty/class-tests/:id" element={<RoleRoute allowedRole="FACULTY"><ClassTestDetail /></RoleRoute>} />
             <Route path="/faculty/students/:email" element={<RoleRoute allowedRole="FACULTY"><StudentProfile /></RoleRoute>} />
             <Route path="/faculty/create-problem" element={<RoleRoute allowedRole="FACULTY"><CreateProblem /></RoleRoute>} />
             <Route path="/faculty/create-contest" element={<RoleRoute allowedRole="FACULTY"><CreateContest /></RoleRoute>} />

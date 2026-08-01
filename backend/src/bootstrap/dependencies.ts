@@ -17,6 +17,15 @@ import {
   type ContestRegistrationRepository,
   type ContestRepository,
 } from "../modules/contest/contest.repository";
+import {
+  MongoClassTestAttemptRepository,
+  MongoClassTestProctoringRepository,
+  MongoClassTestRepository,
+  type ClassTestAttemptRepository,
+  type ClassTestProctoringRepository,
+  type ClassTestRepository,
+} from "../modules/classtest/classtest.repository";
+import { createClassTestService, type ClassTestService } from "../modules/classtest/classtest.service";
 import { createContestService, type ContestService } from "../modules/contest/contest.service";
 import {
   FirestoreLeaderboardRepository,
@@ -49,6 +58,9 @@ export interface RepositoryBundle {
   contestProctoringRepository: ContestProctoringRepository;
   contestRegistrationRepository: ContestRegistrationRepository;
   contestFeedbackRepository: ContestFeedbackRepository;
+  classTestRepository: ClassTestRepository;
+  classTestAttemptRepository: ClassTestAttemptRepository;
+  classTestProctoringRepository: ClassTestProctoringRepository;
 }
 
 export interface ServiceBundle {
@@ -58,6 +70,7 @@ export interface ServiceBundle {
   leaderboardService: LeaderboardService;
   contestService: ContestService;
   departmentService: DepartmentService;
+  classTestService: ClassTestService;
 }
 
 export interface ApplicationDependencies extends ServiceBundle {
@@ -91,6 +104,11 @@ function createRepositories(overrides?: Partial<RepositoryBundle>): RepositoryBu
       overrides?.contestRegistrationRepository ?? new FirestoreContestRegistrationRepository(),
     contestFeedbackRepository:
       overrides?.contestFeedbackRepository ?? new FirestoreContestFeedbackRepository(),
+    classTestRepository: overrides?.classTestRepository ?? new MongoClassTestRepository(),
+    classTestAttemptRepository:
+      overrides?.classTestAttemptRepository ?? new MongoClassTestAttemptRepository(),
+    classTestProctoringRepository:
+      overrides?.classTestProctoringRepository ?? new MongoClassTestProctoringRepository(),
   };
 }
 
@@ -157,6 +175,15 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     now,
   });
 
+  const classTestService = createClassTestService({
+    classTestRepository: repositories.classTestRepository,
+    classTestAttemptRepository: repositories.classTestAttemptRepository,
+    classTestProctoringRepository: repositories.classTestProctoringRepository,
+    userRepository: repositories.userRepository,
+    submissionRepository: repositories.submissionRepository,
+    now,
+  });
+
   return {
     userRepository: repositories.userRepository,
     authMiddleware: overrides.authMiddleware ?? createAuthMiddleware(userService),
@@ -172,5 +199,6 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     leaderboardService,
     contestService,
     departmentService,
+    classTestService,
   };
 }
