@@ -86,4 +86,6 @@ export const submissionQuerySchema = z.object({
     }),
   cursor: z.string().optional(),
   pageSize: z.coerce.number().int().positive().optional(),
+  createdFrom: z.coerce.date().optional(),
+  createdTo: z.coerce.date().optional(),
 });

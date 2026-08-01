@@ -20,7 +20,17 @@ import {
 import { toFacultyStudentProfilePath } from "@/lib/student-profile";
 import { toLanguageLabel, toStatusLabel } from "@/api/mappers";
 import { chartAxisTick, chartTooltipItemStyle, chartTooltipLabelStyle, chartTooltipStyle } from "@/lib/chart-theme";
-import type { SubmissionStatus } from "@/api/types";
+import type { Submission, SubmissionStatus } from "@/api/types";
+
+/** Length of the submission-activity trend window, in days. Also bounds how far
+ * back the dashboard fetches submissions, so the query stays cheap. */
+const TREND_DAYS = 14;
+
+/** Local midnight `TREND_DAYS - 1` days ago — the earliest instant the dashboard
+ * needs. Matches the first bucket rendered by the trend chart. */
+function trendWindowStart(now: Date): Date {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - (TREND_DAYS - 1));
+}
 
 function safeAverage(values: number[]): number {
   if (values.length === 0) {
@@ -196,7 +206,25 @@ export default function FacultyDashboard() {
 
   const submissionsQuery = useQuery({
     queryKey: ["faculty-dashboard", "submissions"],
-    queryFn: () => submissionsApi.list({ pageSize: 50 }, "/faculty/dashboard"),
+    // Fetch only the trend window instead of the 50 most recent submissions.
+    // A single page (backend caps pageSize at 50) drops older days whenever recent
+    // activity spikes — e.g. a contest going live today pushes this month's earlier
+    // submissions out of the fetched set. Scoping to `createdFrom` keeps the query
+    // cheap while guaranteeing every day the chart renders is fully covered; we still
+    // page through the cursor because a busy window can hold more than 50 submissions.
+    queryFn: async () => {
+      const createdFrom = trendWindowStart(new Date()).toISOString();
+      const MAX_PAGES = 200; // safety bound against a runaway loop
+      const items: Submission[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < MAX_PAGES; page += 1) {
+        const response = await submissionsApi.list({ pageSize: 50, cursor, createdFrom }, "/faculty/dashboard");
+        items.push(...response.items);
+        if (!response.pageInfo.nextCursor) break;
+        cursor = response.pageInfo.nextCursor;
+      }
+      return items;
+    },
   });
 
   const contestsQuery = useQuery({
@@ -206,11 +234,11 @@ export default function FacultyDashboard() {
 
   const recentSubmissions = useMemo(
     () =>
-      [...(submissionsQuery.data?.items ?? [])]
+      [...(submissionsQuery.data ?? [])]
         .filter((submission) => submission.sourceType === "problem")
         .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
         .slice(0, 6),
-    [submissionsQuery.data?.items],
+    [submissionsQuery.data],
   );
 
   const facultyName = userQuery.data?.user.name ?? "Faculty";
@@ -218,8 +246,8 @@ export default function FacultyDashboard() {
   // render, invalidating every useMemo below it.
   const problemList = useMemo(() => problemsQuery.data?.items ?? [], [problemsQuery.data?.items]);
   const submissionList = useMemo(
-    () => (submissionsQuery.data?.items ?? []).filter((submission) => submission.sourceType === "problem"),
-    [submissionsQuery.data?.items],
+    () => (submissionsQuery.data ?? []).filter((submission) => submission.sourceType === "problem"),
+    [submissionsQuery.data],
   );
   const activeStudents = new Set(submissionList.map((submission) => submission.userEmail)).size;
   const topStudents = useMemo(() => {
@@ -294,8 +322,8 @@ export default function FacultyDashboard() {
   // Chart datasets — aggregated client-side from the queries this page already makes.
   const submissionTrend = useMemo<TrendDatum[]>(() => {
     const now = new Date();
-    const days = Array.from({ length: 14 }, (_, index) => {
-      const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (13 - index));
+    const days = Array.from({ length: TREND_DAYS }, (_, index) => {
+      const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (TREND_DAYS - 1 - index));
       return date;
     });
 
@@ -430,7 +458,7 @@ export default function FacultyDashboard() {
             <div className="grid gap-4 lg:grid-cols-3">
               <Card className="profile-card flex h-full flex-col p-5 lg:col-span-2">
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                  Submission Activity (14 Days)
+                  Submission Activity ({TREND_DAYS} Days)
                 </h2>
                 <div className="mt-4 min-h-[220px] flex-1">
                   <SubmissionTrendChart data={submissionTrend} />
