@@ -5,6 +5,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { RoleRoute } from "@/components/RoleRoute";
+import { FeatureComingSoon } from "@/components/FeatureComingSoon";
+import { CLASS_TESTS_ENABLED } from "@/lib/feature-flags";
 import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
 import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
@@ -44,6 +46,24 @@ import FacultyProfile from "./pages/faculty/Profile.tsx";
 
 const queryClient = new QueryClient();
 
+/**
+ * Class Tests are feature-flagged off while the feature is finished.
+ *
+ * The real pages stay wired up and compiled — only what renders changes — so shipping is a matter of
+ * flipping `CLASS_TESTS_ENABLED` in lib/feature-flags.ts. Every route is covered, not just the two
+ * landing pages, so a bookmarked deep link cannot slip past the placeholder.
+ */
+function classTestElement(page: JSX.Element): JSX.Element {
+  return CLASS_TESTS_ENABLED ? (
+    page
+  ) : (
+    <FeatureComingSoon
+      title="Class Tests"
+      description="Class Tests are under development and will be rolled out soon. Problems, contests and the leaderboard are unaffected."
+    />
+  );
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
@@ -62,15 +82,15 @@ const App = () => (
             <Route path="/student/contests/:id/questions/:questionId" element={<RoleRoute allowedRole="STUDENT"><ContestQuestionPage /></RoleRoute>} />
             <Route path="/student/leaderboard" element={<RoleRoute allowedRole="STUDENT"><StudentLeaderboard /></RoleRoute>} />
             <Route path="/student/profile" element={<RoleRoute allowedRole="STUDENT"><StudentProfile /></RoleRoute>} />
-            <Route path="/student/class-tests" element={<RoleRoute allowedRole="STUDENT"><StudentClassTests /></RoleRoute>} />
-            <Route path="/student/class-tests/:id" element={<RoleRoute allowedRole="STUDENT"><ClassTestAttempt /></RoleRoute>} />
+            <Route path="/student/class-tests" element={<RoleRoute allowedRole="STUDENT">{classTestElement(<StudentClassTests />)}</RoleRoute>} />
+            <Route path="/student/class-tests/:id" element={<RoleRoute allowedRole="STUDENT">{classTestElement(<ClassTestAttempt />)}</RoleRoute>} />
             <Route path="/complete-profile" element={<RoleRoute allowedRole={["STUDENT", "FACULTY"]}><CompleteProfile /></RoleRoute>} />
             <Route path="/faculty/dashboard" element={<RoleRoute allowedRole="FACULTY"><FacultyDashboard /></RoleRoute>} />
             <Route path="/faculty/department" element={<RoleRoute allowedRole="FACULTY"><FacultyDepartment /></RoleRoute>} />
             <Route path="/faculty/department/students/:email" element={<RoleRoute allowedRole="FACULTY"><RouteErrorBoundary><FacultyDepartmentStudent /></RouteErrorBoundary></RoleRoute>} />
-            <Route path="/faculty/class-tests" element={<RoleRoute allowedRole="FACULTY"><FacultyClassTests /></RoleRoute>} />
-            <Route path="/faculty/class-tests/create" element={<RoleRoute allowedRole="FACULTY"><CreateClassTest /></RoleRoute>} />
-            <Route path="/faculty/class-tests/:id" element={<RoleRoute allowedRole="FACULTY"><ClassTestDetail /></RoleRoute>} />
+            <Route path="/faculty/class-tests" element={<RoleRoute allowedRole="FACULTY">{classTestElement(<FacultyClassTests />)}</RoleRoute>} />
+            <Route path="/faculty/class-tests/create" element={<RoleRoute allowedRole="FACULTY">{classTestElement(<CreateClassTest />)}</RoleRoute>} />
+            <Route path="/faculty/class-tests/:id" element={<RoleRoute allowedRole="FACULTY">{classTestElement(<ClassTestDetail />)}</RoleRoute>} />
             <Route path="/faculty/students/:email" element={<RoleRoute allowedRole="FACULTY"><StudentProfile /></RoleRoute>} />
             <Route path="/faculty/create-problem" element={<RoleRoute allowedRole="FACULTY"><CreateProblem /></RoleRoute>} />
             <Route path="/faculty/create-contest" element={<RoleRoute allowedRole="FACULTY"><CreateContest /></RoleRoute>} />

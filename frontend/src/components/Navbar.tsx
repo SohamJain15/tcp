@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { classTestApi, userApi } from "@/api/services";
 import type { UserRole } from "@/api/types";
 import { getSessionCloseUrl } from "@/lib/sso";
+import { CLASS_TESTS_ENABLED } from "@/lib/feature-flags";
 
 const linksByRole: Record<UserRole, Array<{ to: string; label: string }>> = {
   STUDENT: [
@@ -118,10 +119,12 @@ export function Navbar() {
     pathname.startsWith("/student") || pathname.startsWith("/faculty") || pathname.startsWith("/admin");
 
   // Only tests that are still actionable are worth a badge — a submitted or finished one is not.
+  // Skipped entirely while the feature is flagged off: a count badge on a tab that opens a
+  // "coming soon" page would just be confusing, and there is no point polling for it.
   const assignedClassTestsQuery = useQuery({
     queryKey: ["assigned-class-tests"],
     queryFn: () => classTestApi.listAssigned(pathname),
-    enabled: role === "STUDENT" && showLinks,
+    enabled: CLASS_TESTS_ENABLED && role === "STUDENT" && showLinks,
     retry: false,
     staleTime: 30_000,
   });
