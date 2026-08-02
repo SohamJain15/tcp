@@ -25,6 +25,7 @@ export function createContestRouter(dependencies: ApplicationDependencies): Rout
   router.get("/:contestId/attempts", requireRole("FACULTY"), asyncHandler(controller.listAttempts));
   router.get("/:contestId/attempts/:attemptId", requireRole("FACULTY"), asyncHandler(controller.getAttemptReview));
   router.get("/:contestId/report", requireRole("FACULTY"), asyncHandler(reportController.getContestReport));
+  router.get("/:contestId/report/pdf", requireRole("FACULTY"), asyncHandler(reportController.getContestReportPdf));
   router.get(
     "/:contestId/report/metrics",
     requireRole("FACULTY"),

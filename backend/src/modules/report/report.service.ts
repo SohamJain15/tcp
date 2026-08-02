@@ -39,6 +39,7 @@ export interface ContestReportEnvelope {
 
 export interface ReportService {
   getReport(user: AuthenticatedUser, contestId: string): Promise<ContestReportEnvelope>;
+  getReadyReport(user: AuthenticatedUser, contestId: string): Promise<ContestReportResponse>;
   getMetrics(user: AuthenticatedUser, contestId: string): Promise<ContestAnalytics>;
   generateReport(
     user: AuthenticatedUser,
@@ -191,6 +192,24 @@ export function createReportService(dependencies: ReportServiceDependencies): Re
         report: record ? toContestReportResponse(record) : null,
         aiRuntime,
       };
+    },
+
+    async getReadyReport(user, contestId) {
+      const contest = await loadManagedContest(user, contestId);
+      ensureResultsPublished(contest);
+      const record = await contestReportRepository.getByContestId(contestId);
+
+      if (!record) {
+        throw new AppError(404, "No report has been generated for this contest.");
+      }
+      if (record.status === "GENERATING") {
+        throw new AppError(409, "The report is still being generated. Try again shortly.");
+      }
+      if (record.status === "FAILED" || !record.metrics) {
+        throw new AppError(409, record.failureReason ?? "The report is not available for PDF export.");
+      }
+
+      return toContestReportResponse(record);
     },
 
     async getMetrics(user, contestId) {

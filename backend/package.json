@@ -8,9 +8,10 @@
     "dotenv": "^16.6.1",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
-    "mongodb": "^6.21.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.21.0",
+    "playwright": "^1.62.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -31,7 +32,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "dev:worker": "ts-node-dev --respawn --transpile-only src/worker.ts",
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-report-assets.mjs",
     "start": "node dist/server.js",
     "start:worker": "node dist/worker.js",
     "loadtest:queue": "ts-node src/scripts/load-test.ts",
