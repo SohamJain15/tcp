@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 const PATHNAME = "/faculty/class-tests/create";
-const DIVISIONS = ["A", "B", "C", "D", "E", "F", "G", "H"];
+const DIVISIONS = ["A", "B", "C", "D", "E"];
 const CODING_LANGUAGES = ["c", "cpp", "java", "python", "javascript", "typescript", "go", "kotlin"];
 
 interface DraftQuestion {
