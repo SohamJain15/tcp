@@ -8,7 +8,7 @@ import type { AuthenticatedUser } from "../../shared/types/auth";
 import { AppError } from "../../shared/errors/app-error";
 import { estimateActiveMinutes } from "../../shared/utils/activity";
 import { normalizeDepartment, normalizeRole } from "../../shared/utils/normalize";
-import { uidMatchesDepartment } from "../../shared/utils/uid-department";
+import { deriveSemesterFromUid, uidMatchesDepartment } from "../../shared/utils/uid-department";
 import type { Department } from "../../shared/types/domain";
 import type { SubmissionAnalyticsRecord, SubmissionRepository } from "../submission/submission.repository";
 import type {
@@ -89,20 +89,27 @@ function createDefaultUser(authUser: AuthenticatedUser, now: Date): UserRecord {
 }
 
 function mergeUser(existing: UserRecord, authUser: AuthenticatedUser, now: Date): UserRecord {
+  const uid = authUser.uid ?? existing.uid;
+  const role = normalizeRole(authUser.role);
+
   return {
     ...existing,
     email: authUser.email,
-    role: normalizeRole(authUser.role),
+    role,
     name: authUser.name ?? existing.name,
     // The CoE JWT is the trusted source for uid/isHod: when present it overwrites
     // any stored value (auto-correcting mismatches on every login).
-    uid: authUser.uid ?? existing.uid,
+    uid,
     department: existing.department ?? normalizeDepartment(authUser.department) ?? null,
     isProfileComplete: existing.isProfileComplete,
     designation: existing.designation,
     isHod: authUser.isHod ?? existing.isHod,
     rollNumber: existing.rollNumber,
-    semester: existing.semester,
+    // Recomputed from the UID on every login, so it advances with the academic calendar
+    // instead of holding whatever the student typed once. Faculty have no semester, and an
+    // unparseable UID keeps the stored value rather than wiping it.
+    semester:
+      role === "STUDENT" ? deriveSemesterFromUid(uid, now) ?? existing.semester : existing.semester,
     linkedInUrl: existing.linkedInUrl,
     githubUrl: existing.githubUrl,
     skills: existing.skills,
@@ -305,7 +312,9 @@ export function createUserService(dependencies: UserServiceDependencies): UserSe
         uid: resolvedUid,
         rollNumber: authUser.role === "STUDENT" ? input.rollNumber ?? null : null,
         department: input.department,
-        semester: authUser.role === "STUDENT" ? input.semester ?? null : null,
+        // Derived from the UID, never taken from the request: a stale or spoofed client value
+        // must not be able to move a student into another semester.
+        semester: authUser.role === "STUDENT" ? deriveSemesterFromUid(resolvedUid, now) : null,
         linkedInUrl: input.linkedInUrl,
         githubUrl: input.githubUrl,
         // isHod is never editable here — it comes solely from the trusted CoE payload.

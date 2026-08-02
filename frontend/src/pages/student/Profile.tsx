@@ -193,7 +193,6 @@ export default function StudentProfile() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editLinkedIn, setEditLinkedIn] = useState("");
   const [editGithub, setEditGithub] = useState("");
-  const [editSemester, setEditSemester] = useState(1);
   const queryClient = useQueryClient();
 
   const { data: userData, isLoading, isError, error } = useQuery({
@@ -318,17 +317,17 @@ export default function StudentProfile() {
   const openEditDialog = () => {
     setEditLinkedIn(profile.linkedInUrl ?? "");
     setEditGithub(profile.githubUrl ?? "");
-    setEditSemester(profile.semester ?? 1);
     setIsEditOpen(true);
   };
 
   const handleEditSave = () => {
+    // Semester is deliberately not sent: the server derives it from the UID and would ignore
+    // anything supplied here.
     editMutation.mutate({
       name: profile.name ?? "",
       uid: profile.uid ?? "",
       rollNumber: profile.rollNumber ?? "",
       department: profile.department!,
-      semester: editSemester,
       linkedInUrl: editLinkedIn.trim() ? editLinkedIn.trim() : null,
       githubUrl: editGithub.trim() ? editGithub.trim() : null,
     });
@@ -501,7 +500,7 @@ export default function StudentProfile() {
 
               <div className="space-y-6 md:col-span-8">
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-                  {statCard("Global Rank", profile.rank ? `#${profile.rank}` : "N/A")}
+                  {statCard("University Rank", profile.rank ? `#${profile.rank}` : "N/A")}
                   {statCard("Total Solved", profile.problemsSolved)}
                   {statCard("Accepted", profile.acceptedSubmissionCount)}
                   {statCard("Accuracy", `${profile.accuracy}%`)}
@@ -641,18 +640,11 @@ export default function StudentProfile() {
             </div>
             <div className="space-y-2">
               <Label>Semester</Label>
-              <Select value={String(editSemester)} onValueChange={(value) => setEditSemester(Number(value))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select semester" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: 8 }, (_, index) => index + 1).map((semester) => (
-                    <SelectItem key={semester} value={String(semester)}>
-                      Semester {semester}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {/* Read-only: worked out from your UID and refreshed each term, so there is
+                  nothing to keep up to date here. */}
+              <p className="text-sm text-muted-foreground">
+                Semester {profile.semester ?? "—"} · set automatically from your UID
+              </p>
             </div>
           </div>
           <DialogFooter>

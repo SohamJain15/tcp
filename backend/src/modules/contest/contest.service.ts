@@ -1651,9 +1651,11 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         await resolveStudentDepartment(user, dependencies),
       );
 
-      // Feedback is only collected as the gate to published results — refuse it before publish.
-      if (!contest.resultsPublished) {
-        throw new AppError(409, "Feedback opens once results are published");
+      // Collected as soon as the contest is over, while the experience is still fresh — waiting
+      // for publish meant asking days later. It remains the gate for viewing published results,
+      // so this only moves collection earlier; it reveals nothing sooner.
+      if (computeContestStatus(contest, dependencies.now()) !== "Ended") {
+        throw new AppError(409, "Feedback opens once the contest has ended");
       }
 
       // One record per (contestId, userEmail): a repeat submit returns the stored feedback untouched.

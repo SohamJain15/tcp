@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { env } from "../../config/env";
+import { deriveSemesterFromUid } from "../../shared/utils/uid-department";
 import type { UserRecord } from "./user.model";
 import type { UserRepository } from "./user.repository";
 import type { UserService } from "./user.service";
@@ -126,7 +127,9 @@ export function createUserController({ userService, userRepository }: UserContro
           uid: payload.uid ?? null,
           rollNumber: payload.rollNumber ?? null,
           department: payload.department,
-          semester: payload.semester ?? null,
+          // Semester is deliberately not written here. It is derived from the UID by the login
+          // sync (`mergeUser`), which runs on the `getCurrentUser` call below and owns the
+          // field — deriving it in two places would mean two clocks writing one value.
           linkedInUrl: payload.linkedInUrl,
           githubUrl: payload.githubUrl,
           // A student is never HOD; clear it so a role change can't leave a stale flag.

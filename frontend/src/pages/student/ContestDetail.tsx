@@ -208,9 +208,12 @@ function LockedResults({ contestId }: { contestId: string }) {
           <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-accent/15 text-accent">
             <Lock className="h-5 w-5" />
           </div>
-          <h3 className="mt-3 font-display text-lg font-bold">Submit feedback to unlock your results</h3>
+          <h3 className="mt-3 font-display text-lg font-bold">Tell us how that went</h3>
+          {/* Worded to hold true both before and after publish: the form is asked for as soon as
+              the contest ends, but the report only appears once faculty publish results. */}
           <p className="mt-1.5 text-sm text-muted-foreground">
-            A quick one-minute form stands between you and your Report Card and standings.
+            A quick one-minute form, while it is still fresh. It also unlocks your Report Card and
+            standings once your faculty publishes the results.
           </p>
           <Button asChild className="mt-4 bg-accent text-accent-foreground hover:bg-accent/90">
             <Link to={`/student/contests/${contestId}/feedback`}>Give feedback</Link>
@@ -327,7 +330,9 @@ export default function ContestDetail() {
   const attemptIsLocked = Boolean(attempt && attempt.status !== "ACTIVE");
   const feedbackSubmitted = Boolean(contest.feedbackSubmitted);
   // Published results are withheld until the student submits feedback for this contest.
-  const resultsLocked = contest.resultsPublished && !feedbackSubmitted;
+  // Asked for as soon as the contest is over, while the experience is still fresh — not held
+  // back until results are published. It is still what unlocks the report and standings.
+  const feedbackDue = contestEnded && !feedbackSubmitted;
   // The report — scores, correct answers, rank — appears only once faculty publishes results AND
   // the student has given feedback (the backend returns no report until both hold).
   const showReport = Boolean(report) && contest.resultsPublished && feedbackSubmitted;
@@ -606,7 +611,7 @@ export default function ContestDetail() {
           </Card>
         )}
 
-        {resultsLocked && <LockedResults contestId={id} />}
+        {feedbackDue && <LockedResults contestId={id} />}
 
         {contest.computedStatus === "Upcoming" && (
           <Card className="border border-border bg-background p-5 shadow-none">

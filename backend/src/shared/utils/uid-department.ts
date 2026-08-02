@@ -98,3 +98,74 @@ export function deriveDivisionFromUid(uid: string | null | undefined): string | 
   // Must be a letter followed by the roll digits; anything else is a malformed UID.
   return /^[A-Z]$/.test(division) && /^\d+$/.test(middle.slice(code.length + 1)) ? division : null;
 }
+
+/** Odd semesters (1, 3, 5, 7) begin in July; even ones in January. */
+const ODD_SEMESTER_START_MONTH = 7;
+/** Shortest and longest plausible programme, in years. Guards against a corrupt pass year. */
+const MIN_PROGRAMME_YEARS = 1;
+const MAX_PROGRAMME_YEARS = 6;
+const SEMESTERS_PER_YEAR = 2;
+const FINAL_SEMESTER = 8;
+
+/** Both years a UID carries: `24-AIDSA60-28` -> joined 2024, passes out 2028. */
+function resolveUidYears(uid: string): { joinYear: number; passYear: number } | null {
+  const parts = uid.trim().split("-");
+  if (parts.length < 3) {
+    return null;
+  }
+
+  const join = Number(parts[0]);
+  const pass = Number(parts[parts.length - 1]);
+  if (!/^\d{2}$/.test(parts[0]) || !/^\d{2}$/.test(parts[parts.length - 1])) {
+    return null;
+  }
+
+  return { joinYear: 2000 + join, passYear: 2000 + pass };
+}
+
+/**
+ * The semester a student is currently in, derived from their UID.
+ *
+ * Every engineering programme here ends at semester 8, so the *pass* year tells us where a
+ * student starts: a four-year UID (`24-…-28`) begins at semester 1, while a three-year
+ * lateral-entry one (`25-…-28`) begins at semester 3. That is why a DSE student and the batch
+ * they sit with always land on the same semester — they finish together, so they progress
+ * together.
+ *
+ * Nothing but the two years is consulted: branch, division and roll number never affect the
+ * result. Returns null for a UID that cannot be parsed, or one claiming an implausible
+ * programme length, so a bad UID fails closed rather than producing a confident wrong answer.
+ */
+export function deriveSemesterFromUid(uid: string | null | undefined, now: Date): number | null {
+  const value = (uid ?? "").trim();
+  if (!value) {
+    return null;
+  }
+
+  // Reuse the branch check so anything that is not a real TCET UID is rejected here too.
+  if (!resolveUidBranch(value).code || deriveDivisionFromUid(value) === null) {
+    return null;
+  }
+
+  const years = resolveUidYears(value);
+  if (!years) {
+    return null;
+  }
+
+  const programmeYears = years.passYear - years.joinYear;
+  if (programmeYears < MIN_PROGRAMME_YEARS || programmeYears > MAX_PROGRAMME_YEARS) {
+    return null;
+  }
+
+  // A shorter programme means the student joined further along: 4 years -> sem 1, 3 years -> sem 3.
+  const startSemester = FINAL_SEMESTER + 1 - programmeYears * SEMESTERS_PER_YEAR;
+
+  // Semesters completed since joining. Before July the student is still in the even (spring)
+  // semester that began in January, hence the -1.
+  const elapsed =
+    (now.getUTCFullYear() - years.joinYear) * SEMESTERS_PER_YEAR +
+    (now.getUTCMonth() + 1 >= ODD_SEMESTER_START_MONTH ? 0 : -1);
+
+  // Clamped so a student who has graduated stays at 8 rather than running off the scale.
+  return Math.min(FINAL_SEMESTER, Math.max(1, startSemester + elapsed));
+}

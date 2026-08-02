@@ -36,7 +36,9 @@ const studentProfileSchema = baseProfileSchema
       .refine((value) => !value.toLowerCase().includes("mock"), "Enter your real UID")
       .refine((value) => UID_REGEX.test(value), "Invalid UID format. Expected e.g. 24-AIDSA51-28"),
     rollNumber: z.string().trim().optional(),
-    semester: z.coerce.number().int().min(1).max(8),
+    // Semester is deliberately absent: it is derived from the UID (see deriveSemesterFromUid)
+    // and refreshed on every login, so accepting it here would let a stale client overwrite
+    // the real value.
   })
   .transform((value) => ({
     ...value,
@@ -62,7 +64,6 @@ export function parseUpdateProfilePayload(
   githubUrl: string | null;
   uid?: string;
   rollNumber?: string;
-  semester?: number;
   designation?: string;
   isHod?: boolean;
 } {

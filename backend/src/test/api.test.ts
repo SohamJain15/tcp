@@ -1,5 +1,6 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
+import { deriveSemesterFromUid } from "../shared/utils/uid-department";
 import { createTestApp } from "./helpers/create-test-app";
 
 const facultyHeaders = {
@@ -622,8 +623,9 @@ describe("TCET Coding Platform backend APIs", () => {
     expect(publishedCsv.status).toBe(200);
   });
 
-  it("refuses contest feedback before results are published", async () => {
+  it("opens contest feedback as soon as the contest ends, before results are published", async () => {
     const { app } = createTestApp();
+    // Ended (started 23:00 for 30 minutes, clock is just past midnight) but not published.
     const contest = await createContest(app, {
       startTime: "2026-05-06T23:00:00.000Z",
       duration: 30,
@@ -631,7 +633,30 @@ describe("TCET Coding Platform backend APIs", () => {
     });
 
     const response = await submitFeedback(app, contest.id);
+    // Collected while the experience is fresh — it stays the gate for viewing results, so
+    // accepting it here reveals nothing early.
+    expect(response.status).toBe(201);
+
+    // The report and standings are still sealed: feedback alone does not unlock them.
+    const detail = await request(app).get(`/api/contests/${contest.id}`);
+    expect(detail.body.contest.report).toBeNull();
+    const standings = await request(app).get(`/api/contests/${contest.id}/standings`);
+    expect(standings.status).toBe(403);
+  });
+
+  it("refuses contest feedback while the contest is still running", async () => {
+    const { app } = createTestApp();
+    // Live: asking for feedback mid-contest would be a distraction, and the student has not
+    // finished the experience they are being asked about.
+    const contest = await createContest(app, {
+      startTime: "2026-05-07T00:00:00.000Z",
+      duration: 60,
+      lifecycleState: "Published",
+    });
+
+    const response = await submitFeedback(app, contest.id);
     expect(response.status).toBe(409);
+    expect(response.body.message).toMatch(/ended/i);
   });
 
   it("blocks faculty from publishing contest results before the deadline", async () => {
@@ -1403,5 +1428,90 @@ describe("HOD contest delegation", () => {
       .send({ managerEmails: ["student1@tcetmumbai.in", "outsider@tcetmumbai.in"] });
     expect(response.status).toBe(200);
     expect(response.body.contest.managers).toHaveLength(0);
+  });
+});
+
+describe("Semester derived from the UID", () => {
+  const studentHeaders = (email: string, uid = "") => ({
+    "x-coe-email": email,
+    "x-coe-role": "STUDENT",
+    "x-coe-name": "Derived Student",
+    "x-coe-uid": uid,
+  });
+
+  it("derives the semester on profile completion instead of trusting the client", async () => {
+    const { app } = createTestApp();
+    const uid = "24-COMPA35-28";
+
+    const response = await request(app)
+      .patch("/api/users/me")
+      .set(studentHeaders("derived1@tcetmumbai.in"))
+      .send({
+        name: "Derived Student",
+        uid,
+        rollNumber: "ROLL-1",
+        department: "B.E. Computer Engineering",
+        // A deliberately wrong value: it must be ignored, not stored.
+        semester: 1,
+        linkedInUrl: null,
+        githubUrl: null,
+      });
+
+    expect(response.status).toBe(200);
+    // The test app's clock is fixed at 2026-05-07, which is semester 4 for a 2024 intake.
+    // The client asked for semester 1; the derived value must win.
+    expect(response.body.user.semester).toBe(deriveSemesterFromUid(uid, new Date(Date.UTC(2026, 4, 7))));
+    expect(response.body.user.semester).toBe(4);
+    expect(response.body.user.semester).not.toBe(1);
+  });
+
+  it("refreshes a stale stored semester on the next login", async () => {
+    const { app, repositories } = createTestApp();
+    // A student stored back when they were in semester 1, with a real UID.
+    await repositories.userRepository.save({
+      ...(await repositories.userRepository.getByEmail("student1@tcetmumbai.in"))!,
+      email: "stale@tcetmumbai.in",
+      uid: "24-COMPA35-28",
+      rollNumber: "35",
+      semester: 1,
+    });
+
+    const response = await request(app).get("/api/users/me").set(studentHeaders("stale@tcetmumbai.in"));
+
+    expect(response.status).toBe(200);
+    // The test app's clock is fixed at 2026-05-07, which is semester 4 for a 2024 intake.
+    expect(response.body.user.semester).toBe(4);
+  });
+
+  it("keeps the stored semester when the UID cannot be parsed", async () => {
+    const { app } = createTestApp();
+    // student1 is seeded with the legacy UID "TCET-REAL-001" and semester 4. An unparseable
+    // UID must leave that alone rather than blanking it.
+    const response = await request(app).get("/api/users/me").set(studentHeaders("student1@tcetmumbai.in"));
+
+    expect(response.status).toBe(200);
+    expect(response.body.user.semester).toBe(4);
+  });
+
+  it("gives a lateral-entry student the same semester as the batch they sit with", async () => {
+    const { app, repositories } = createTestApp();
+    for (const [email, uid] of [
+      ["regular@tcetmumbai.in", "24-COMPA35-28"],
+      ["dse@tcetmumbai.in", "25-COMPA99-28"],
+    ]) {
+      await repositories.userRepository.save({
+        ...(await repositories.userRepository.getByEmail("student1@tcetmumbai.in"))!,
+        email,
+        uid,
+        rollNumber: "1",
+        semester: null,
+      });
+    }
+
+    const regular = await request(app).get("/api/users/me").set(studentHeaders("regular@tcetmumbai.in"));
+    const dse = await request(app).get("/api/users/me").set(studentHeaders("dse@tcetmumbai.in"));
+
+    expect(regular.body.user.semester).toBe(4);
+    expect(dse.body.user.semester).toBe(4);
   });
 });

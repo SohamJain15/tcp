@@ -104,7 +104,8 @@ export type CompleteProfilePayload =
       uid: string;
       rollNumber: string;
       department: Department;
-      semester: number;
+      // No semester: the server derives it from the UID and refreshes it on every login, so
+      // anything sent from here is ignored.
       linkedInUrl: string | null;
       githubUrl: string | null;
     }

@@ -38,7 +38,8 @@ const studentProfileSchema = z.object({
     .refine((value) => value.length > 0, "UID is required")
     .refine((value) => !value.toLowerCase().includes("mock"), "Enter your real UID")
     .refine((value) => UID_REGEX.test(value), "Invalid format. Expected YY-BRANCHDIVROLL-YY, e.g. 24-AIDSA51-28"),
-  semester: z.coerce.number().int().min(1).max(8),
+  // No semester field: the server derives it from the UID and refreshes it on every login,
+  // so a value sent from here would be ignored anyway.
   linkedInUrl: optionalUrlSchema,
   githubUrl: optionalUrlSchema,
 });
@@ -188,7 +189,6 @@ export default function CompleteProfile() {
       name: userData?.user.name ?? "",
       uid: userData?.user.uid ?? "",
       department: defaultStudentDepartment,
-      semester: userData?.user.semester ?? 1,
       linkedInUrl: userData?.user.linkedInUrl ?? "",
       githubUrl: userData?.user.githubUrl ?? "",
     },
@@ -196,7 +196,6 @@ export default function CompleteProfile() {
       name: userData?.user.name ?? "",
       uid: userData?.user.uid ?? "",
       department: defaultStudentDepartment,
-      semester: userData?.user.semester ?? 1,
       linkedInUrl: userData?.user.linkedInUrl ?? "",
       githubUrl: userData?.user.githubUrl ?? "",
     },
@@ -416,7 +415,6 @@ export default function CompleteProfile() {
                       uid: values.uid.trim().toUpperCase(),
                       rollNumber: String(Number(parsed.rollNumber)),
                       department: values.department,
-                      semester: values.semester,
                       linkedInUrl: toNullableUrl(values.linkedInUrl),
                       githubUrl: toNullableUrl(values.githubUrl),
                     });
@@ -496,30 +494,8 @@ export default function CompleteProfile() {
                       )}
                     />
 
-                    <FormField
-                      control={studentForm.control}
-                      name="semester"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Semester</FormLabel>
-                          <Select value={String(field.value)} onValueChange={(value) => field.onChange(Number(value))}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select semester" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {Array.from({ length: 8 }, (_, index) => index + 1).map((semester) => (
-                                <SelectItem key={semester} value={String(semester)}>
-                                  Semester {semester}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                    {/* Semester is worked out from your UID and kept current automatically, so
+                        there is nothing to pick and nothing to update each term. */}
                   </div>
 
                   <div className="grid gap-6 md:grid-cols-2">
