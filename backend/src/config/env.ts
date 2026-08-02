@@ -84,6 +84,15 @@ const envSchema = z.object({
   RATING_POINTS_EASY: z.coerce.number().int().nonnegative().default(100),
   RATING_POINTS_MEDIUM: z.coerce.number().int().nonnegative().default(200),
   RATING_POINTS_HARD: z.coerce.number().int().nonnegative().default(300),
+  // Local AI contest reports. Every default is safe with nothing installed: the adapter probes the
+  // runtime, finds it absent, and falls back to template-generated narratives.
+  AI_ENABLED: z.unknown().transform((value) => parseBoolean(value, true)),
+  AI_BASE_URL: z.string().min(1).default("http://localhost:11434"),
+  AI_MODEL: z.string().min(1).default("qwen2.5:3b"),
+  AI_TIMEOUT_MS: z.coerce.number().int().positive().default(120000),
+  // A GENERATING report older than this is treated as abandoned and can be reclaimed, so a crash
+  // mid-generation cannot wedge a contest's report forever.
+  AI_STALE_LOCK_MS: z.coerce.number().int().positive().default(600000),
 });
 
 const parsedEnv = envSchema.parse(process.env);

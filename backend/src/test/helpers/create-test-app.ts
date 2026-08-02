@@ -5,6 +5,11 @@ import { createRequireCompleteProfile } from "../../middleware/require-complete-
 import { createRequireHod } from "../../middleware/require-hod";
 import { createClassTestService } from "../../modules/classtest/classtest.service";
 import { createDepartmentService } from "../../modules/department/department.service";
+import { createReportService } from "../../modules/report/report.service";
+import {
+  TemplateOnlyReportGenerator,
+  type AiReportGenerator,
+} from "../../modules/report/ai/ollama-client";
 import { createContestService } from "../../modules/contest/contest.service";
 import { createLeaderboardService } from "../../modules/leaderboard/leaderboard.service";
 import { createProblemService } from "../../modules/problem/problem.service";
@@ -21,6 +26,7 @@ import {
   InMemoryContestFeedbackRepository,
   InMemoryContestProctoringRepository,
   InMemoryContestRegistrationRepository,
+  InMemoryContestReportRepository,
   InMemoryContestRepository,
   InMemoryLeaderboardRepository,
   InMemoryProblemRepository,
@@ -28,7 +34,12 @@ import {
   InMemoryUserRepository,
 } from "./in-memory-repositories";
 
-export function createTestApp() {
+export interface CreateTestAppOptions {
+  /** Override the report narrator to exercise the AI path (and its failure modes) deterministically. */
+  aiReportGenerator?: AiReportGenerator;
+}
+
+export function createTestApp(options: CreateTestAppOptions = {}) {
   const seedTime = new Date(Date.UTC(2026, 4, 7, 0, 0, 0));
   const userRepository = new InMemoryUserRepository([
     {
@@ -171,6 +182,7 @@ export function createTestApp() {
   const classTestRepository = new InMemoryClassTestRepository();
   const classTestAttemptRepository = new InMemoryClassTestAttemptRepository();
   const classTestProctoringRepository = new InMemoryClassTestProctoringRepository();
+  const contestReportRepository = new InMemoryContestReportRepository();
   let tick = 0;
 
   const now = () => {
@@ -261,6 +273,18 @@ export function createTestApp() {
       submissionRepository,
       now,
     }),
+    reportService: createReportService({
+      contestRepository,
+      contestAttemptRepository,
+      contestProctoringRepository,
+      contestRegistrationRepository,
+      submissionRepository,
+      contestReportRepository,
+      // Defaults to the offline narrator so tests never reach for a local model.
+      aiReportGenerator: options.aiReportGenerator ?? new TemplateOnlyReportGenerator(),
+      staleLockMs: 600000,
+      now,
+    }),
   };
 
   // supertest sends no Origin header, which the app's mutation origin guard rejects outright.
@@ -285,6 +309,7 @@ export function createTestApp() {
       contestProctoringRepository,
       contestRegistrationRepository,
       contestFeedbackRepository,
+      contestReportRepository,
       classTestRepository,
       classTestAttemptRepository,
       classTestProctoringRepository,

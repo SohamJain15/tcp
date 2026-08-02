@@ -1,0 +1,57 @@
+import { Link } from "react-router-dom";
+
+import type { ContestStandingItem } from "@/api/types";
+import { Card } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { toFacultyStudentProfilePath } from "@/lib/student-profile";
+
+interface ContestStandingsSectionProps {
+  standings: ContestStandingItem[];
+  resultsPublished: boolean;
+}
+
+export function ContestStandingsSection({ standings, resultsPublished }: ContestStandingsSectionProps) {
+  return (
+    <Card className="border border-border bg-background p-5 shadow-none">
+      <h2 className="mb-4 font-display text-xl font-semibold">Standings</h2>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Rank</TableHead>
+            <TableHead>Student</TableHead>
+            <TableHead>Solved</TableHead>
+            <TableHead>Time</TableHead>
+            <TableHead>Violations</TableHead>
+            <TableHead>Score</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {standings.map((entry) => (
+            <TableRow key={entry.attemptId}>
+              <TableCell>#{entry.rank}</TableCell>
+              <TableCell>
+                <Link to={toFacultyStudentProfilePath(entry.userEmail)} className="block hover:text-accent">
+                  <div className="font-medium">{entry.userName ?? entry.userEmail}</div>
+                  <div className="text-xs text-muted-foreground">{entry.userUid ?? entry.userEmail}</div>
+                </Link>
+              </TableCell>
+              <TableCell>{entry.solvedCount}</TableCell>
+              <TableCell>{entry.timeTakenMs !== null ? `${Math.ceil(entry.timeTakenMs / 1000)} sec` : "-"}</TableCell>
+              <TableCell>{entry.violationCount}</TableCell>
+              <TableCell>{entry.score}</TableCell>
+            </TableRow>
+          ))}
+          {standings.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                {resultsPublished
+                  ? "No standings available yet."
+                  : "Attempts are graded when you publish results — standings appear then."}
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
+    </Card>
+  );
+}

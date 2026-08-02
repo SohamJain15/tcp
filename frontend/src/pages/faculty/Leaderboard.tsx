@@ -10,6 +10,7 @@ import { LeaderboardTable } from "@/components/LeaderboardTable";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { contestsApi, leaderboardApi } from "@/api/services";
+import { downloadCsv } from "@/lib/download";
 import { DEPARTMENTS, type Department } from "@/api/types";
 import {
   toContestLeaderboardRows,
@@ -19,18 +20,6 @@ import {
 
 const YEAR_OPTIONS = [1, 2, 3, 4] as const;
 const pathname = "/faculty/leaderboard";
-
-function downloadCsv(filename: string, content: string): void {
-  const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.setAttribute("download", filename);
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
-}
 
 export default function FacultyLeaderboard() {
   const [department, setDepartment] = useState<Department | "All">("All");

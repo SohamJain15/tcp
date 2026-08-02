@@ -1255,3 +1255,205 @@ export interface ClassTestRecordEnvelope {
     questions: Array<Record<string, unknown>>;
   };
 }
+
+/**
+ * AI contest report.
+ *
+ * Mirrors backend/src/modules/report/report.model.ts. The metrics half is deterministic and computed
+ * in backend code; the narrative half is written by a local model that only paraphrases those numbers
+ * (or by templates when no model is available).
+ */
+
+export type ContestReportStatus = "GENERATING" | "READY" | "FAILED";
+export type ContestReportSource = "AI" | "TEMPLATE";
+export type MetricConfidence = "high" | "low";
+
+export interface DistributionStats {
+  mean: number;
+  median: number;
+  p25: number;
+  p75: number;
+  p90: number;
+  min: number;
+  max: number;
+}
+
+export interface ReportParticipationMetrics {
+  registeredCount: number;
+  attemptedCount: number;
+  completedCount: number;
+  activeCount: number;
+  disqualifiedCount: number;
+  registrationToAttemptRate: number;
+  completionRate: number;
+  departmentBreakdown: { department: string; count: number }[];
+}
+
+export interface ReportScoreMetrics {
+  totalPoints: number;
+  averageScore: number;
+  medianScore: number;
+  maxScore: number;
+  minScore: number;
+  stdDev: number;
+  averageScorePercent: number;
+  scoreDistribution: { bucket: string; count: number }[];
+  averageTimeTakenMs: number | null;
+  medianTimeTakenMs: number | null;
+}
+
+export interface ReportQuestionMetrics {
+  questionId: string;
+  questionNumber: number;
+  type: "MCQ" | "MSQ" | "Coding";
+  title: string;
+  points: number;
+  difficulty: Difficulty | null;
+  participantCount: number;
+  attemptedCount: number;
+  solvedCount: number;
+  solveRate: number;
+  attemptRate: number;
+  averageAttempts: number;
+  averageAwardedPoints: number;
+  averagePassRate: number | null;
+  averageTimeToSolveMs: number | null;
+}
+
+export interface ReportLanguageMetrics {
+  language: ExecutableLanguage;
+  submissionCount: number;
+  acceptedCount: number;
+  acceptanceRate: number;
+  sampleSize: number;
+  confidence: MetricConfidence;
+  studentCount: number;
+  runtimeMs: DistributionStats;
+  memoryKb: DistributionStats;
+}
+
+export interface OptimalScoreComponent {
+  component: string;
+  weight: number;
+  rawValue: number;
+  normalized: number;
+  contribution: number;
+}
+
+export interface OptimalSubmission {
+  submissionId: string;
+  attemptId: string;
+  questionId: string;
+  questionNumber: number;
+  questionTitle: string;
+  studentEmail: string;
+  studentName: string | null;
+  language: ExecutableLanguage;
+  runtimeMs: number;
+  memoryKb: number;
+  runtimePercentile: number;
+  memoryPercentile: number;
+  percentileBasis: string;
+  percentileSampleSize: number;
+  attemptsCount: number;
+  attemptEfficiencyScore: number;
+  timeToSolveMs: number | null;
+  solveSpeedPercentile: number;
+  /** Shown for context only — violations never contribute to totalScore. */
+  violationCount: number;
+  totalScore: number;
+  breakdown: OptimalScoreComponent[];
+}
+
+export interface ReportViolationMetrics {
+  totalEvents: number;
+  averagePerAttempt: number;
+  attemptsWithViolations: number;
+  byType: { type: string; count: number }[];
+  scoreByViolationBand: { band: string; attemptCount: number; averageScore: number }[];
+}
+
+export interface ContestAnalytics {
+  schemaVersion: string;
+  contest: {
+    id: string;
+    title: string;
+    type: ContestType;
+    startAt: string;
+    endAt: string;
+    durationMinutes: number;
+    targetDepartment: Department | null;
+    questionCount: number;
+    codingQuestionCount: number;
+    totalPoints: number;
+  };
+  participation: ReportParticipationMetrics;
+  scores: ReportScoreMetrics;
+  questions: ReportQuestionMetrics[];
+  hardestQuestion: { questionId: string; questionNumber: number; title: string; solveRate: number } | null;
+  easiestQuestion: { questionId: string; questionNumber: number; title: string; solveRate: number } | null;
+  languages: ReportLanguageMetrics[];
+  optimalCode: {
+    perQuestion: OptimalSubmission[];
+    /** Best submission in each language, ranked only against that language's own submissions. */
+    perLanguage: OptimalSubmission[];
+    overall: OptimalSubmission | null;
+    overallSelectionNote: string;
+  };
+  violations: ReportViolationMetrics;
+  teachingInsights: {
+    lowSolveRateQuestions: string[];
+    highAttemptLowSolveQuestions: string[];
+    unattemptedQuestions: string[];
+    languageDisadvantageFlags: string[];
+  };
+  dataQuality: {
+    lowSampleLanguages: string[];
+    percentileBasisNotes: string[];
+    excludedFromRanking: string[];
+    generatedAt: string;
+  };
+}
+
+export interface ContestReportNarrative {
+  executiveSummary: string;
+  contestInsights: string[];
+  efficiencyObservations: string[];
+  studentPerformanceObservations: string[];
+  facultyRecommendations: string[];
+}
+
+export interface ContestReport {
+  contestId: string;
+  status: ContestReportStatus;
+  source: ContestReportSource;
+  metrics: ContestAnalytics | null;
+  narrative: ContestReportNarrative | null;
+  warnings: string[];
+  modelId: string | null;
+  promptVersion: string | null;
+  metricsHash: string | null;
+  generatedByEmail: string;
+  generatedAt: string | null;
+  failureReason: string | null;
+}
+
+export interface AiRuntimeStatus {
+  available: boolean;
+  model: string;
+  baseUrl: string;
+  reason: string | null;
+}
+
+export interface ContestReportEnvelope {
+  report: ContestReport | null;
+  aiRuntime: AiRuntimeStatus;
+}
+
+export interface ContestReportGenerateEnvelope {
+  report: ContestReport;
+}
+
+export interface ContestReportMetricsEnvelope {
+  metrics: ContestAnalytics;
+}

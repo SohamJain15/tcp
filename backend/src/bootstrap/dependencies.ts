@@ -47,6 +47,17 @@ import { BullMQSubmissionQueue, type SubmissionQueue } from "../queue/submission
 import { FirestoreUserRepository, type UserRepository } from "../modules/user/user.repository";
 import { createUserService, type UserService } from "../modules/user/user.service";
 import { createDepartmentService, type DepartmentService } from "../modules/department/department.service";
+import {
+  MongoContestReportRepository,
+  type ContestReportRepository,
+} from "../modules/report/report.repository";
+import { createReportService, type ReportService } from "../modules/report/report.service";
+import {
+  OllamaReportGenerator,
+  TemplateOnlyReportGenerator,
+  type AiReportGenerator,
+} from "../modules/report/ai/ollama-client";
+import { env } from "../config/env";
 
 export interface RepositoryBundle {
   userRepository: UserRepository;
@@ -61,6 +72,7 @@ export interface RepositoryBundle {
   classTestRepository: ClassTestRepository;
   classTestAttemptRepository: ClassTestAttemptRepository;
   classTestProctoringRepository: ClassTestProctoringRepository;
+  contestReportRepository: ContestReportRepository;
 }
 
 export interface ServiceBundle {
@@ -71,6 +83,7 @@ export interface ServiceBundle {
   contestService: ContestService;
   departmentService: DepartmentService;
   classTestService: ClassTestService;
+  reportService: ReportService;
 }
 
 export interface ApplicationDependencies extends ServiceBundle {
@@ -86,6 +99,8 @@ export interface DependencyOverrides {
   executionProvider?: ExecutionProvider;
   submissionQueue?: SubmissionQueue;
   repositories?: Partial<RepositoryBundle>;
+  /** Tests inject a deterministic generator so both the AI and template paths are exercisable. */
+  aiReportGenerator?: AiReportGenerator;
   now?: () => Date;
 }
 
@@ -109,6 +124,7 @@ function createRepositories(overrides?: Partial<RepositoryBundle>): RepositoryBu
       overrides?.classTestAttemptRepository ?? new MongoClassTestAttemptRepository(),
     classTestProctoringRepository:
       overrides?.classTestProctoringRepository ?? new MongoClassTestProctoringRepository(),
+    contestReportRepository: overrides?.contestReportRepository ?? new MongoContestReportRepository(),
   };
 }
 
@@ -175,6 +191,20 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     now,
   });
 
+  const reportService = createReportService({
+    contestRepository: repositories.contestRepository,
+    contestAttemptRepository: repositories.contestAttemptRepository,
+    contestProctoringRepository: repositories.contestProctoringRepository,
+    contestRegistrationRepository: repositories.contestRegistrationRepository,
+    submissionRepository: repositories.submissionRepository,
+    contestReportRepository: repositories.contestReportRepository,
+    aiReportGenerator:
+      overrides.aiReportGenerator ??
+      (env.AI_ENABLED ? new OllamaReportGenerator() : new TemplateOnlyReportGenerator()),
+    staleLockMs: env.AI_STALE_LOCK_MS,
+    now,
+  });
+
   const classTestService = createClassTestService({
     classTestRepository: repositories.classTestRepository,
     classTestAttemptRepository: repositories.classTestAttemptRepository,
@@ -200,5 +230,6 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     contestService,
     departmentService,
     classTestService,
+    reportService,
   };
 }

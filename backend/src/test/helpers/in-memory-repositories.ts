@@ -24,6 +24,11 @@ import type {
   ContestRegistrationRepository,
   ContestRepository,
 } from "../../modules/contest/contest.repository";
+import type { ContestReportRecord } from "../../modules/report/report.model";
+import type {
+  ClaimReportInput,
+  ContestReportRepository,
+} from "../../modules/report/report.repository";
 import type { ProblemRecord } from "../../modules/problem/problem.model";
 import type { ProblemRepository } from "../../modules/problem/problem.repository";
 import type { SubmissionRecord } from "../../modules/submission/submission.model";
@@ -542,5 +547,56 @@ export class InMemoryClassTestProctoringRepository implements ClassTestProctorin
     return Array.from(this.events.values())
       .filter((event) => event.attemptId === attemptId)
       .map((event) => ({ ...event, createdAt: new Date(event.createdAt) }));
+  }
+}
+
+export class InMemoryContestReportRepository implements ContestReportRepository {
+  private readonly reports = new Map<string, ContestReportRecord>();
+
+  async getByContestId(contestId: string): Promise<ContestReportRecord | null> {
+    const report = this.reports.get(contestId);
+    return report ? { ...report } : null;
+  }
+
+  async claimForGeneration(input: ClaimReportInput): Promise<ContestReportRecord | null> {
+    const existing = this.reports.get(input.contestId);
+    const staleBefore = input.now.getTime() - input.staleLockMs;
+
+    // Same rule as the Mongo implementation: a live GENERATING claim blocks, a finished or
+    // abandoned one can be taken over.
+    if (
+      existing &&
+      existing.status === "GENERATING" &&
+      existing.generationStartedAt.getTime() > staleBefore
+    ) {
+      return null;
+    }
+
+    const claim: ContestReportRecord = {
+      id: `report_${input.contestId}`,
+      contestId: input.contestId,
+      status: "GENERATING",
+      source: "TEMPLATE",
+      metrics: null,
+      narrative: null,
+      warnings: [],
+      modelId: null,
+      promptVersion: null,
+      metricsHash: null,
+      generatedByEmail: input.generatedByEmail,
+      generationStartedAt: input.now,
+      generatedAt: null,
+      failureReason: null,
+      createdAt: existing?.createdAt ?? input.now,
+      updatedAt: input.now,
+    };
+
+    this.reports.set(input.contestId, claim);
+    return { ...claim };
+  }
+
+  async save(record: ContestReportRecord): Promise<ContestReportRecord> {
+    this.reports.set(record.contestId, { ...record });
+    return { ...record };
   }
 }

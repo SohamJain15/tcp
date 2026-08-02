@@ -20,6 +20,9 @@ import type {
   ContestFeedbackStatus,
   ContestListItem,
   ContestAttemptsEnvelope,
+  ContestReportEnvelope,
+  ContestReportGenerateEnvelope,
+  ContestReportMetricsEnvelope,
   FacultyContestAttemptReviewEnvelope,
   ContestProctoringPayload,
   ContestRegistrationEnvelope,
@@ -331,6 +334,18 @@ export const contestsApi = {
     }),
   getAttemptReview: (contestId: string, attemptId: string, pathname?: string) =>
     apiRequest<FacultyContestAttemptReviewEnvelope>(`/api/contests/${contestId}/attempts/${attemptId}`, {
+      pathname,
+    }),
+  getReport: (contestId: string, pathname?: string) =>
+    apiRequest<ContestReportEnvelope>(`/api/contests/${contestId}/report`, { pathname }),
+  /** Fresh metrics without triggering a model run — backs the "Raw Metrics" view. */
+  getReportMetrics: (contestId: string, pathname?: string) =>
+    apiRequest<ContestReportMetricsEnvelope>(`/api/contests/${contestId}/report/metrics`, { pathname }),
+  /** Returns immediately; the report finishes in the background, so poll getReport afterwards. */
+  generateReport: (contestId: string, payload: { force?: boolean } = {}, pathname?: string) =>
+    apiRequest<ContestReportGenerateEnvelope>(`/api/contests/${contestId}/report`, {
+      method: "POST",
+      body: payload,
       pathname,
     }),
 };
