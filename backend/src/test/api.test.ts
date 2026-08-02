@@ -644,10 +644,10 @@ describe("TCET Coding Platform backend APIs", () => {
     expect(standings.status).toBe(403);
   });
 
-  it("refuses contest feedback while the contest is still running", async () => {
+  it("refuses contest feedback from a student who is still writing", async () => {
     const { app } = createTestApp();
-    // Live: asking for feedback mid-contest would be a distraction, and the student has not
-    // finished the experience they are being asked about.
+    // Live, and this student has not finished: interrupting mid-test is the worst moment to
+    // ask, and they cannot yet judge an experience they are still having.
     const contest = await createContest(app, {
       startTime: "2026-05-07T00:00:00.000Z",
       duration: 60,
@@ -656,7 +656,31 @@ describe("TCET Coding Platform backend APIs", () => {
 
     const response = await submitFeedback(app, contest.id);
     expect(response.status).toBe(409);
-    expect(response.body.message).toMatch(/ended/i);
+    expect(response.body.message).toMatch(/submit/i);
+  });
+
+  it("opens feedback the moment a student submits, even while the contest is still live", async () => {
+    const { app } = createTestApp();
+    const contest = await createContest(app, {
+      startTime: "2026-05-07T00:00:00.000Z",
+      duration: 60,
+      lifecycleState: "Published",
+    });
+    await registerForContest(app, contest.id);
+    await request(app).post(`/api/contests/${contest.id}/attempts`);
+    const submitted = await request(app).post(`/api/contests/${contest.id}/attempts/submit`);
+    expect(submitted.status).toBe(200);
+
+    // Their part is over even though the contest is not — this is when the experience is
+    // freshest, so this is when we ask.
+    const response = await submitFeedback(app, contest.id);
+    expect(response.status).toBe(201);
+
+    // Giving feedback early still reveals nothing: results remain sealed until publish.
+    const detail = await request(app).get(`/api/contests/${contest.id}`);
+    expect(detail.body.contest.report).toBeNull();
+    const standings = await request(app).get(`/api/contests/${contest.id}/standings`);
+    expect(standings.status).toBe(403);
   });
 
   it("blocks faculty from publishing contest results before the deadline", async () => {

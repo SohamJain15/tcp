@@ -1720,11 +1720,14 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         await resolveStudentDepartment(user, dependencies),
       );
 
-      // Collected as soon as the contest is over, while the experience is still fresh — waiting
-      // for publish meant asking days later. It remains the gate for viewing published results,
-      // so this only moves collection earlier; it reveals nothing sooner.
-      if (computeContestStatus(contest, dependencies.now()) !== "Ended") {
-        throw new AppError(409, "Feedback opens once the contest has ended");
+      // Asked for the moment this student is done — either they submitted, or the window shut
+      // on them — so the experience is still fresh. A student still writing is refused, since
+      // mid-test is the worst moment to interrupt them. Feedback remains the gate for viewing
+      // published results, so collecting it earlier reveals nothing earlier.
+      const attempt = await dependencies.contestAttemptRepository.getByContestAndUser(contestId, user.email);
+      const attemptFinished = attempt !== null && attempt.status !== "ACTIVE";
+      if (!attemptFinished && computeContestStatus(contest, dependencies.now()) !== "Ended") {
+        throw new AppError(409, "Feedback opens once you submit, or once the contest ends");
       }
 
       // One record per (contestId, userEmail): a repeat submit returns the stored feedback untouched.
