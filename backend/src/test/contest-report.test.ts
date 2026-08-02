@@ -605,7 +605,31 @@ describe("contest report endpoints", () => {
     expect(response.status).toBe(200);
     expect(response.body.report).toBeNull();
     expect(response.body.aiRuntime.available).toBe(false);
+
+    const pdfResponse = await request(app)
+      .get("/api/contests/contest_report_1/report/pdf")
+      .set(facultyHeaders);
+    expect(pdfResponse.status).toBe(404);
   });
+
+  it("renders a ready report as an inline server-side PDF", async () => {
+    const { app, repositories } = createTestApp();
+    await seedPublishedContest(repositories);
+    await request(app).post("/api/contests/contest_report_1/report").set(facultyHeaders).send({});
+    await pollUntilSettled(app, "contest_report_1");
+
+    const response = await request(app)
+      .get("/api/contests/contest_report_1/report/pdf")
+      .query({ subtitle: "Prepared for Review", narrative: "true", proctoring: "false" })
+      .set(facultyHeaders);
+
+    expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toMatch(/application\/pdf/);
+    expect(response.headers["content-disposition"]).toContain("inline");
+    expect(response.headers["content-disposition"]).toContain("contest-contest_report_1-report.pdf");
+    expect(response.body.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(response.body.length).toBeGreaterThan(10_000);
+  }, 30_000);
 
   it("generates asynchronously and settles into a readable report", async () => {
     const { app, repositories } = createTestApp();
@@ -694,6 +718,11 @@ describe("contest report endpoints", () => {
     expect(settled.body.report.status).toBe("FAILED");
     expect(settled.body.report.failureReason).toContain("model exploded");
     expect(settled.body.report.metrics.participation.attemptedCount).toBe(2);
+
+    const pdfResponse = await request(app)
+      .get("/api/contests/contest_report_1/report/pdf")
+      .set(facultyHeaders);
+    expect(pdfResponse.status).toBe(409);
   });
 
   it("labels a report as AI-written only when the model's text survived grounding", async () => {

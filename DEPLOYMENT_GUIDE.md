@@ -17,6 +17,14 @@ Production requirements:
 * `JUDGE0_BASE_URL=http://localhost:2358`
 * `SUBMISSION_WORKER_CONCURRENCY=4`
 
+Server-side contest PDF exports use Playwright's Chromium renderer. Install the browser once on the
+backend host after installing backend dependencies:
+```bash
+cd backend
+npx playwright install --with-deps chromium
+```
+The renderer also detects an installed system Chrome/Chromium executable when one is already available.
+
 For local compiler parity on a development machine, start the bundled Judge0 stack from the repo root with `npm run judge0:up`, then validate it with `npm run judge0:status`.
 
 ## 4. Proxy & Security Configuration

@@ -1,4 +1,4 @@
-import { apiRequest } from "@/api/client";
+import { apiRequest, getApiBaseUrl } from "@/api/client";
 import type {
   AudiencePreviewItem,
   ClassTestAudienceFilter,
@@ -338,6 +338,24 @@ export const contestsApi = {
     }),
   getReport: (contestId: string, pathname?: string) =>
     apiRequest<ContestReportEnvelope>(`/api/contests/${contestId}/report`, { pathname }),
+  getReportPdfUrl: (
+    contestId: string,
+    options: {
+      subtitle?: string;
+      sections: {
+        narrative: boolean;
+        questionBreakdown: boolean;
+        languageEfficiency: boolean;
+        optimalCode: boolean;
+        proctoring: boolean;
+      };
+    },
+  ) => {
+    const url = new URL(`${getApiBaseUrl()}/api/contests/${contestId}/report/pdf`);
+    if (options.subtitle) url.searchParams.set("subtitle", options.subtitle);
+    Object.entries(options.sections).forEach(([key, value]) => url.searchParams.set(key, String(value)));
+    return url.toString();
+  },
   /** Fresh metrics without triggering a model run — backs the "Raw Metrics" view. */
   getReportMetrics: (contestId: string, pathname?: string) =>
     apiRequest<ContestReportMetricsEnvelope>(`/api/contests/${contestId}/report/metrics`, { pathname }),

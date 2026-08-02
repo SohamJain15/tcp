@@ -14,19 +14,19 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  DEFAULT_PRINT_SECTIONS,
-  type ContestReportPrintSections,
-} from "@/lib/contest-report-pdf";
+  DEFAULT_REPORT_SECTIONS,
+  type ContestReportSections,
+} from "@/lib/contest-report-options";
 
 interface ContestReportExportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onExport: (options: { subtitle: string; sections: ContestReportPrintSections }) => void | Promise<void>;
+  onExport: (options: { subtitle: string; sections: ContestReportSections }) => void | Promise<void>;
   /** Disabled when the report has no narrative to include. */
   hasNarrative: boolean;
 }
 
-const SECTION_OPTIONS: { key: keyof ContestReportPrintSections; label: string; hint: string }[] = [
+const SECTION_OPTIONS: { key: keyof ContestReportSections; label: string; hint: string }[] = [
   { key: "narrative", label: "Written summary", hint: "Executive summary, insights and recommendations" },
   { key: "questionBreakdown", label: "Question breakdown", hint: "Solve rates, attempts and solve times" },
   { key: "languageEfficiency", label: "Language efficiency", hint: "Runtime and memory per language" },
@@ -41,9 +41,9 @@ export function ContestReportExportDialog({
   hasNarrative,
 }: ContestReportExportDialogProps) {
   const [subtitle, setSubtitle] = useState("");
-  const [sections, setSections] = useState<ContestReportPrintSections>(DEFAULT_PRINT_SECTIONS);
+  const [sections, setSections] = useState<ContestReportSections>(DEFAULT_REPORT_SECTIONS);
 
-  const toggle = (key: keyof ContestReportPrintSections) =>
+  const toggle = (key: keyof ContestReportSections) =>
     setSections((current) => ({ ...current, [key]: !current[key] }));
 
   // Participation and methodology are always included, so there is always a report to produce.
@@ -55,8 +55,7 @@ export function ContestReportExportDialog({
         <DialogHeader>
           <DialogTitle className="font-display">Export report as PDF</DialogTitle>
           <DialogDescription>
-            Opens a print-ready document. Choose &ldquo;Save as PDF&rdquo; as the destination in the print
-            dialog.
+            Opens the server-generated PDF preview in a new tab. You can save or download it from the PDF viewer.
           </DialogDescription>
         </DialogHeader>
 
@@ -123,7 +122,7 @@ export function ContestReportExportDialog({
               onOpenChange(false);
             }}
           >
-            <FileText className="mr-2 h-4 w-4" /> Open print view
+            <FileText className="mr-2 h-4 w-4" /> Open PDF preview
           </Button>
         </DialogFooter>
       </DialogContent>

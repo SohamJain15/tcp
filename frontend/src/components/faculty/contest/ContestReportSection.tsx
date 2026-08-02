@@ -12,7 +12,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDateTime } from "@/lib/datetime";
 import { downloadJson } from "@/lib/download";
-import { openContestReportPrintView } from "@/lib/contest-report-pdf";
 import { ContestReportExportDialog } from "./ContestReportExportDialog";
 import { ContestReportMetrics } from "./ContestReportMetrics";
 
@@ -168,7 +167,7 @@ export function ContestReportSection({
       <Card className="flex flex-wrap items-center justify-between gap-3 border border-border bg-background p-4 shadow-none">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={report.source === "AI" ? "default" : "outline"}>
-            {report.source === "AI" ? `Written by ${report.modelId}` : "Generated summary"}
+            {report.source === "AI" ? "Written by AI" : "Generated summary"}
           </Badge>
           {report.generatedAt ? (
             <span className="text-xs text-muted-foreground">Generated {formatDateTime(report.generatedAt)}</span>
@@ -219,13 +218,13 @@ export function ContestReportSection({
           open={exportOpen}
           onOpenChange={setExportOpen}
           hasNarrative={Boolean(narrative)}
-          onExport={async ({ subtitle, sections }) => {
-            const result = await openContestReportPrintView({ report, metrics, subtitle, sections });
-            if (result === "popup-blocked") {
-              toast.error("Allow pop-ups for this site to open the print view.");
-            } else if (result === "failed") {
-              toast.error("The report could not be prepared. Try regenerating it, then export again.");
-            }
+          onExport={({ subtitle, sections }) => {
+            const pdfWindow = window.open(
+              contestsApi.getReportPdfUrl(contestId, { subtitle, sections }),
+              "_blank",
+              "noopener,noreferrer",
+            );
+            if (!pdfWindow) toast.error("Allow pop-ups for this site to open the PDF preview.");
           }}
         />
       ) : null}
