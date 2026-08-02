@@ -167,7 +167,7 @@ export function ContestReportSection({
       <Card className="flex flex-wrap items-center justify-between gap-3 border border-border bg-background p-4 shadow-none">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={report.source === "AI" ? "default" : "outline"}>
-            {report.source === "AI" ? `Written by ${report.modelId}` : "Generated summary"}
+            {report.source === "AI" ? "Written by AI" : "Generated summary"}
           </Badge>
           {report.generatedAt ? (
             <span className="text-xs text-muted-foreground">Generated {formatDateTime(report.generatedAt)}</span>

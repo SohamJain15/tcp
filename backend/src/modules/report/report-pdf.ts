@@ -184,7 +184,7 @@ function buildBody(report: ContestReportResponse, options: ReportPdfOptions): st
       ["Attempt duration", `${metrics.contest.durationMinutes} minutes`],
       ["Questions", `${metrics.contest.questionCount} (${metrics.contest.codingQuestionCount} coding)`],
       ["Report generated", formatDateTime(report.generatedAt)],
-      ["Narrative source", report.source === "AI" ? `AI narrative (${report.modelId ?? "unknown"})` : "Generated summary"],
+      ["Narrative source", report.source === "AI" ? "Written by AI" : "Generated summary"],
     ])}
   </header>`);
 
