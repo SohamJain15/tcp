@@ -31,7 +31,7 @@ const linksByRole: Record<UserRole, Array<{ to: string; label: string }>> = {
     { to: "/faculty/dashboard", label: "Dashboard" },
     { to: "/faculty/problems", label: "Problems" },
     { to: "/faculty/contests", label: "Contests" },
-    { to: "/faculty/class-tests", label: "CT" },
+    { to: "/faculty/class-tests", label: "Class Test" },
     { to: "/faculty/submissions", label: "Submissions" },
     { to: "/faculty/leaderboard", label: "Leaderboard" },
     { to: "/faculty/profile", label: "Profile" },
