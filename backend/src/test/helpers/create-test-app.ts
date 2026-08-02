@@ -18,6 +18,7 @@ import type { SubmissionQueue } from "../../queue/submission-queue";
 import { createUserService } from "../../modules/user/user.service";
 import { StubExecutionProvider } from "../../execution/stub-execution-provider";
 import type { ApplicationDependencies } from "../../bootstrap/dependencies";
+import { normalizeRole } from "../../shared/utils/normalize";
 import {
   InMemoryContestAttemptRepository,
   InMemoryClassTestAttemptRepository,
@@ -145,6 +146,33 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       lastAcceptedAt: null,
     },
     {
+      // Institute leadership. No department, no UID, no designation — and complete anyway, which is
+      // what lets an admin past profileCompletionMiddleware without a bypass.
+      email: "principal@tcetmumbai.in",
+      role: "ADMIN",
+      name: "Principal",
+      uid: null,
+      isProfileComplete: true,
+      designation: null,
+      isHod: false,
+      rollNumber: null,
+      department: null,
+      semester: null,
+      linkedInUrl: null,
+      githubUrl: null,
+      skills: [],
+      rating: 0,
+      score: 0,
+      problemsSolved: 0,
+      submissionCount: 0,
+      acceptedSubmissionCount: 0,
+      accuracy: 0,
+      createdAt: seedTime,
+      updatedAt: seedTime,
+      lastLoginAt: seedTime,
+      lastAcceptedAt: null,
+    },
+    {
       // HOD flagged but with no department saved — must be refused by requireHod.
       email: "hodnodept@tcetmumbai.in",
       role: "FACULTY",
@@ -204,10 +232,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
         typeof req.headers["x-coe-email"] === "string"
           ? req.headers["x-coe-email"]
           : "student1@tcetmumbai.in",
-      role:
-        typeof req.headers["x-coe-role"] === "string" && req.headers["x-coe-role"].toUpperCase() === "FACULTY"
-          ? "FACULTY"
-          : "STUDENT",
+      role: normalizeRole(req.headers["x-coe-role"]),
       name: typeof req.headers["x-coe-name"] === "string" ? req.headers["x-coe-name"] : "Student One",
     };
     next();

@@ -7,6 +7,7 @@ import { departmentApi } from "@/api/services";
 import type { ManagedContestItem } from "@/api/types";
 import { AppLayout } from "@/components/AppLayout";
 import { DepartmentOverviewSection } from "@/components/DepartmentOverviewSection";
+import { DepartmentStudentsSection } from "@/components/department/DepartmentStudentsSection";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -125,13 +126,17 @@ export default function FacultyDepartment() {
   const [windowDays, setWindowDays] = useState(90);
   const [year, setYear] = useState<string>("all");
 
+  const yearFilter = year === "all" ? undefined : (Number(year) as 1 | 2 | 3 | 4);
+
   const overviewQuery = useQuery({
     queryKey: ["department", "overview", windowDays, year],
-    queryFn: () =>
-      departmentApi.overview(
-        { windowDays, year: year === "all" ? undefined : (Number(year) as 1 | 2 | 3 | 4) },
-        PATHNAME,
-      ),
+    queryFn: () => departmentApi.overview({ windowDays, year: yearFilter }, PATHNAME),
+  });
+
+  // Same roster the admin panel shows, scoped by requireHod to the caller's own department.
+  const studentsQuery = useQuery({
+    queryKey: ["department", "students", windowDays, year],
+    queryFn: () => departmentApi.listStudents({ windowDays, year: yearFilter, pageSize: 1000 }, PATHNAME),
   });
 
   return (
@@ -153,6 +158,11 @@ export default function FacultyDepartment() {
           onWindowDaysChange={setWindowDays}
           year={year}
           onYearChange={setYear}
+        />
+
+        <DepartmentStudentsSection
+          query={studentsQuery}
+          buildStudentPath={(email) => `/faculty/department/students/${encodeURIComponent(email)}`}
         />
       </div>
     </AppLayout>

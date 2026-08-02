@@ -14,6 +14,9 @@ export function createLeaderboardController(leaderboardService: LeaderboardServi
         cursor,
         department: normalizeDepartment(req.query.department) ?? undefined,
         year: year >= 1 && year <= 4 ? (year as 1 | 2 | 3 | 4) : undefined,
+        // Taken from the session, never the query string, so a caller cannot ask for someone else's
+        // standing under the guise of pinning their own row.
+        currentUserEmail: req.user?.email,
       });
       res.json(leaderboard);
     },

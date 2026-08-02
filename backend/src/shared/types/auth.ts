@@ -1,4 +1,9 @@
-export type UserRole = "STUDENT" | "FACULTY";
+/**
+ * `ADMIN` is institute leadership (principal / CERCD), sourced from the CoE `role` claim. It is a
+ * read-only analytics role, deliberately *narrower* than FACULTY: no authoring, no grading, no access
+ * to submitted code. See `mapCoeRoleToPlatformRole` in middleware/auth.ts.
+ */
+export type UserRole = "STUDENT" | "FACULTY" | "ADMIN";
 
 export interface AuthenticatedUser {
   email: string;

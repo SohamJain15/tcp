@@ -11,6 +11,9 @@ export function createSubmissionRouter(dependencies: ApplicationDependencies): R
 
   router.use(dependencies.authMiddleware);
   router.use(dependencies.profileCompletionMiddleware);
+  // Submissions carry student source code. Admins are denied at the router rather than relying on
+  // the ownership checks in the service, so there is no path by which code reaches an admin.
+  router.use(requireRole("STUDENT", "FACULTY"));
   router.post("/run", requireRole("STUDENT"), createCodeExecutionRateLimiter(), asyncHandler(controller.runSubmission));
   router.post(
     "/",

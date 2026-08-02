@@ -87,6 +87,16 @@ export default function StudentLeaderboard() {
     [isProblemMode, problemQuery.data?.items, contestStandingsQuery.data?.items],
   );
 
+  // Only the first page of the problem board is fetched, so a student ranked below it is not in
+  // `rows` at all. The API returns their own entry alongside the page so it can still be pinned.
+  const fallbackCurrentRow = useMemo(() => {
+    if (!isProblemMode) {
+      return null;
+    }
+    const entry = problemQuery.data?.currentUserEntry;
+    return entry ? toProblemLeaderboardRows([entry])[0] ?? null : null;
+  }, [isProblemMode, problemQuery.data?.currentUserEntry]);
+
   const hasNoContests = viewMode === "contest" && !contestsQuery.isLoading && availableContests.length === 0;
 
   return (
@@ -196,6 +206,7 @@ export default function StudentLeaderboard() {
             mode={viewMode}
             currentEmail={currentEmail}
             maxVisible={MAX_VISIBLE}
+            fallbackCurrentRow={fallbackCurrentRow}
             emptyMessage={
               viewMode === "contest" ? "No standings for this contest yet." : "No leaderboard data yet."
             }

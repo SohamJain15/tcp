@@ -30,8 +30,28 @@ export function normalizeNumber(value: unknown, fallback = 0): number {
   return fallback;
 }
 
+/**
+ * Coerces a stored or inbound role into a platform role, defaulting to the least-privileged one.
+ *
+ * This runs on the *read* path too (`user.repository.mapUserRecord`), not just on write — so any role
+ * this function does not recognise is silently demoted to STUDENT the next time the record is loaded.
+ * That is the correct default for garbage input, but it means every new role must be added here as
+ * well as at the auth edge, or it will not survive a round-trip through Mongo.
+ */
 export function normalizeRole(value: unknown): UserRole {
-  return typeof value === "string" && value.toUpperCase() === "FACULTY" ? "FACULTY" : "STUDENT";
+  if (typeof value !== "string") {
+    return "STUDENT";
+  }
+
+  const candidate = value.trim().toUpperCase();
+  if (candidate === "FACULTY") {
+    return "FACULTY";
+  }
+  if (candidate === "ADMIN") {
+    return "ADMIN";
+  }
+
+  return "STUDENT";
 }
 
 export function normalizeDepartment(value: unknown): Department | null {

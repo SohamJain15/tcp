@@ -53,6 +53,12 @@ function hasCompletedProfile(user: UserRecord): boolean {
   const normalizedUid = user.uid?.trim() ?? "";
   const hasValidStudentUid = normalizedUid !== "" && !normalizedUid.toLowerCase().includes("mock");
 
+  // Admins have no department, UID or designation to fill in — there is no profile form for them, so
+  // "complete" is the only answer that lets them past profileCompletionMiddleware.
+  if (user.role === "ADMIN") {
+    return true;
+  }
+
   if (user.role === "FACULTY") {
     return Boolean(user.name && user.department && user.designation);
   }
@@ -61,14 +67,19 @@ function hasCompletedProfile(user: UserRecord): boolean {
 }
 
 function createDefaultUser(authUser: AuthenticatedUser, now: Date): UserRecord {
+  const role = normalizeRole(authUser.role);
+
   return {
     email: authUser.email,
-    role: normalizeRole(authUser.role),
+    role,
     name: authUser.name ?? null,
     uid: authUser.uid ?? null,
-    isProfileComplete: false,
+    // Admins have nothing to complete, so they are born complete; every other role starts false and
+    // is gated by profileCompletionMiddleware until they fill the form in.
+    isProfileComplete: role === "ADMIN",
     designation: null,
-    isHod: authUser.isHod ?? false,
+    // An admin is never HOD — the department routes stay scoped to real HODs.
+    isHod: role === "ADMIN" ? false : authUser.isHod ?? false,
     rollNumber: null,
     department: normalizeDepartment(authUser.department) ?? null,
     semester: null,
@@ -101,9 +112,13 @@ function mergeUser(existing: UserRecord, authUser: AuthenticatedUser, now: Date)
     // any stored value (auto-correcting mismatches on every login).
     uid,
     department: existing.department ?? normalizeDepartment(authUser.department) ?? null,
-    isProfileComplete: existing.isProfileComplete,
+    // Admins have no profile form; forcing this true keeps profileCompletionMiddleware satisfied
+    // without needing a bypass in every router. It also self-heals a record that was written while
+    // the account was still being resolved as FACULTY.
+    isProfileComplete: role === "ADMIN" ? true : existing.isProfileComplete,
     designation: existing.designation,
-    isHod: authUser.isHod ?? existing.isHod,
+    // An admin is never HOD, regardless of what a stale record or token claim says.
+    isHod: role === "ADMIN" ? false : authUser.isHod ?? existing.isHod,
     rollNumber: existing.rollNumber,
     // Recomputed from the UID on every login, so it advances with the academic calendar
     // instead of holding whatever the student typed once. Faculty have no semester, and an

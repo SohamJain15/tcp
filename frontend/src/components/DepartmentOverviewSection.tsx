@@ -183,16 +183,16 @@ export function DepartmentOverviewSection({
             <ChartCard
               title="Department Activity"
               className="lg:col-span-2"
-              subtitle={`Submissions and active students over the last ${overview?.window.days ?? windowDays} days`}
+              subtitle={`Accepted practice-problem solves over the last ${overview?.window.days ?? windowDays} days. Contest submissions and failed verdicts are excluded.`}
               action={
                 <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1.5">
                     <span className="h-2.5 w-2.5" style={{ backgroundColor: SERIES_COLORS.accent }} aria-hidden />
-                    Submissions
+                    Accepted solves
                   </span>
                   <span className="flex items-center gap-1.5">
                     <span className="h-2.5 w-2.5" style={{ backgroundColor: SERIES_COLORS.success }} aria-hidden />
-                    Active students
+                    Students solving
                   </span>
                 </div>
               }
@@ -201,10 +201,10 @@ export function DepartmentOverviewSection({
                 data={trendData}
                 xKey="date"
                 series={[
-                  { dataKey: "submissions", name: "Submissions", color: SERIES_COLORS.accent },
-                  { dataKey: "students", name: "Active students", color: SERIES_COLORS.success },
+                  { dataKey: "submissions", name: "Accepted solves", color: SERIES_COLORS.accent },
+                  { dataKey: "students", name: "Students solving", color: SERIES_COLORS.success },
                 ]}
-                emptyMessage="No department activity in this window."
+                emptyMessage="No accepted practice-problem solves in this window."
               />
             </ChartCard>
 

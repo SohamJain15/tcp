@@ -44,6 +44,8 @@ import type {
 
 const DEFAULT_WINDOW_DAYS = 90;
 const MAX_WINDOW_DAYS = 365;
+/** Comfortably above any real department's enrolment, so one request returns the whole roster. */
+const DEPARTMENT_ROSTER_MAX_PAGE_SIZE = 1000;
 const RECENT_CONTEST_LIMIT = 12;
 
 export interface DepartmentQuery {
@@ -299,6 +301,27 @@ function buildYearParticipation(
     .sort((left, right) => (left.year ?? 99) - (right.year ?? 99));
 }
 
+/**
+ * Only accepted practice-problem submissions count towards the activity trend.
+ *
+ * Two exclusions, for different reasons:
+ *
+ * - **Non-accepted verdicts** are dropped because a raw submission count is not a measure of
+ *   engagement, it is a measure of whatever the judge did. A single queue outage produced ~2,700
+ *   INTERNAL_ERROR rows in one day on this platform, which rendered the chart unreadable and made a
+ *   failure look like a spike in activity.
+ * - **Contest submissions** are dropped because contest days are bursty by construction: one contest
+ *   with 60 students dwarfs a month of steady practice, so mixing the two hides the day-to-day trend
+ *   this chart exists to show. Contest engagement is reported separately by
+ *   `contestParticipation`.
+ *
+ * Everything else in the overview (totals, accuracy, consistency, activity levels) still counts every
+ * submission — this narrowing is scoped to the trend line.
+ */
+function isTrendCountable(submission: SubmissionAnalyticsRecord): boolean {
+  return submission.sourceType === "problem" && submission.status === "ACCEPTED";
+}
+
 function buildActivityTrend(
   submissions: readonly SubmissionAnalyticsRecord[],
   from: Date,
@@ -307,12 +330,16 @@ function buildActivityTrend(
   const byDate = new Map<string, { submissionCount: number; acceptedCount: number; students: Set<string> }>();
 
   for (const submission of submissions) {
+    if (!isTrendCountable(submission)) {
+      continue;
+    }
+
     const key = toDateKey(submission.createdAt);
     const entry = byDate.get(key) ?? { submissionCount: 0, acceptedCount: 0, students: new Set<string>() };
     entry.submissionCount += 1;
-    if (submission.status === "ACCEPTED") {
-      entry.acceptedCount += 1;
-    }
+    // Every counted row is accepted, so the two series are equal by construction. `acceptedCount` is
+    // kept on the payload for compatibility rather than being dropped from the response shape.
+    entry.acceptedCount += 1;
     entry.students.add(submission.userEmail);
     byDate.set(key, entry);
   }
@@ -553,7 +580,9 @@ export function createDepartmentService(dependencies: DepartmentServiceDependenc
         )
         .map((row, index) => ({ ...row, rank: index + 1 }));
 
-      return paginateArray(rows, query);
+      // A department roster is bounded by enrolment, and the whole sorted list is already in memory
+      // here, so the platform-wide 50-row cap would only force extra round trips to show one class.
+      return paginateArray(rows, query, DEPARTMENT_ROSTER_MAX_PAGE_SIZE);
     },
 
     async listContests(department, query) {

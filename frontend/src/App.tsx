@@ -23,8 +23,14 @@ import ClassTestAttempt from "./pages/student/ClassTestAttempt.tsx";
 import FacultyClassTests from "./pages/faculty/ClassTests.tsx";
 import CreateClassTest from "./pages/faculty/CreateClassTest.tsx";
 import ClassTestDetail from "./pages/faculty/ClassTestDetail.tsx";
+import AdminDashboard from "./pages/admin/Dashboard.tsx";
+import AdminDepartment from "./pages/admin/Department.tsx";
+import AdminStudentDetail from "./pages/admin/StudentDetail.tsx";
+import AdminLeaderboard from "./pages/admin/Leaderboard.tsx";
+import AdminProfile from "./pages/admin/Profile.tsx";
 import FacultyDashboard from "./pages/faculty/Dashboard.tsx";
 import FacultyDepartment from "./pages/faculty/Department.tsx";
+import FacultyDepartmentStudent from "./pages/faculty/DepartmentStudent.tsx";
 import CreateProblem from "./pages/faculty/CreateProblem.tsx";
 import CreateContest from "./pages/faculty/CreateContest.tsx";
 import FacultyContests from "./pages/faculty/Contests.tsx";
@@ -61,6 +67,7 @@ const App = () => (
             <Route path="/complete-profile" element={<RoleRoute allowedRole={["STUDENT", "FACULTY"]}><CompleteProfile /></RoleRoute>} />
             <Route path="/faculty/dashboard" element={<RoleRoute allowedRole="FACULTY"><FacultyDashboard /></RoleRoute>} />
             <Route path="/faculty/department" element={<RoleRoute allowedRole="FACULTY"><FacultyDepartment /></RoleRoute>} />
+            <Route path="/faculty/department/students/:email" element={<RoleRoute allowedRole="FACULTY"><RouteErrorBoundary><FacultyDepartmentStudent /></RouteErrorBoundary></RoleRoute>} />
             <Route path="/faculty/class-tests" element={<RoleRoute allowedRole="FACULTY"><FacultyClassTests /></RoleRoute>} />
             <Route path="/faculty/class-tests/create" element={<RoleRoute allowedRole="FACULTY"><CreateClassTest /></RoleRoute>} />
             <Route path="/faculty/class-tests/:id" element={<RoleRoute allowedRole="FACULTY"><ClassTestDetail /></RoleRoute>} />
@@ -76,6 +83,14 @@ const App = () => (
             <Route path="/faculty/submissions" element={<RoleRoute allowedRole="FACULTY"><FacultySubmissions /></RoleRoute>} />
             <Route path="/faculty/leaderboard" element={<RoleRoute allowedRole="FACULTY"><FacultyLeaderboard /></RoleRoute>} />
             <Route path="/faculty/profile" element={<RoleRoute allowedRole="FACULTY"><FacultyProfile /></RoleRoute>} />
+
+            {/* Institute leadership: read-only analytics across every department. */}
+            <Route path="/admin/dashboard" element={<RoleRoute allowedRole="ADMIN"><AdminDashboard /></RoleRoute>} />
+            <Route path="/admin/departments/:department" element={<RoleRoute allowedRole="ADMIN"><RouteErrorBoundary><AdminDepartment /></RouteErrorBoundary></RoleRoute>} />
+            <Route path="/admin/departments/:department/students/:email" element={<RoleRoute allowedRole="ADMIN"><RouteErrorBoundary><AdminStudentDetail /></RouteErrorBoundary></RoleRoute>} />
+            <Route path="/admin/leaderboard" element={<RoleRoute allowedRole="ADMIN"><AdminLeaderboard /></RoleRoute>} />
+            <Route path="/admin/profile" element={<RoleRoute allowedRole="ADMIN"><AdminProfile /></RoleRoute>} />
+
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

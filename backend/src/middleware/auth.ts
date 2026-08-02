@@ -69,8 +69,29 @@ function normalizeRole(rawRole: string): CoeHeaderRole | null {
   return normalized as CoeHeaderRole;
 }
 
-function mapCoeRoleToPlatformRole(rawRole: CoeHeaderRole): UserRole {
-  return rawRole === "STUDENT" ? "STUDENT" : "FACULTY";
+/**
+ * Maps a CoE role onto a platform role, or `null` when the account type has no access here.
+ *
+ * `ADMIN` is institute leadership and becomes a read-only analytics role — note this is a privilege
+ * *reduction*: before this mapping existed, ADMIN collapsed into FACULTY and carried full authoring,
+ * contest-creation and grading rights.
+ *
+ * `INDUSTRY` is rejected outright. It previously collapsed into FACULTY too, which handed external
+ * industry accounts the ability to author problems and publish contest results. Until there is a
+ * deliberate decision about what industry users should be able to do, no access is the safe answer;
+ * granting them a role later is a one-line change here.
+ */
+function mapCoeRoleToPlatformRole(rawRole: CoeHeaderRole): UserRole | null {
+  switch (rawRole) {
+    case "STUDENT":
+      return "STUDENT";
+    case "FACULTY":
+      return "FACULTY";
+    case "ADMIN":
+      return "ADMIN";
+    case "INDUSTRY":
+      return null;
+  }
 }
 
 function isValidEmail(email: string): boolean {
@@ -214,7 +235,9 @@ function logSecurityEvent(
     | "auth_inactive_user"
     | "auth_invalid_header_payload"
     | "auth_invalid_token_payload"
-    | "auth_untrusted_proxy",
+    | "auth_untrusted_proxy"
+    /** A valid, active CoE account whose role has no access to this platform (currently INDUSTRY). */
+    | "auth_unsupported_role",
   req: Request,
   details: Record<string, unknown> = {},
 ): void {
@@ -350,9 +373,22 @@ export function createAuthMiddleware(userService: Pick<UserService, "syncAuthent
         return;
       }
 
+      // Checked after the status gate so an inactive account still gets the more specific message.
+      const platformRole = mapCoeRoleToPlatformRole(authenticatedRole);
+      if (platformRole === null) {
+        logSecurityEvent("auth_unsupported_role", req, {
+          email: maskEmail(authenticatedEmail),
+          role: authenticatedRole,
+        });
+        res.status(403).json({
+          message: `${authenticatedRole} accounts do not have access to the coding platform.`,
+        });
+        return;
+      }
+
       const resolvedUser = await userService.syncAuthenticatedUser({
         email: authenticatedEmail,
-        role: mapCoeRoleToPlatformRole(authenticatedRole),
+        role: platformRole,
         name: authenticatedName || defaultNameFromEmail(authenticatedEmail),
         uid: extraClaims.uid,
         isHod: extraClaims.isHod,

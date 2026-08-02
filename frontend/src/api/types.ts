@@ -1,4 +1,8 @@
-export type UserRole = "STUDENT" | "FACULTY";
+/**
+ * `ADMIN` is institute leadership, sourced from the CoE `role` claim. It is a read-only analytics
+ * role and is deliberately narrower than FACULTY — no authoring, no grading, no submitted code.
+ */
+export type UserRole = "STUDENT" | "FACULTY" | "ADMIN";
 export type Difficulty = "Easy" | "Medium" | "Hard";
 export type ProblemLifecycleState = "Draft" | "Published" | "Archived";
 export type StudentProblemStatus = "solved" | "attempted" | "todo";
@@ -278,6 +282,15 @@ export interface LeaderboardItem {
   accuracy: number;
   updatedAt: string;
   lastAcceptedAt: string | null;
+}
+
+export interface LeaderboardListResponse extends PaginatedResponse<LeaderboardItem> {
+  /**
+   * The signed-in user's own row, whatever their rank. Only the first page of the board is sent, so
+   * a student ranked outside it would otherwise be missing from the payload entirely and could not
+   * be pinned. `null` for anyone not on the board (faculty, admins, or filtered out).
+   */
+  currentUserEntry: LeaderboardItem | null;
 }
 
 export interface UserProfileAnalyticsDifficultyItem {

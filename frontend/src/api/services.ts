@@ -40,6 +40,7 @@ import type {
   ManagedContestEnvelope,
   ManagedContestsEnvelope,
   LeaderboardItem,
+  LeaderboardListResponse,
   ManageProblemDetail,
   ManageProblemSummary,
   PaginatedResponse,
@@ -182,7 +183,7 @@ export const submissionsApi = {
 
 export const leaderboardApi = {
   list: (query: PaginationQuery & { department?: Department; year?: 1 | 2 | 3 | 4 } = {}, pathname?: string) =>
-    apiRequest<PaginatedResponse<LeaderboardItem>>("/api/leaderboard", {
+    apiRequest<LeaderboardListResponse>("/api/leaderboard", {
       query,
       pathname,
     }),
@@ -223,6 +224,54 @@ export const departmentApi = {
     apiRequest<ManagedContestEnvelope>(
       `/api/department/managed-contests/${encodeURIComponent(contestId)}/managers`,
       { method: "PATCH", body: { managerEmails }, pathname },
+    ),
+};
+
+/**
+ * Read-only, cross-department analytics for institute leadership.
+ *
+ * Same shapes as `departmentApi`, but the department is named explicitly instead of being taken from
+ * the caller's own profile. Department names contain spaces, `&`, parentheses and an en-dash, so the
+ * path segment must be encoded — the server decodes and validates against the canonical list.
+ */
+export const adminApi = {
+  listDepartments: (pathname?: string) =>
+    apiRequest<{ departments: Department[] }>("/api/admin/departments", { pathname }),
+  /** Every contest on the platform, metadata only — no questions, answers or test cases. */
+  listContests: (query: PaginationQuery & { department?: Department } = {}, pathname?: string) =>
+    apiRequest<PaginatedResponse<ContestListItem>>("/api/admin/contests", { query, pathname }),
+  getContestStandings: (
+    contestId: string,
+    query: { department?: Department; year?: 1 | 2 | 3 | 4 } = {},
+    pathname?: string,
+  ) =>
+    apiRequest<ContestStandingsEnvelope>(
+      `/api/admin/contests/${encodeURIComponent(contestId)}/standings`,
+      { query, pathname },
+    ),
+  overview: (department: Department, query: DepartmentAnalyticsQuery = {}, pathname?: string) =>
+    apiRequest<DepartmentOverviewEnvelope>(
+      `/api/admin/departments/${encodeURIComponent(department)}/overview`,
+      { query, pathname },
+    ),
+  listStudents: (
+    department: Department,
+    query: PaginationQuery & DepartmentAnalyticsQuery = {},
+    pathname?: string,
+  ) =>
+    apiRequest<PaginatedResponse<DepartmentStudentItem>>(
+      `/api/admin/departments/${encodeURIComponent(department)}/students`,
+      { query, pathname },
+    ),
+  getStudent: (
+    department: Department,
+    email: string,
+    query: DepartmentAnalyticsQuery = {},
+    pathname?: string,
+  ) =>
+    apiRequest<DepartmentStudentDetailEnvelope>(
+      `/api/admin/departments/${encodeURIComponent(department)}/students/${encodeURIComponent(email)}`,
+      { query, pathname },
     ),
 };
 

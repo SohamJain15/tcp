@@ -120,6 +120,15 @@ export interface ContestService {
   }>;
   saveCodingDraft(user: AuthenticatedUser, contestId: string, input: ContestCodingDraftInput): Promise<ContestAttemptRecord>;
   getStandings(user: AuthenticatedUser, contestId: string, query?: { department?: Department; year?: StudentYear }): Promise<ContestStandingItem[]>;
+  /**
+   * Institute-wide, read-only views for the ADMIN role. Ownership is deliberately not checked — the
+   * whole point is to see every department's contests — but the publish gate still applies, because
+   * attempts are only graded at publish and an unpublished contest has no standings to show.
+   *
+   * Both return metadata and rankings only. Neither touches `contest.questions`.
+   */
+  listAllContests(query?: PaginationInput & { department?: Department }): Promise<PaginatedResult<ContestListItem>>;
+  getStandingsForAdmin(contestId: string, query?: { department?: Department; year?: StudentYear }): Promise<ContestStandingItem[]>;
   exportStandingsCsv(user: AuthenticatedUser, contestId: string, query?: { department?: Department; year?: StudentYear }): Promise<string>;
   listAttempts(user: AuthenticatedUser, contestId: string): Promise<ContestAttemptSummary[]>;
   getAttemptReview(user: AuthenticatedUser, contestId: string, attemptId: string): Promise<FacultyContestAttemptReview>;
@@ -1527,6 +1536,66 @@ export function createContestService(dependencies: ContestServiceDependencies): 
 
       await dependencies.contestAttemptRepository.save(updatedAttempt);
       return updatedAttempt;
+    },
+
+    async listAllContests(query = {}) {
+      const contests = await dependencies.contestRepository.list();
+      const now = dependencies.now();
+
+      // Attempts are loaded only to count participants; questions are never read.
+      const perContestEntries = await Promise.all(
+        contests.map(async (contest) => {
+          const [attempts, registrations] = await Promise.all([
+            dependencies.contestAttemptRepository.listByContest(contest.id),
+            dependencies.contestRegistrationRepository.listByContest(contest.id),
+          ]);
+          return [contest.id, { attempts, registrations }] as const;
+        }),
+      );
+      const perContest = new Map(perContestEntries);
+
+      const items = contests
+        .filter((contest) => (query.department ? contest.targetDepartment === query.department : true))
+        .sort((left, right) => right.startAt.getTime() - left.startAt.getTime())
+        .map((contest) => {
+          const { attempts, registrations } = perContest.get(contest.id) ?? { attempts: [], registrations: [] };
+          return toContestListItem(
+            contest,
+            deriveParticipantsCount(attempts),
+            now,
+            null,
+            false,
+            registrations.length,
+          );
+        });
+
+      return paginateArray(items, query);
+    },
+
+    async getStandingsForAdmin(contestId, query = {}) {
+      const contest = await dependencies.contestRepository.getById(contestId);
+      if (!contest) {
+        throw new AppError(404, "Contest not found");
+      }
+      ensureResultsPublishedForRanking(contest);
+
+      const attempts = await dependencies.contestAttemptRepository.listByContest(contestId);
+      const userRecords = await Promise.all(
+        attempts.map(async (attempt) => ({
+          attempt,
+          user: await dependencies.userRepository.getByEmail(attempt.userEmail),
+        })),
+      );
+
+      return userRecords
+        .filter(({ attempt }) => (query.department ? attempt.userDepartment === query.department : true))
+        .filter(({ user }) => matchesStudentYearSemester(user?.semester, query.year))
+        .map(({ attempt, user }) => ({
+          attempt,
+          year: user?.semester ? (Math.ceil(user.semester / 2) as StudentYear) : null,
+        }))
+        .sort((left, right) => sortStandings(left.attempt, right.attempt))
+        .map(({ attempt, year }, index) => toContestStandingItem(attempt, index + 1, year));
     },
 
     async getStandings(user, contestId, query = {}) {

@@ -1,5 +1,7 @@
 import type { Request, Response } from "express";
 import { env } from "../../config/env";
+import { AppError } from "../../shared/errors/app-error";
+import type { UserRole } from "../../shared/types/auth";
 import { deriveSemesterFromUid } from "../../shared/utils/uid-department";
 import type { UserRecord } from "./user.model";
 import type { UserRepository } from "./user.repository";
@@ -33,8 +35,15 @@ function resolveSafeFrontendOrigin(candidateOrigin: unknown): string {
   return resolveAllowedOrigins().has(normalizedOrigin) ? normalizedOrigin : DEFAULT_FRONTEND_HOME;
 }
 
-function getDashboardPathForRole(role: "STUDENT" | "FACULTY"): string {
-  return role === "FACULTY" ? "/faculty/dashboard" : "/student/dashboard";
+function getDashboardPathForRole(role: UserRole): string {
+  switch (role) {
+    case "ADMIN":
+      return "/admin/dashboard";
+    case "FACULTY":
+      return "/faculty/dashboard";
+    case "STUDENT":
+      return "/student/dashboard";
+  }
 }
 
 function hasInvalidStudentUid(uid: string | null): boolean {
@@ -43,6 +52,11 @@ function hasInvalidStudentUid(uid: string | null): boolean {
 }
 
 function shouldRedirectToCompleteProfile(user: Pick<UserRecord, "role" | "isProfileComplete" | "uid">): boolean {
+  // There is no admin profile form, so an admin must never be sent to complete one.
+  if (user.role === "ADMIN") {
+    return false;
+  }
+
   if (user.role !== "STUDENT") {
     return !user.isProfileComplete;
   }
@@ -118,6 +132,13 @@ export function createUserController({ userService, userRepository }: UserContro
     },
 
     async updateCurrentUserProfile(req: Request, res: Response): Promise<void> {
+      // Admins have no editable profile. Without this guard they fall into the faculty branch below,
+      // which honours `isHod: payload.isHod` — letting an admin self-declare HOD and unlock the
+      // department routes.
+      if (req.user!.role === "ADMIN") {
+        throw new AppError(403, "Administrator profiles are managed in the CoE portal.");
+      }
+
       const payload = parseUpdateProfilePayload(req.user!.role, req.body);
       const baseUser = (await userRepository.findByEmail(req.user!.email)) ?? (await userService.syncAuthenticatedUser(req.user!));
 

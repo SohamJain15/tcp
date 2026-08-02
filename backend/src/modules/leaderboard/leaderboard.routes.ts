@@ -11,7 +11,8 @@ export function createLeaderboardRouter(dependencies: ApplicationDependencies): 
   router.use(dependencies.authMiddleware);
   router.use(dependencies.profileCompletionMiddleware);
   router.get("/", asyncHandler(controller.listLeaderboard));
-  router.get("/export", requireRole("FACULTY"), asyncHandler(controller.exportLeaderboard));
+  // Admins are read-only, and an export is a read; the leaderboard contains students only.
+  router.get("/export", requireRole("FACULTY", "ADMIN"), asyncHandler(controller.exportLeaderboard));
 
   return router;
 }

@@ -16,6 +16,8 @@ export function createClassTestRouter(dependencies: ApplicationDependencies): Ro
 
   router.use(dependencies.authMiddleware);
   router.use(dependencies.profileCompletionMiddleware);
+  // Class tests are a student/faculty feature; admins get department analytics only.
+  router.use(requireRole("STUDENT", "FACULTY"));
 
   // Student routes come first: "/assigned" and "/mine/..." must not be captured by the
   // faculty "/:classTestId" pattern below.

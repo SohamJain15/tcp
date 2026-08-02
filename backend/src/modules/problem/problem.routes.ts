@@ -10,6 +10,9 @@ export function createProblemRouter(dependencies: ApplicationDependencies): Rout
 
   router.use(dependencies.authMiddleware);
   router.use(dependencies.profileCompletionMiddleware);
+  // Problems are a student/faculty feature; admins are read-only analytics accounts and must not
+  // reach problem statements or test cases.
+  router.use(requireRole("STUDENT", "FACULTY"));
 
   router.get("/manage", requireRole("FACULTY"), asyncHandler(controller.listManageProblems));
   router.get("/manage/:problemId", requireRole("FACULTY"), asyncHandler(controller.getManageProblemDetail));

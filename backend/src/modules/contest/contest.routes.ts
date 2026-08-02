@@ -15,6 +15,10 @@ export function createContestRouter(dependencies: ApplicationDependencies): Rout
 
   router.use(dependencies.authMiddleware);
   router.use(dependencies.profileCompletionMiddleware);
+  // Contests are a student/faculty feature. Stated once here rather than relying on the per-route
+  // guards, because the shared routes below (list, detail, standings) branch on
+  // `role === "FACULTY" ? … : student`, so a third role would silently fall into the student path.
+  router.use(requireRole("STUDENT", "FACULTY"));
 
   router.get("/", asyncHandler(controller.listContests));
   router.get("/:contestId", asyncHandler(controller.getContestById));

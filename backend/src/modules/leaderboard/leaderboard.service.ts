@@ -13,10 +13,27 @@ import {
 import type { LeaderboardRepository } from "./leaderboard.repository";
 import type { UserRepository } from "../user/user.repository";
 
+export interface LeaderboardListResult extends PaginatedResult<LeaderboardListItem> {
+  /**
+   * The caller's own row, whatever their rank.
+   *
+   * Only the first page is sent to the client, so a student ranked #255 would otherwise be absent
+   * from the payload entirely and the table would have nothing to pin. The full sorted list is
+   * already built here to assign ranks, so finding them costs nothing. `null` when the caller is not
+   * on the board at all (faculty, admins, or a student filtered out by the current department/year
+   * selection).
+   */
+  currentUserEntry: LeaderboardListItem | null;
+}
+
 export interface LeaderboardService {
   listLeaderboard(
-    pagination: PaginationInput & { department?: Department; year?: StudentYear },
-  ): Promise<PaginatedResult<LeaderboardListItem>>;
+    pagination: PaginationInput & {
+      department?: Department;
+      year?: StudentYear;
+      currentUserEmail?: string;
+    },
+  ): Promise<LeaderboardListResult>;
   exportLeaderboardCsv(filters?: { department?: Department; year?: StudentYear }): Promise<string>;
 }
 
@@ -54,7 +71,15 @@ export function createLeaderboardService(dependencies: LeaderboardServiceDepende
         .sort(compareLeaderboardEntries)
         .map((entry, index) => toLeaderboardListItem(entry, index + 1));
 
-      return paginateArray(sortedEntries, pagination);
+      const page = paginateArray(sortedEntries, pagination);
+      const currentUserEmail = pagination.currentUserEmail?.toLowerCase();
+
+      return {
+        ...page,
+        currentUserEntry: currentUserEmail
+          ? sortedEntries.find((entry) => entry.email.toLowerCase() === currentUserEmail) ?? null
+          : null,
+      };
     },
 
     async exportLeaderboardCsv(filters = {}) {

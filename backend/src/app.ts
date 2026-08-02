@@ -6,6 +6,7 @@ import type { ApplicationDependencies } from "./bootstrap/dependencies";
 import { env } from "./config/env";
 import { COE_TOKEN_COOKIE_NAMES } from "./middleware/auth";
 import { createGlobalApiRateLimiter } from "./middleware/rate-limit";
+import { createAdminRouter } from "./modules/admin/admin.routes";
 import { createDepartmentRouter } from "./modules/department/department.routes";
 import { createLeaderboardRouter } from "./modules/leaderboard/leaderboard.routes";
 import { createProblemRouter } from "./modules/problem/problem.routes";
@@ -236,6 +237,7 @@ export function createApp(dependencies: ApplicationDependencies): Express {
   app.use("/api/submissions", createSubmissionRouter(dependencies));
   app.use("/api/leaderboard", createLeaderboardRouter(dependencies));
   app.use("/api/department", createDepartmentRouter(dependencies));
+  app.use("/api/admin", createAdminRouter(dependencies));
   app.use("/api/class-tests", createClassTestRouter(dependencies));
 
   app.use(notFoundHandler);

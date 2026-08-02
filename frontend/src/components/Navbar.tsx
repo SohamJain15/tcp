@@ -36,11 +36,23 @@ const linksByRole: Record<UserRole, Array<{ to: string; label: string }>> = {
     { to: "/faculty/leaderboard", label: "Leaderboard" },
     { to: "/faculty/profile", label: "Profile" },
   ],
+  // Institute leadership: read-only analytics across every department.
+  ADMIN: [
+    { to: "/admin/dashboard", label: "Departments" },
+    { to: "/admin/leaderboard", label: "Leaderboard" },
+    { to: "/admin/profile", label: "Profile" },
+  ],
+};
+
+const AVATAR_FALLBACK_BY_ROLE: Record<UserRole, string> = {
+  STUDENT: "ST",
+  FACULTY: "FC",
+  ADMIN: "AD",
 };
 
 function getAvatarFallback(name: string | null | undefined, role: UserRole): string {
   if (!name) {
-    return role === "FACULTY" ? "FC" : "ST";
+    return AVATAR_FALLBACK_BY_ROLE[role];
   }
 
   const initials = name
@@ -51,7 +63,7 @@ function getAvatarFallback(name: string | null | undefined, role: UserRole): str
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
 
-  return initials || (role === "FACULTY" ? "FC" : "ST");
+  return initials || AVATAR_FALLBACK_BY_ROLE[role];
 }
 
 export function Navbar() {
@@ -85,7 +97,13 @@ export function Navbar() {
     staleTime: 30_000,
   });
 
-  const fallbackRole: UserRole = pathname.startsWith("/faculty") ? "FACULTY" : "STUDENT";
+  // Used only for the first paint, before /api/users/me resolves — infer from the path so the nav
+  // does not flash the wrong links.
+  const fallbackRole: UserRole = pathname.startsWith("/admin")
+    ? "ADMIN"
+    : pathname.startsWith("/faculty")
+      ? "FACULTY"
+      : "STUDENT";
   const role = userQuery.data?.user.role ?? fallbackRole;
   const isHod = role === "FACULTY" && (userQuery.data?.user.isHod ?? false);
   // HODs get an extra "Department" tab, inserted right after Dashboard.
@@ -96,7 +114,8 @@ export function Navbar() {
         ...linksByRole.FACULTY.slice(1),
       ]
     : linksByRole[role];
-  const showLinks = pathname.startsWith("/student") || pathname.startsWith("/faculty");
+  const showLinks =
+    pathname.startsWith("/student") || pathname.startsWith("/faculty") || pathname.startsWith("/admin");
 
   // Only tests that are still actionable are worth a badge — a submitted or finished one is not.
   const assignedClassTestsQuery = useQuery({

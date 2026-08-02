@@ -30,6 +30,14 @@ interface LeaderboardTableProps {
   currentEmail?: string | null;
   /** Cap the number of ranked rows shown; the current user is appended below the cap if outside it. */
   maxVisible?: number;
+  /**
+   * The current user's row when it is not in `rows` at all.
+   *
+   * The server sends only the first page of the board, so a student ranked #255 is absent from the
+   * payload entirely — `rows` cannot be searched for them. The API returns their entry separately and
+   * it arrives here.
+   */
+  fallbackCurrentRow?: LeaderboardRow | null;
 }
 
 /**
@@ -43,6 +51,7 @@ export function LeaderboardTable({
   emptyMessage = "No leaderboard data yet.",
   currentEmail = null,
   maxVisible,
+  fallbackCurrentRow = null,
 }: LeaderboardTableProps) {
   const isContest = mode === "contest";
   // Only the top `maxVisible` entries are shown at once; the podium (top 3) counts toward that cap.
@@ -51,8 +60,11 @@ export function LeaderboardTable({
   const rest = visibleRows.slice(3);
   const yearRanks = buildYearRanks(rows);
   const isCurrent = (row: LeaderboardRow) => Boolean(currentEmail) && row.email === currentEmail;
-  // The signed-in student's row, pinned to the bottom when their rank falls outside the visible cap.
-  const currentRow = currentEmail ? rows.find((row) => row.email === currentEmail) ?? null : null;
+  // The signed-in student's row, pinned to the bottom when their rank falls outside the visible cap
+  // — or outside the fetched page entirely, in which case the server supplies it separately.
+  const currentRow = currentEmail
+    ? rows.find((row) => row.email === currentEmail) ?? fallbackCurrentRow
+    : null;
   const currentPinned = Boolean(
     currentRow && !visibleRows.some((row) => row.key === currentRow.key),
   );

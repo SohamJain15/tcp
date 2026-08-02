@@ -11,6 +11,11 @@ type RoleRouteProps = {
 };
 
 function requiresStudentProfileCompletion(user: { role: UserRole; isProfileComplete: boolean; uid: string | null }): boolean {
+  // Admins have no profile form to send them to; the server marks them complete for the same reason.
+  if (user.role === "ADMIN") {
+    return false;
+  }
+
   if (user.role !== "STUDENT") {
     return !user.isProfileComplete;
   }
