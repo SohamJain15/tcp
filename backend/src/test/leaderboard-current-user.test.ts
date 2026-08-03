@@ -26,6 +26,8 @@ function buildEntry(email: string, rating: number): LeaderboardEntry {
     problemsSolved: Math.round(rating / 100),
     submissionCount: 10,
     acceptedSubmissionCount: 5,
+    avgAcceptedRuntimeMs: 0,
+    avgAcceptedMemoryKb: 0,
     accuracy: 50,
     createdAt: SEED_TIME,
     updatedAt: SEED_TIME,

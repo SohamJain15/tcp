@@ -280,6 +280,9 @@ export interface LeaderboardItem {
   submissionCount: number;
   acceptedSubmissionCount: number;
   accuracy: number;
+  /** Memory efficiency relative to the ranked field, 0-1. Null when nobody has measured code. */
+  optimizationScore: number | null;
+  avgAcceptedRuntimeMs: number;
   updatedAt: string;
   lastAcceptedAt: string | null;
 }
@@ -855,6 +858,9 @@ export interface ContestStandingItem {
   violationCount: number;
   violationPenaltyPoints: number;
   timeTakenMs: number | null;
+  /** Memory + attempt efficiency relative to the field, 0-1. Null when the contest has no code. */
+  optimizationScore: number | null;
+  totalRuntimeMs: number;
   startedAt: string;
   submittedAt: string | null;
   autoSubmittedAt: string | null;

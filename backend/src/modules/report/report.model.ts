@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { lowerIsBetterPercentile } from "../../shared/utils/percentile";
 
 import type { Department, Difficulty, ExecutableLanguage } from "../../shared/types/domain";
 import type {
@@ -35,6 +36,9 @@ import type { SubmissionAnalyticsRecord } from "../submission/submission.reposit
  * cross-language comparisons and the "most optimal overall" pick.
  */
 export const MIN_LANGUAGE_SAMPLE = 5;
+
+// Re-exported from its new shared home so existing importers and tests are unaffected.
+export { lowerIsBetterPercentile };
 
 /**
  * Weights for the "most optimal code" ranking.
@@ -372,33 +376,6 @@ export function computeDistribution(values: readonly number[]): DistributionStat
     min: sorted.length > 0 ? round(sorted[0]) : 0,
     max: sorted.length > 0 ? round(sorted[sorted.length - 1]) : 0,
   };
-}
-
-/**
- * Where `value` sits in `values` when **lower is better** (runtime, memory, solve time).
- *
- * Returns 1 for the best value in the set and 0 for the worst. Ties share a score: a set where every
- * value is identical scores 0.5 across the board, which correctly says "nobody had an edge" rather
- * than arbitrarily crowning whichever record happened to be read first.
- */
-export function lowerIsBetterPercentile(values: readonly number[], value: number): number {
-  if (values.length <= 1) {
-    return 1;
-  }
-
-  let beaten = 0;
-  let ties = 0;
-  for (const candidate of values) {
-    if (candidate > value) {
-      beaten += 1;
-    } else if (candidate === value) {
-      ties += 1;
-    }
-  }
-
-  // Exclude the value's own entry from the tie count.
-  const tiesExcludingSelf = Math.max(0, ties - 1);
-  return round((beaten + 0.5 * tiesExcludingSelf) / (values.length - 1), 4);
 }
 
 function rate(numerator: number, denominator: number): number {

@@ -25,6 +25,10 @@ export interface LeaderboardRow {
   timeTakenMs: number | null;
   /** Contest mode only. */
   violationCount: number | null;
+  /** Both modes: how efficient this student's accepted code was, 0-1. Null when unmeasured. */
+  optimizationScore: number | null;
+  /** Both modes: program runtime in ms — contest total, or practice average. */
+  runtimeMs: number | null;
 }
 
 export function toProblemLeaderboardRows(items: LeaderboardItem[]): LeaderboardRow[] {
@@ -41,6 +45,8 @@ export function toProblemLeaderboardRows(items: LeaderboardItem[]): LeaderboardR
     accuracy: item.accuracy,
     timeTakenMs: null,
     violationCount: null,
+    optimizationScore: item.optimizationScore,
+    runtimeMs: item.avgAcceptedRuntimeMs,
   }));
 }
 
@@ -60,6 +66,8 @@ export function toContestLeaderboardRows(items: ContestStandingItem[]): Leaderbo
     accuracy: null,
     timeTakenMs: item.timeTakenMs,
     violationCount: item.violationCount,
+    optimizationScore: item.optimizationScore,
+    runtimeMs: item.totalRuntimeMs,
   }));
 }
 

@@ -39,6 +39,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed": "ts-node src/seed.ts"
+    "seed": "ts-node src/seed.ts",
+    "backfill:efficiency": "ts-node src/scripts/backfill-user-efficiency.ts"
   }
 }

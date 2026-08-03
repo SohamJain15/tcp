@@ -1,7 +1,7 @@
 import type { LeaderboardRepository } from "../leaderboard/leaderboard.repository";
 import {
   buildLeaderboardEntryFromUser,
-  compareLeaderboardEntries,
+  buildLeaderboardRanker,
   isRankedLeaderboardEntry,
 } from "../leaderboard/leaderboard.model";
 import type { AuthenticatedUser } from "../../shared/types/auth";
@@ -92,6 +92,8 @@ function createDefaultUser(authUser: AuthenticatedUser, now: Date): UserRecord {
     submissionCount: 0,
     acceptedSubmissionCount: 0,
     accuracy: 0,
+    avgAcceptedRuntimeMs: 0,
+    avgAcceptedMemoryKb: 0,
     createdAt: now,
     updatedAt: now,
     lastLoginAt: now,
@@ -143,7 +145,8 @@ async function buildRankedProfileResponse(
   }
 
   const leaderboard = (await leaderboardRepository.list()).filter(isRankedLeaderboardEntry);
-  const rank = leaderboard.sort(compareLeaderboardEntries).findIndex((entry) => entry.email === user.email) + 1;
+  const rank =
+    leaderboard.sort(buildLeaderboardRanker(leaderboard).compare).findIndex((entry) => entry.email === user.email) + 1;
 
   return toUserProfileResponse(user, rank > 0 ? rank : null);
 }

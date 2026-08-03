@@ -4,7 +4,7 @@ import { normalizeDepartment } from "../../shared/utils/normalize";
 import type { Department } from "../../shared/types/domain";
 import { deriveStudentYearFromSemester, matchesStudentYearSemester, type StudentYear } from "../../shared/utils/student-year";
 import {
-  compareLeaderboardEntries,
+  buildLeaderboardRanker,
   type LeaderboardEntry,
   isRankedLeaderboardEntry,
   toLeaderboardListItem,
@@ -64,12 +64,15 @@ async function enrichLeaderboardEntries(
 export function createLeaderboardService(dependencies: LeaderboardServiceDependencies): LeaderboardService {
   return {
     async listLeaderboard(pagination) {
-      const sortedEntries = (await enrichLeaderboardEntries(dependencies))
+      // Ranked within the applied filters, so the percentile compares like with like.
+      const ranked = (await enrichLeaderboardEntries(dependencies))
         .filter(isRankedLeaderboardEntry)
         .filter((entry) => (pagination.department ? entry.department === pagination.department : true))
-        .filter((entry) => matchesStudentYearSemester(entry.semester, pagination.year))
-        .sort(compareLeaderboardEntries)
-        .map((entry, index) => toLeaderboardListItem(entry, index + 1));
+        .filter((entry) => matchesStudentYearSemester(entry.semester, pagination.year));
+      const ranker = buildLeaderboardRanker(ranked);
+      const sortedEntries = ranked
+        .sort(ranker.compare)
+        .map((entry, index) => toLeaderboardListItem(entry, index + 1, ranker.optimizationScoreFor(entry)));
 
       const page = paginateArray(sortedEntries, pagination);
       const currentUserEmail = pagination.currentUserEmail?.toLowerCase();
@@ -83,11 +86,14 @@ export function createLeaderboardService(dependencies: LeaderboardServiceDepende
     },
 
     async exportLeaderboardCsv(filters = {}) {
-      const rows = (await enrichLeaderboardEntries(dependencies))
+      // Same ranker as the on-screen board, so the exported order is identical.
+      const ranked = (await enrichLeaderboardEntries(dependencies))
         .filter(isRankedLeaderboardEntry)
         .filter((entry) => (filters.department ? entry.department === filters.department : true))
-        .filter((entry) => matchesStudentYearSemester(entry.semester, filters.year))
-        .sort(compareLeaderboardEntries)
+        .filter((entry) => matchesStudentYearSemester(entry.semester, filters.year));
+      const ranker = buildLeaderboardRanker(ranked);
+      const rows = ranked
+        .sort(ranker.compare)
         .map((entry, index) => ({
           rank: index + 1,
           email: entry.email,
@@ -100,6 +106,8 @@ export function createLeaderboardService(dependencies: LeaderboardServiceDepende
           submissionCount: entry.submissionCount,
           acceptedSubmissionCount: entry.acceptedSubmissionCount,
           accuracy: entry.accuracy,
+          optimizationScore: ranker.optimizationScoreFor(entry) ?? "",
+          avgAcceptedRuntimeMs: entry.avgAcceptedRuntimeMs,
         }));
 
       return toCsv(rows);

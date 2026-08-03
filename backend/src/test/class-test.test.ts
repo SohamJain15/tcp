@@ -47,6 +47,8 @@ function classStudent(roll: number, division: string, department = COMP): UserRe
     submissionCount: 0,
     acceptedSubmissionCount: 0,
     accuracy: 0,
+    avgAcceptedRuntimeMs: 0,
+    avgAcceptedMemoryKb: 0,
     createdAt: new Date(0),
     updatedAt: new Date(0),
     lastLoginAt: null,

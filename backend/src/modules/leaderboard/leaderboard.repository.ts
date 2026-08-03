@@ -23,6 +23,8 @@ function mapLeaderboardEntry(email: string, data: Record<string, unknown>): Lead
     name: typeof data.name === "string" ? data.name : null,
     uid: typeof data.uid === "string" ? data.uid : null,
     department: normalizeDepartment(data.department),
+    avgAcceptedRuntimeMs: normalizeNumber(data.avgAcceptedRuntimeMs, 0),
+    avgAcceptedMemoryKb: normalizeNumber(data.avgAcceptedMemoryKb, 0),
     semester: typeof data.semester === "number" ? data.semester : null,
     year: deriveStudentYearFromSemester(typeof data.semester === "number" ? data.semester : null),
     rating,

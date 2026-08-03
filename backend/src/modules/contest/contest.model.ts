@@ -2,6 +2,7 @@ import type { HarnessSpec } from "../../execution/harness/contract";
 import type { UserRole } from "../../shared/types/auth";
 import type { Department, Difficulty, ExecutableLanguage } from "../../shared/types/domain";
 import { toIsoString } from "../../shared/utils/date";
+import { lowerIsBetterPercentile } from "../../shared/utils/percentile";
 import type { StudentYear } from "../../shared/utils/student-year";
 
 export type ContestType = "Rated" | "Practice";
@@ -368,6 +369,14 @@ export interface ContestStandingItem {
   violationCount: number;
   violationPenaltyPoints: number;
   timeTakenMs: number | null;
+  /**
+   * How efficient this attempt's accepted code was relative to the rest of the field, 0-1.
+   * `null` when the contest has no coding questions, so the UI can hide the column rather than
+   * show a meaningless zero for everyone.
+   */
+  optimizationScore: number | null;
+  /** Summed over solved coding questions. Program runtime, so it stays in milliseconds. */
+  totalRuntimeMs: number;
   startedAt: string;
   submittedAt: string | null;
   autoSubmittedAt: string | null;
@@ -916,10 +925,135 @@ export function toContestRegistrationItem(
   };
 }
 
+/**
+ * Weighting inside the optimization criterion.
+ *
+ * Runtime is deliberately absent: it is its own step further down the ordering, and folding it
+ * in here would make that step decoration. What is left is the part of "efficient code" the
+ * other criteria do not already express — how much memory it used, and how few submissions it
+ * took to get right.
+ */
+const OPTIMIZATION_WEIGHTS = { memory: 0.6, attempts: 0.4 } as const;
+
+export interface AttemptEfficiency {
+  totalRuntimeMs: number;
+  totalMemoryKb: number;
+  totalAttempts: number;
+  /** False when this attempt solved no coding question, so there is nothing to measure. */
+  hasCodingData: boolean;
+}
+
+/**
+ * Efficiency totals for one attempt, summed over **solved** coding questions only.
+ *
+ * Unsolved questions are excluded on purpose: comparing the runtime of a program that failed
+ * against one that passed says nothing useful, and would reward giving up early.
+ */
+export function computeAttemptEfficiency(attempt: ContestAttemptRecord): AttemptEfficiency {
+  let totalRuntimeMs = 0;
+  let totalMemoryKb = 0;
+  let totalAttempts = 0;
+  let hasCodingData = false;
+
+  for (const state of attempt.questionStates) {
+    if (state.questionType !== "Coding" || state.status !== "SOLVED") {
+      continue;
+    }
+    hasCodingData = true;
+    totalRuntimeMs += Math.max(0, state.finalRuntimeMs);
+    totalMemoryKb += Math.max(0, state.finalMemoryKb);
+    totalAttempts += Math.max(0, state.attemptsCount);
+  }
+
+  return { totalRuntimeMs, totalMemoryKb, totalAttempts, hasCodingData };
+}
+
+/**
+ * Ranks attempts by marks first, then by how good the code was.
+ *
+ *   score DESC → optimization DESC → time taken ASC → runtime ASC → startedAt ASC → id ASC
+ *
+ * A percentile only means anything against the whole field, so this is a factory: it builds the
+ * comparison pools once and returns a comparator, rather than being a standalone pairwise
+ * function. Attempts with no solved coding question (an MCQ-only contest, or a student who
+ * solved nothing) score 0 on optimization and sort last among equal scores.
+ */
+export interface StandingsRanker {
+  compare: (left: ContestAttemptRecord, right: ContestAttemptRecord) => number;
+  /** Null when the contest has no coding data, so the UI can hide the column entirely. */
+  optimizationScoreFor: (attempt: ContestAttemptRecord) => number | null;
+}
+
+export function buildStandingsRanker(attempts: readonly ContestAttemptRecord[]): StandingsRanker {
+  const efficiencyByAttemptId = new Map<string, AttemptEfficiency>();
+  for (const attempt of attempts) {
+    efficiencyByAttemptId.set(attempt.id, computeAttemptEfficiency(attempt));
+  }
+
+  const measured = [...efficiencyByAttemptId.values()].filter((entry) => entry.hasCodingData);
+  const memoryPool = measured.map((entry) => entry.totalMemoryKb);
+  const attemptsPool = measured.map((entry) => entry.totalAttempts);
+
+  const optimizationOf = (attempt: ContestAttemptRecord): number => {
+    const efficiency = efficiencyByAttemptId.get(attempt.id);
+    if (!efficiency?.hasCodingData) {
+      return 0;
+    }
+    return (
+      lowerIsBetterPercentile(memoryPool, efficiency.totalMemoryKb) * OPTIMIZATION_WEIGHTS.memory +
+      lowerIsBetterPercentile(attemptsPool, efficiency.totalAttempts) * OPTIMIZATION_WEIGHTS.attempts
+    );
+  };
+
+  const compare = (left: ContestAttemptRecord, right: ContestAttemptRecord): number => {
+    if (right.score !== left.score) {
+      return right.score - left.score;
+    }
+
+    // Only meaningful when someone in this contest actually wrote code.
+    if (measured.length > 0) {
+      const leftOptimization = optimizationOf(left);
+      const rightOptimization = optimizationOf(right);
+      if (leftOptimization !== rightOptimization) {
+        return rightOptimization - leftOptimization;
+      }
+    }
+
+    // An attempt that was never submitted has no time; it sorts last rather than first.
+    const leftTime = left.timeTakenMs ?? Number.MAX_SAFE_INTEGER;
+    const rightTime = right.timeTakenMs ?? Number.MAX_SAFE_INTEGER;
+    if (leftTime !== rightTime) {
+      return leftTime - rightTime;
+    }
+
+    if (measured.length > 0) {
+      const leftRuntime = efficiencyByAttemptId.get(left.id)?.totalRuntimeMs ?? 0;
+      const rightRuntime = efficiencyByAttemptId.get(right.id)?.totalRuntimeMs ?? 0;
+      if (leftRuntime !== rightRuntime) {
+        return leftRuntime - rightRuntime;
+      }
+    }
+
+    if (left.startedAt.getTime() !== right.startedAt.getTime()) {
+      return left.startedAt.getTime() - right.startedAt.getTime();
+    }
+
+    return left.id.localeCompare(right.id);
+  };
+
+  return {
+    compare,
+    optimizationScoreFor: (attempt) =>
+      measured.length > 0 ? Number(optimizationOf(attempt).toFixed(4)) : null,
+  };
+}
+
 export function toContestStandingItem(
   attempt: ContestAttemptRecord,
   rank: number,
   year: StudentYear | null = null,
+  /** Computed against the whole field, so it is passed in rather than derived per row. */
+  optimizationScore: number | null = null,
 ): ContestStandingItem {
   return {
     rank,
@@ -941,6 +1075,8 @@ export function toContestStandingItem(
     violationCount: attempt.violationCount,
     violationPenaltyPoints: attempt.violationPenaltyPoints,
     timeTakenMs: attempt.timeTakenMs,
+    optimizationScore,
+    totalRuntimeMs: computeAttemptEfficiency(attempt).totalRuntimeMs,
     startedAt: toIsoString(attempt.startedAt) ?? new Date(0).toISOString(),
     submittedAt: toIsoString(attempt.submittedAt),
     autoSubmittedAt: toIsoString(attempt.autoSubmittedAt),

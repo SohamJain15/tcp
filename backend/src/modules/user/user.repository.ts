@@ -52,6 +52,10 @@ function mapUserRecord(email: string, data: Record<string, unknown>): UserRecord
     submissionCount,
     acceptedSubmissionCount,
     accuracy: normalizeNumber(data.accuracy, derivedAccuracy),
+    // Absent on documents written before efficiency ranking existed; the backfill script fills
+    // them in, and 0 means "no measured code" rather than "perfectly efficient".
+    avgAcceptedRuntimeMs: normalizeNumber(data.avgAcceptedRuntimeMs, 0),
+    avgAcceptedMemoryKb: normalizeNumber(data.avgAcceptedMemoryKb, 0),
     createdAt,
     updatedAt,
     lastLoginAt: toDate(data.lastLoginAt),

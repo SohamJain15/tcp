@@ -24,6 +24,16 @@ export interface UserRecord {
   submissionCount: number;
   acceptedSubmissionCount: number;
   accuracy: number;
+  /**
+   * Efficiency of this student's accepted practice code, averaged over the **first** accepted
+   * submission per problem — the same set `rating` and `problemsSolved` are built from, so
+   * re-solving an old problem cannot dilute it.
+   *
+   * Stored rather than derived because the leaderboard reads user records only; computing this
+   * live would mean scanning every submission of every student on each page load.
+   */
+  avgAcceptedRuntimeMs: number;
+  avgAcceptedMemoryKb: number;
   createdAt: Date;
   updatedAt: Date;
   lastLoginAt: Date | null;

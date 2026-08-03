@@ -44,6 +44,7 @@ import {
   toContestAttemptSummary,
   toContestListItem,
   toContestRegistrationItem,
+  buildStandingsRanker,
   toContestStandingItem,
   toFacultyContestDetailResponse,
   toStudentContestDetailResponse,
@@ -456,22 +457,23 @@ function closeAttemptWithoutScoring(
   return withDerivedAttemptFields({ ...attempt, updatedAt: now });
 }
 
-function sortStandings(left: ContestAttemptRecord, right: ContestAttemptRecord): number {
-  if (right.score !== left.score) {
-    return right.score - left.score;
-  }
-
-  const leftTime = left.timeTakenMs ?? Number.MAX_SAFE_INTEGER;
-  const rightTime = right.timeTakenMs ?? Number.MAX_SAFE_INTEGER;
-  if (leftTime !== rightTime) {
-    return leftTime - rightTime;
-  }
-
-  if (left.startedAt.getTime() !== right.startedAt.getTime()) {
-    return left.startedAt.getTime() - right.startedAt.getTime();
-  }
-
-  return left.id.localeCompare(right.id);
+/**
+ * Ranks a filtered field of attempts and turns it into standing rows.
+ *
+ * The optimization percentile is relative to whatever set is passed in, so the caller decides
+ * the comparison group: the three public standings endpoints rank within the department/year
+ * filter, while a student's own rank on their report card is taken from the unfiltered field.
+ * That asymmetry predates this change and is preserved.
+ */
+function rankStandings(
+  entries: readonly { attempt: ContestAttemptRecord; year: StudentYear | null }[],
+): ContestStandingItem[] {
+  const ranker = buildStandingsRanker(entries.map((entry) => entry.attempt));
+  return [...entries]
+    .sort((left, right) => ranker.compare(left.attempt, right.attempt))
+    .map(({ attempt, year }, index) =>
+      toContestStandingItem(attempt, index + 1, year, ranker.optimizationScoreFor(attempt)),
+    );
 }
 
 function deriveParticipantsCount(attempts: ContestAttemptRecord[]): number {
@@ -984,7 +986,12 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       const resultsUnlocked = visibleContest.resultsPublished && feedbackSubmitted;
       const standings =
         resultsUnlocked
-          ? (await dependencies.contestAttemptRepository.listByContest(contestId)).sort(sortStandings).map((item, index) => toContestStandingItem(item, index + 1))
+          ? rankStandings(
+              (await dependencies.contestAttemptRepository.listByContest(contestId)).map((attempt) => ({
+                attempt,
+                year: null,
+              })),
+            )
           : [];
       // The report — scores, correctness, correct answers, rank — is revealed only once faculty
       // publishes AND the student has given feedback for this contest.
@@ -1589,15 +1596,15 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         })),
       );
 
-      return userRecords
-        .filter(({ attempt }) => (query.department ? attempt.userDepartment === query.department : true))
-        .filter(({ user }) => matchesStudentYearSemester(user?.semester, query.year))
-        .map(({ attempt, user }) => ({
-          attempt,
-          year: user?.semester ? (Math.ceil(user.semester / 2) as StudentYear) : null,
-        }))
-        .sort((left, right) => sortStandings(left.attempt, right.attempt))
-        .map(({ attempt, year }, index) => toContestStandingItem(attempt, index + 1, year));
+      return rankStandings(
+        userRecords
+          .filter(({ attempt }) => (query.department ? attempt.userDepartment === query.department : true))
+          .filter(({ user }) => matchesStudentYearSemester(user?.semester, query.year))
+          .map(({ attempt, user }) => ({
+            attempt,
+            year: user?.semester ? (Math.ceil(user.semester / 2) as StudentYear) : null,
+          })),
+      );
     },
 
     async getStandings(user, contestId, query = {}) {
@@ -1621,15 +1628,15 @@ export function createContestService(dependencies: ContestServiceDependencies): 
           user: await dependencies.userRepository.getByEmail(attempt.userEmail),
         })),
       );
-      return userRecords
-        .filter(({ attempt }) => (query.department ? attempt.userDepartment === query.department : true))
-        .filter(({ user }) => matchesStudentYearSemester(user?.semester, query.year))
-        .map(({ attempt, user }) => ({
-          attempt,
-          year: user?.semester ? (Math.ceil(user.semester / 2) as StudentYear) : null,
-        }))
-        .sort((left, right) => sortStandings(left.attempt, right.attempt))
-        .map(({ attempt, year }, index) => toContestStandingItem(attempt, index + 1, year));
+      return rankStandings(
+        userRecords
+          .filter(({ attempt }) => (query.department ? attempt.userDepartment === query.department : true))
+          .filter(({ user }) => matchesStudentYearSemester(user?.semester, query.year))
+          .map(({ attempt, user }) => ({
+            attempt,
+            year: user?.semester ? (Math.ceil(user.semester / 2) as StudentYear) : null,
+          })),
+      );
     },
 
     async exportStandingsCsv(user, contestId, query = {}) {
@@ -1642,32 +1649,33 @@ export function createContestService(dependencies: ContestServiceDependencies): 
           user: await dependencies.userRepository.getByEmail(attempt.userEmail),
         })),
       );
-      const filteredAttempts = userRecords
-        .filter(({ attempt }) => (query.department ? attempt.userDepartment === query.department : true))
-        .filter(({ user }) => matchesStudentYearSemester(user?.semester, query.year))
-        .map(({ attempt, user }) => ({
-          attempt,
-          year: user?.semester ? (Math.ceil(user.semester / 2) as StudentYear) : null,
-        }))
-        .sort((left, right) => sortStandings(left.attempt, right.attempt));
-      const rows = filteredAttempts.map(({ attempt }, index) => {
-        const solvedCount = attempt.questionStates.filter((state) => state.status === "SOLVED").length;
-        return [
-          index + 1,
-          attempt.userName,
-          attempt.userUid,
-          attempt.userEmail,
-          attempt.userDepartment,
-          attempt.status,
-          attempt.score,
-          attempt.timeTakenMs,
-          solvedCount,
-          attempt.violationCount,
-          attempt.violationPenaltyPoints,
-          attempt.submittedAt?.toISOString() ?? "",
-          attempt.autoSubmittedAt?.toISOString() ?? "",
-        ];
-      });
+      // Reuses the same ranker as the on-screen standings, so the exported order is identical.
+      const standings = rankStandings(
+        userRecords
+          .filter(({ attempt }) => (query.department ? attempt.userDepartment === query.department : true))
+          .filter(({ user }) => matchesStudentYearSemester(user?.semester, query.year))
+          .map(({ attempt, user }) => ({
+            attempt,
+            year: user?.semester ? (Math.ceil(user.semester / 2) as StudentYear) : null,
+          })),
+      );
+      const rows = standings.map((entry) => [
+        entry.rank,
+        entry.userName,
+        entry.userUid,
+        entry.userEmail,
+        entry.userDepartment,
+        entry.status,
+        entry.score,
+        entry.timeTakenMs,
+        entry.solvedCount,
+        entry.violationCount,
+        entry.violationPenaltyPoints,
+        entry.optimizationScore ?? "",
+        entry.totalRuntimeMs,
+        entry.submittedAt ?? "",
+        entry.autoSubmittedAt ?? "",
+      ]);
 
       const header = [
         "rank",
@@ -1681,6 +1689,8 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         "solved_count",
         "violations",
         "violation_penalty_points",
+        "optimization_score",
+        "total_runtime_ms",
         "submitted_at",
         "auto_submitted_at",
       ];

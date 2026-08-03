@@ -14,7 +14,10 @@ interface ContestStandingsSectionProps {
 export function ContestStandingsSection({ standings, resultsPublished }: ContestStandingsSectionProps) {
   return (
     <Card className="border border-border bg-background p-5 shadow-none">
-      <h2 className="mb-4 font-display text-xl font-semibold">Standings</h2>
+      <h2 className="font-display text-xl font-semibold">Standings</h2>
+      <p className="mb-4 mt-1 text-sm text-muted-foreground">
+        Ranked by score, then by how efficient the code was, then time taken, then runtime.
+      </p>
       <Table>
         <TableHeader>
           <TableRow>
@@ -22,6 +25,8 @@ export function ContestStandingsSection({ standings, resultsPublished }: Contest
             <TableHead>Student</TableHead>
             <TableHead>Solved</TableHead>
             <TableHead>Time</TableHead>
+            <TableHead>Efficiency</TableHead>
+            <TableHead>Runtime</TableHead>
             <TableHead>Violations</TableHead>
             <TableHead>Score</TableHead>
           </TableRow>
@@ -38,13 +43,19 @@ export function ContestStandingsSection({ standings, resultsPublished }: Contest
               </TableCell>
               <TableCell>{entry.solvedCount}</TableCell>
               <TableCell>{entry.timeTakenMs !== null ? `${formatDuration(entry.timeTakenMs)}` : "-"}</TableCell>
+              {/* Why one student outranks another on equal marks — shown so the order can be
+                  explained rather than disputed. */}
+              <TableCell>
+                {entry.optimizationScore === null ? "-" : `${Math.round(entry.optimizationScore * 100)}%`}
+              </TableCell>
+              <TableCell>{entry.totalRuntimeMs > 0 ? `${entry.totalRuntimeMs} ms` : "-"}</TableCell>
               <TableCell>{entry.violationCount}</TableCell>
               <TableCell>{entry.score}</TableCell>
             </TableRow>
           ))}
           {standings.length === 0 && (
             <TableRow>
-              <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+              <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                 {resultsPublished
                   ? "No standings available yet."
                   : "Attempts are graded when you publish results — standings appear then."}

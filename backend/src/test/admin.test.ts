@@ -218,6 +218,8 @@ describe("admin analytics parity", () => {
         submissionCount: 0,
         acceptedSubmissionCount: 0,
         accuracy: 0,
+    avgAcceptedRuntimeMs: 0,
+    avgAcceptedMemoryKb: 0,
         createdAt: seedTime,
         updatedAt: seedTime,
         lastLoginAt: seedTime,

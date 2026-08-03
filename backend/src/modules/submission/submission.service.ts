@@ -147,6 +147,8 @@ async function ensureUser(
     submissionCount: 0,
     acceptedSubmissionCount: 0,
     accuracy: 0,
+    avgAcceptedRuntimeMs: 0,
+    avgAcceptedMemoryKb: 0,
     createdAt: now,
     updatedAt: now,
     lastLoginAt: now,
@@ -254,12 +256,14 @@ function withDerivedContestAttemptFields(attempt: ContestAttemptRecord): Contest
   };
 }
 
-function calculateUserAggregateSnapshot(submissions: SubmissionRecord[]): {
+export function calculateUserAggregateSnapshot(submissions: SubmissionRecord[]): {
   rating: number;
   problemsSolved: number;
   submissionCount: number;
   acceptedSubmissionCount: number;
   accuracy: number;
+  avgAcceptedRuntimeMs: number;
+  avgAcceptedMemoryKb: number;
   lastAcceptedAt: Date | null;
 } {
   const finalized = submissions.filter(
@@ -290,12 +294,25 @@ function calculateUserAggregateSnapshot(submissions: SubmissionRecord[]): {
         }, null as Date | null)
       : null;
 
+  // Averaged over the same first-accepted-per-problem set that feeds `rating`, so re-solving an
+  // old problem with sloppier code cannot drag a student's efficiency down.
+  const firstAccepted = Array.from(firstAcceptedByProblem.values());
+  const averageOf = (pick: (submission: SubmissionRecord) => number): number => {
+    if (firstAccepted.length === 0) {
+      return 0;
+    }
+    const total = firstAccepted.reduce((sum, submission) => sum + Math.max(0, pick(submission)), 0);
+    return Math.round(total / firstAccepted.length);
+  };
+
   return {
     rating,
     problemsSolved: firstAcceptedByProblem.size,
     submissionCount: finalized.length,
     acceptedSubmissionCount: accepted.length,
     accuracy: calculateAccuracy(accepted.length, finalized.length),
+    avgAcceptedRuntimeMs: averageOf((submission) => submission.runtimeMs),
+    avgAcceptedMemoryKb: averageOf((submission) => submission.memoryKb),
     lastAcceptedAt,
   };
 }
@@ -340,6 +357,8 @@ async function syncUserAndLeaderboard(
     submissionCount: aggregates.submissionCount,
     acceptedSubmissionCount: aggregates.acceptedSubmissionCount,
     accuracy: aggregates.accuracy,
+    avgAcceptedRuntimeMs: aggregates.avgAcceptedRuntimeMs,
+    avgAcceptedMemoryKb: aggregates.avgAcceptedMemoryKb,
     lastAcceptedAt: aggregates.lastAcceptedAt,
     updatedAt: now,
   };

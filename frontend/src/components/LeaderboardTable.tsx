@@ -44,6 +44,19 @@ interface LeaderboardTableProps {
  * Podium plus ranked table for both leaderboards. Columns follow the mode: problem ratings show
  * accuracy, contest standings show the time and violations that actually decide contest rank.
  */
+/**
+ * Efficiency is a 0-1 percentile against the ranked field, shown as a percentage. A dash means
+ * there was no code to measure — an MCQ-only contest, or a student with no accepted solutions.
+ */
+function formatEfficiency(score: number | null): string {
+  return score === null ? "-" : `${Math.round(score * 100)}%`;
+}
+
+/** Program runtime stays in milliseconds — it is not person-time, so no duration formatting. */
+function formatRuntime(runtimeMs: number | null): string {
+  return runtimeMs === null || runtimeMs === 0 ? "-" : `${runtimeMs} ms`;
+}
+
 export function LeaderboardTable({
   rows,
   mode,
@@ -69,7 +82,7 @@ export function LeaderboardTable({
     currentRow && !visibleRows.some((row) => row.key === currentRow.key),
   );
   // Rank + Student + Solved + Score, plus Year/Time/Violations (contest) or Accuracy (problem).
-  const columnCount = isContest ? 7 : 5;
+  const columnCount = isContest ? 9 : 7;
 
   const withProfileLink = (row: LeaderboardRow, children: ReactNode, className?: string) =>
     linkToProfile ? (
@@ -111,6 +124,8 @@ export function LeaderboardTable({
       {isContest ? (
         <>
           <td className="hidden px-2 py-3 text-right font-mono-code sm:table-cell sm:px-4">{formatLeaderboardDuration(row.timeTakenMs)}</td>
+          <td className="hidden px-4 py-3 text-right font-mono-code lg:table-cell">{formatEfficiency(row.optimizationScore)}</td>
+          <td className="hidden px-4 py-3 text-right font-mono-code lg:table-cell">{formatRuntime(row.runtimeMs)}</td>
           <td
             className={cn(
               "hidden px-4 py-3 text-right font-mono-code md:table-cell",
@@ -121,7 +136,11 @@ export function LeaderboardTable({
           </td>
         </>
       ) : (
-        <td className="hidden px-2 py-3 text-right font-mono-code sm:table-cell sm:px-4">{row.accuracy ?? 0}%</td>
+        <>
+          <td className="hidden px-2 py-3 text-right font-mono-code sm:table-cell sm:px-4">{row.accuracy ?? 0}%</td>
+          <td className="hidden px-4 py-3 text-right font-mono-code lg:table-cell">{formatEfficiency(row.optimizationScore)}</td>
+          <td className="hidden px-4 py-3 text-right font-mono-code lg:table-cell">{formatRuntime(row.runtimeMs)}</td>
+        </>
       )}
     </tr>
   );
@@ -204,10 +223,16 @@ export function LeaderboardTable({
                 {isContest ? (
                   <>
                     <th className="hidden px-2 py-3 text-right font-semibold sm:table-cell sm:px-4">Time</th>
+                    <th className="hidden px-4 py-3 text-right font-semibold lg:table-cell">Efficiency</th>
+                    <th className="hidden px-4 py-3 text-right font-semibold lg:table-cell">Runtime</th>
                     <th className="hidden px-4 py-3 text-right font-semibold md:table-cell">Violations</th>
                   </>
                 ) : (
-                  <th className="hidden px-2 py-3 text-right font-semibold sm:table-cell sm:px-4">Accuracy</th>
+                  <>
+                    <th className="hidden px-2 py-3 text-right font-semibold sm:table-cell sm:px-4">Accuracy</th>
+                    <th className="hidden px-4 py-3 text-right font-semibold lg:table-cell">Efficiency</th>
+                    <th className="hidden px-4 py-3 text-right font-semibold lg:table-cell">Runtime</th>
+                  </>
                 )}
               </tr>
             </thead>
