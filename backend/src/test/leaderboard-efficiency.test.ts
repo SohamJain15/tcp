@@ -4,8 +4,17 @@ import {
   buildLeaderboardRanker,
   type LeaderboardEntry,
 } from "../modules/leaderboard/leaderboard.model";
-import { calculateUserAggregateSnapshot } from "../modules/submission/submission.service";
+import {
+  calculateUserAggregateSnapshot,
+  syncUserAndLeaderboard,
+} from "../modules/submission/submission.service";
 import type { SubmissionRecord } from "../modules/submission/submission.model";
+import type { UserRecord } from "../modules/user/user.model";
+import {
+  InMemoryLeaderboardRepository,
+  InMemorySubmissionRepository,
+  InMemoryUserRepository,
+} from "./helpers/in-memory-repositories";
 
 /**
  * Practice ranking: rating → accuracy → optimization (memory) → avg runtime → solved → email.
@@ -195,5 +204,68 @@ describe("user efficiency aggregates", () => {
     const aggregates = calculateUserAggregateSnapshot([]);
     expect(aggregates.avgAcceptedRuntimeMs).toBe(0);
     expect(aggregates.avgAcceptedMemoryKb).toBe(0);
+  });
+});
+
+describe("efficiency reaches the collection the board actually reads", () => {
+  /**
+   * The leaderboard reads a separate `leaderboard` collection, not `users`. Writing only the
+   * user record leaves the board showing stale rows — which is exactly what an earlier version
+   * of the backfill script did, and why this test exists.
+   */
+  it("writes efficiency to the leaderboard entry, not just the user record", async () => {
+    const userRepository = new InMemoryUserRepository();
+    const submissionRepository = new InMemorySubmissionRepository();
+    const leaderboardRepository = new InMemoryLeaderboardRepository();
+    const email = "student@tcetmumbai.in";
+
+    await userRepository.save({
+      email,
+      role: "STUDENT",
+      name: "Student",
+      uid: "24-AIDSA11-28",
+      isProfileComplete: true,
+      designation: null,
+      isHod: false,
+      rollNumber: "11",
+      department: "B.Tech – Artificial Intelligence & Data Science",
+      semester: 3,
+      linkedInUrl: null,
+      githubUrl: null,
+      skills: [],
+      rating: 0,
+      score: 0,
+      problemsSolved: 0,
+      submissionCount: 0,
+      acceptedSubmissionCount: 0,
+      accuracy: 0,
+      avgAcceptedRuntimeMs: 0,
+      avgAcceptedMemoryKb: 0,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      lastLoginAt: null,
+      lastAcceptedAt: null,
+    } as UserRecord);
+
+    await submissionRepository.create(
+      submission({ id: "s1", userEmail: email, problemId: "p1", runtimeMs: 42, memoryKb: 2048 }),
+    );
+
+    await syncUserAndLeaderboard(
+      { userRepository, submissionRepository, leaderboardRepository } as unknown as Parameters<
+        typeof syncUserAndLeaderboard
+      >[0],
+      email,
+      new Date("2026-05-07T00:00:00.000Z"),
+    );
+
+    const user = await userRepository.getByEmail(email);
+    expect(user?.avgAcceptedRuntimeMs).toBe(42);
+    expect(user?.avgAcceptedMemoryKb).toBe(2048);
+
+    // The part that was broken: the board's own data source must carry it too.
+    const entry = await leaderboardRepository.getByEmail(email);
+    expect(entry?.avgAcceptedRuntimeMs).toBe(42);
+    expect(entry?.avgAcceptedMemoryKb).toBe(2048);
   });
 });

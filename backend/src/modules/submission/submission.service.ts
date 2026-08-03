@@ -334,7 +334,14 @@ function calculateProblemAggregateSnapshot(submissions: SubmissionRecord[]): {
   };
 }
 
-async function syncUserAndLeaderboard(
+/**
+ * Recomputes a user's practice aggregates from their submission history and writes them to
+ * **both** the user record and the `leaderboard` collection the board actually reads.
+ *
+ * Exported so the efficiency backfill runs this exact path rather than a second copy of it —
+ * writing only the user record would leave the leaderboard showing stale rows.
+ */
+export async function syncUserAndLeaderboard(
   dependencies: SubmissionServiceDependencies,
   userEmail: string,
   now: Date,
