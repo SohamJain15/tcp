@@ -11,7 +11,16 @@ describe("api client", () => {
     expect(getApiBaseUrl()).toBeTruthy();
   });
 
-  it("adds frontend pathname header and parses json response", async () => {
+  /**
+   * `pathname` is accepted and deliberately NOT sent as a header.
+   *
+   * Sending `x-frontend-pathname` makes every call a non-simple request, so the browser issues a
+   * CORS preflight. The backend's `allowedHeaders` (app.ts) lists only Content-Type and
+   * Authorization, so the preflight fails and EVERY api call is blocked — the app cannot even
+   * load /api/users/me. Re-adding the header here without adding it to the backend CORS config
+   * at the same time takes the whole platform down.
+   */
+  it("does not send the pathname as a header, and parses the json response", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -28,10 +37,10 @@ describe("api client", () => {
 
     const [, options] = fetchMock.mock.calls[0];
     const requestHeaders = options?.headers as Record<string, string>;
-    expect(requestHeaders["x-frontend-pathname"]).toBe("/student/dashboard");
+    expect(requestHeaders["x-frontend-pathname"]).toBeUndefined();
   });
 
-  it("omits the pathname header when the value would be rejected by the backend guard", async () => {
+  it("sends only simple headers, so no request triggers a CORS preflight", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -39,15 +48,17 @@ describe("api client", () => {
       }),
     );
 
-    // Encoded emails and department names reach here with `%` and `.` in them. The backend
-    // rejects those outright, so sending the header would turn a working page into a 400.
     await apiRequest<{ ok: boolean }>("/health", {
-      pathname: "/faculty/students/a.student%40tcetmumbai.in",
+      method: "POST",
+      body: { hello: "world" },
+      pathname: "/student/dashboard",
     });
 
     const [, options] = fetchMock.mock.calls[0];
     const requestHeaders = options?.headers as Record<string, string>;
-    expect(requestHeaders["x-frontend-pathname"]).toBeUndefined();
+    // Content-Type is required for a json body and is already in the backend's allowedHeaders.
+    // Anything beyond this list must be added to that config in the same change.
+    expect(Object.keys(requestHeaders)).toEqual(["Content-Type"]);
   });
 
   it("normalizes backend error payload", async () => {

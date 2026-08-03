@@ -67,9 +67,6 @@ export type ApiRequestOptions = {
   responseType?: "json" | "text";
 };
 
-/** Kept in step with `createFrontendPathnameGuard` in the backend's app.ts. */
-const FRONTEND_PATHNAME_PATTERN = /^\/[a-zA-Z0-9/_-]*$/;
-
 function buildQueryString(query?: ApiRequestOptions["query"]): string {
   if (!query) {
     return "";
@@ -124,13 +121,6 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   const isJsonBody = options.body !== undefined;
   if (isJsonBody) {
     headers["Content-Type"] = "application/json";
-  }
-
-  // Tells the backend which screen the call came from. The guard there rejects a malformed value
-  // outright, so send it only when it matches the shape the server accepts — an unexpected
-  // character in a route id must never turn a working request into a 400.
-  if (options.pathname && FRONTEND_PATHNAME_PATTERN.test(options.pathname)) {
-    headers["x-frontend-pathname"] = options.pathname;
   }
 
   let response: Response;
