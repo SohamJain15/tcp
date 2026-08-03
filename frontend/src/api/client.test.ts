@@ -31,6 +31,25 @@ describe("api client", () => {
     expect(requestHeaders["x-frontend-pathname"]).toBe("/student/dashboard");
   });
 
+  it("omits the pathname header when the value would be rejected by the backend guard", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    // Encoded emails and department names reach here with `%` and `.` in them. The backend
+    // rejects those outright, so sending the header would turn a working page into a 400.
+    await apiRequest<{ ok: boolean }>("/health", {
+      pathname: "/faculty/students/a.student%40tcetmumbai.in",
+    });
+
+    const [, options] = fetchMock.mock.calls[0];
+    const requestHeaders = options?.headers as Record<string, string>;
+    expect(requestHeaders["x-frontend-pathname"]).toBeUndefined();
+  });
+
   it("normalizes backend error payload", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ message: "Validation failed" }), {

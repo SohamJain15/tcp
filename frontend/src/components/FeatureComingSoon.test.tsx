@@ -23,10 +23,10 @@ function renderPlaceholder() {
 }
 
 describe("feature flags", () => {
-  it("keeps Class Tests hidden until the flag is flipped", () => {
-    // This is the switch, and the only thing that needs changing to ship the feature — the pages,
-    // routes, API client and backend all stay in place behind it.
-    expect(CLASS_TESTS_ENABLED).toBe(false);
+  it("has Class Tests switched on", () => {
+    // The single switch behind the whole feature: the real pages and the navbar badge render
+    // instead of the placeholder. Flipping it back to `false` restores the placeholder.
+    expect(CLASS_TESTS_ENABLED).toBe(true);
   });
 });
 

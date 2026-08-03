@@ -1471,3 +1471,10 @@ export interface ContestReportGenerateEnvelope {
 export interface ContestReportMetricsEnvelope {
   metrics: ContestAnalytics;
 }
+
+/** Run / submit / draft payload for a Class Test coding question. */
+export interface ClassTestCodingPayload {
+  questionId: string;
+  code: string;
+  language: ExecutableLanguage;
+}

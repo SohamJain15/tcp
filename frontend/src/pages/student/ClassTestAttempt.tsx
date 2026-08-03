@@ -4,7 +4,8 @@ import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { classTestApi } from "@/api/services";
-import type { StudentClassTestQuestion } from "@/api/types";
+import type { ExecutableLanguage, StudentClassTestQuestion } from "@/api/types";
+import { ContestCodingBody } from "@/components/ContestCodingBody";
 import { AppLayout } from "@/components/AppLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -256,6 +257,9 @@ export default function ClassTestAttempt() {
             question={question}
             value={answers[question.id]}
             onChange={(answer) => setAnswer(question.id, answer)}
+            classTestId={id}
+            pathname={pathname}
+            attemptIsActive={active}
           />
         ))}
 
@@ -276,11 +280,17 @@ function QuestionCard({
   question,
   value,
   onChange,
+  classTestId,
+  pathname,
+  attemptIsActive,
 }: {
   index: number;
   question: StudentClassTestQuestion;
   value: string | string[] | undefined;
   onChange: (answer: string | string[]) => void;
+  classTestId: string;
+  pathname: string;
+  attemptIsActive: boolean;
 }) {
   return (
     <Card className="profile-card space-y-3 p-5">
@@ -340,11 +350,33 @@ function QuestionCard({
       )}
 
       {question.type === "Coding" && (
-        <div className="border border-dashed border-border p-4 text-sm text-muted-foreground">
-          Coding answers are not available in this build yet.
-          {question.supportedLanguages && question.supportedLanguages.length > 0 && (
-            <span> Allowed language{question.supportedLanguages.length === 1 ? "" : "s"}: {question.supportedLanguages.join(", ")}.</span>
-          )}
+        // The same workspace contests use — editor, console, run and submit — pointed at the
+        // class-test endpoints. The server also enforces the allowed languages, so the
+        // restriction holds even if this UI is bypassed.
+        <div className="h-[70vh] border border-border">
+          <ContestCodingBody
+            key={question.id}
+            contestId={classTestId}
+            questionId={question.id}
+            pathname={pathname}
+            attemptIsActive={attemptIsActive}
+            onAfterSubmit={() => undefined}
+            question={{
+              id: question.id,
+              title: question.problemTitle ?? question.statement,
+              problemStatement: question.statement,
+              constraints: question.constraints,
+              inputFormat: question.inputFormat,
+              outputFormat: question.outputFormat,
+              sampleTestCases: question.sampleTestCases ?? [],
+              supportedLanguages: question.supportedLanguages as ExecutableLanguage[] | undefined,
+            }}
+            codingApi={{
+              run: (input) => classTestApi.runCodingQuestion(classTestId, input, pathname),
+              submit: (input) => classTestApi.submitCodingQuestion(classTestId, input, pathname),
+              saveDraft: (input) => classTestApi.saveCodingDraft(classTestId, input, pathname),
+            }}
+          />
         </div>
       )}
     </Card>

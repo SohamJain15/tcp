@@ -179,9 +179,12 @@ export default function CompleteProfile() {
   const uidLocked = payloadUid.length > 0 && parseUid(payloadUid) !== null;
   const uidDepartments = uidLocked ? (departmentsForUid(payloadUid) as Department[]) : [];
   const studentDepartmentOptions: Department[] = uidDepartments.length > 0 ? uidDepartments : DEPARTMENTS;
-  const defaultStudentDepartment: Department | undefined =
-    (userData?.user.department as Department | undefined) ??
-    (uidDepartments.length === 1 ? uidDepartments[0] : undefined);
+  // Ten of the eleven branch codes name exactly one department, so for almost every student
+  // there is nothing to choose — only IOT covers two programmes (IoT and CSE-IOT).
+  const departmentIsSettled = uidDepartments.length === 1;
+  const defaultStudentDepartment: Department | undefined = departmentIsSettled
+    ? uidDepartments[0]
+    : (userData?.user.department as Department | undefined);
 
   const studentForm = useForm<StudentProfileFormValues>({
     resolver: zodResolver(studentProfileSchema),
@@ -472,23 +475,43 @@ export default function CompleteProfile() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Department</FormLabel>
-                          <Select value={field.value} onValueChange={field.onChange}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select department" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {studentDepartmentOptions.map((department) => (
-                                <SelectItem key={department} value={department}>
-                                  {department}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormDescription className="text-xs">
-                            {uidLocked ? "Restricted to the department that matches your UID." : null}
-                          </FormDescription>
+                          {departmentIsSettled ? (
+                            // The UID names exactly one department, so there is nothing to
+                            // choose — showing a picker would only invite a wrong answer.
+                            <>
+                              <div className="flex h-10 items-center border border-border bg-muted/30 px-3 text-sm">
+                                {field.value}
+                              </div>
+                              <FormDescription className="text-xs">
+                                Read from your UID ({payloadUid}).
+                              </FormDescription>
+                            </>
+                          ) : (
+                            <>
+                              <Select value={field.value} onValueChange={field.onChange}>
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select department" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {studentDepartmentOptions.map((department) => (
+                                    <SelectItem key={department} value={department}>
+                                      {department}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormDescription className="text-xs">
+                                {/* Only IOT reaches here: that branch covers two distinct
+                                    programmes, and guessing between them would mis-scope the
+                                    student's contests, class tests and department reporting. */}
+                                {uidLocked
+                                  ? "Your UID covers two programmes — pick the one you are in."
+                                  : null}
+                              </FormDescription>
+                            </>
+                          )}
                           <FormMessage />
                         </FormItem>
                       )}

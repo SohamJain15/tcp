@@ -2,6 +2,7 @@ import { apiRequest, getApiBaseUrl } from "@/api/client";
 import type {
   AudiencePreviewItem,
   ClassTestAudienceFilter,
+  ClassTestCodingPayload,
   ClassTestRecordEnvelope,
   ClassTestSummary,
   CompleteProfilePayload,
@@ -56,6 +57,7 @@ import type {
   Submission,
   SubmissionEnvelope,
   SubmissionQueueReceipt,
+  SubmissionResult,
   SubmissionStatus,
   SubmissionSourceType,
   SubmissionWritePayload,
@@ -503,5 +505,23 @@ export const classTestApi = {
     apiRequest<{ result: StudentClassTestResult }>(
       `/api/class-tests/mine/${encodeURIComponent(classTestId)}/result`,
       { pathname },
+    ),
+
+  // Coding. The server rejects a language the question does not allow, so a crafted request
+  // cannot get round the editor's restriction.
+  runCodingQuestion: (classTestId: string, payload: ClassTestCodingPayload, pathname?: string) =>
+    apiRequest<{ result: SubmissionResult }>(
+      `/api/class-tests/mine/${encodeURIComponent(classTestId)}/coding-run`,
+      { method: "POST", body: payload, pathname },
+    ),
+  submitCodingQuestion: (classTestId: string, payload: ClassTestCodingPayload, pathname?: string) =>
+    apiRequest<{ submissionId: string; status: "queued" }>(
+      `/api/class-tests/mine/${encodeURIComponent(classTestId)}/coding-submissions`,
+      { method: "POST", body: payload, pathname },
+    ),
+  saveCodingDraft: (classTestId: string, payload: ClassTestCodingPayload, pathname?: string) =>
+    apiRequest<{ saved: boolean }>(
+      `/api/class-tests/mine/${encodeURIComponent(classTestId)}/coding-draft`,
+      { method: "POST", body: payload, pathname },
     ),
 };

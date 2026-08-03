@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Trash2, Users } from "lucide-react";
+import { CheckCircle2, ClipboardCopy, FileJson, Trash2, Upload, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -14,6 +14,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CONTEST_CODING_EXAMPLE_JSON, parseContestCodingQuestionsJson } from "@/lib/contest-question-import";
+import type { JsonImportFieldError } from "@/lib/problem-import-schema";
+import { copyTextToClipboard } from "@/lib/clipboard";
 
 const PATHNAME = "/faculty/class-tests/create";
 const DIVISIONS = ["A", "B", "C", "D", "E"];
@@ -31,7 +35,23 @@ interface DraftQuestion {
   modelAnswer: string;
   problemTitle: string;
   supportedLanguages: string[];
+  difficulty: "Easy" | "Medium" | "Hard";
+  constraints: string;
+  inputFormat: string;
+  outputFormat: string;
+  timeLimitSeconds: number;
+  memoryLimitMb: number;
+  sampleTestCases: TestCaseDraft[];
+  hiddenTestCases: TestCaseDraft[];
 }
+
+interface TestCaseDraft {
+  input: string;
+  output: string;
+  explanation: string;
+}
+
+const emptyTestCase = (): TestCaseDraft => ({ input: "", output: "", explanation: "" });
 
 function blankQuestion(type: ClassTestQuestionType): DraftQuestion {
   return {
@@ -48,6 +68,15 @@ function blankQuestion(type: ClassTestQuestionType): DraftQuestion {
     // Default to a single language: most class tests want one, and it also means the student
     // sees no language picker at all.
     supportedLanguages: ["java"],
+    difficulty: "Easy",
+    constraints: "",
+    inputFormat: "",
+    outputFormat: "",
+    timeLimitSeconds: 2,
+    memoryLimitMb: 256,
+    sampleTestCases: [emptyTestCase()],
+    // A coding question is refused without one — marks are proportional to hidden cases passed.
+    hiddenTestCases: [emptyTestCase()],
   };
 }
 
@@ -84,8 +113,25 @@ function toPayloadQuestion(question: DraftQuestion) {
         ...base,
         type: "Coding",
         problemTitle: question.problemTitle,
-        difficulty: "Easy",
+        difficulty: question.difficulty,
         problemStatement: question.statement,
+        constraints: question.constraints,
+        inputFormat: question.inputFormat,
+        outputFormat: question.outputFormat,
+        timeLimitSeconds: Number(question.timeLimitSeconds),
+        memoryLimitMb: Number(question.memoryLimitMb),
+        // Blank rows are scaffolding the faculty never filled in — drop them rather than
+        // judging against an empty case.
+        sampleTestCases: question.sampleTestCases
+          .filter((testCase) => testCase.input.trim() !== "" || testCase.output.trim() !== "")
+          .map((testCase) => ({
+            input: testCase.input,
+            output: testCase.output,
+            explanation: testCase.explanation || undefined,
+          })),
+        hiddenTestCases: question.hiddenTestCases
+          .filter((testCase) => testCase.input.trim() !== "" || testCase.output.trim() !== "")
+          .map((testCase) => ({ input: testCase.input, output: testCase.output })),
         supportedLanguages: question.supportedLanguages,
       };
   }
@@ -110,6 +156,10 @@ export default function CreateClassTest() {
   });
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [questions, setQuestions] = useState<DraftQuestion[]>([blankQuestion("MCQ")]);
+  const [authoringTab, setAuthoringTab] = useState("form");
+  const [jsonSource, setJsonSource] = useState("");
+  const [jsonErrors, setJsonErrors] = useState<JsonImportFieldError[]>([]);
+  const [jsonStructureCopied, setJsonStructureCopied] = useState(false);
 
   const previewMutation = useMutation({
     mutationFn: () => classTestApi.previewAudience(audience, PATHNAME),
@@ -146,6 +196,69 @@ export default function CreateClassTest() {
 
   const updateQuestion = (key: string, patch: Partial<DraftQuestion>) => {
     setQuestions((current) => current.map((q) => (q.key === key ? { ...q, ...patch } : q)));
+  };
+
+  const updateTestCase = (
+    key: string,
+    bucket: "sampleTestCases" | "hiddenTestCases",
+    index: number,
+    patch: Partial<TestCaseDraft>,
+  ) => {
+    setQuestions((current) =>
+      current.map((q) =>
+        q.key === key
+          ? { ...q, [bucket]: q[bucket].map((tc, i) => (i === index ? { ...tc, ...patch } : tc)) }
+          : q,
+      ),
+    );
+  };
+
+  const copyJsonStructure = async () => {
+    try {
+      await copyTextToClipboard(CONTEST_CODING_EXAMPLE_JSON);
+      setJsonStructureCopied(true);
+      toast.success("Ideal JSON structure copied");
+      window.setTimeout(() => setJsonStructureCopied(false), 1600);
+    } catch {
+      toast.error("Could not copy JSON structure");
+    }
+  };
+
+  // Same parser and same JSON shape contests use, so a question file written for one works in
+  // the other. Imported questions land in the list below for review before scheduling.
+  const importQuestionsFromJson = (source: string) => {
+    const { questions: imported, errors } = parseContestCodingQuestionsJson(source);
+    setJsonErrors(errors);
+    if (errors.length > 0) return;
+
+    setQuestions((current) => [
+      ...current,
+      ...imported.map((question) => ({
+        ...blankQuestion("Coding"),
+        // The shared parser defaults an omitted `points` to 100 (contest scale) — the Marks
+        // field beside each question is where faculty bring that down to class-test marks.
+        points: question.points,
+        problemTitle: question.problemTitle,
+        difficulty: question.difficulty,
+        statement: question.problemStatement,
+        constraints: question.constraints,
+        inputFormat: question.inputFormat,
+        outputFormat: question.outputFormat,
+        sampleTestCases: question.sampleTestCases.map((tc) => ({ ...tc, explanation: "" })),
+        hiddenTestCases: question.hiddenTestCases.map((tc) => ({ ...tc, explanation: "" })),
+      })),
+    ]);
+    setJsonSource("");
+    setAuthoringTab("form");
+    toast.success(`${imported.length} coding question${imported.length === 1 ? "" : "s"} added`);
+  };
+
+  const importQuestionsFromFile = async (file: File) => {
+    try {
+      importQuestionsFromJson(await file.text());
+    } catch {
+      toast.error("Could not read that file");
+    }
   };
 
   const assignedCount = candidates.filter((student) => !excluded.has(student.email)).length;
@@ -335,6 +448,83 @@ export default function CreateClassTest() {
         </Card>
 
         <Card className="profile-card space-y-4 p-5">
+          <Tabs value={authoringTab} onValueChange={setAuthoringTab}>
+            <TabsList className="grid w-full max-w-md grid-cols-2">
+              <TabsTrigger value="form">Questions</TabsTrigger>
+              <TabsTrigger value="json">
+                <FileJson className="mr-1.5 h-3.5 w-3.5" /> Import JSON
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="json" className="mt-5 space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-display text-base font-bold">Import coding questions</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Paste one coding question or an array of them, or upload a .json file. This is
+                    the same format contests use, so a question file works in both. MCQ, MSQ and
+                    short answer are written by hand.
+                  </p>
+                </div>
+                <Button type="button" variant="outline" onClick={copyJsonStructure}>
+                  {jsonStructureCopied ? (
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                  ) : (
+                    <ClipboardCopy className="mr-2 h-4 w-4" />
+                  )}
+                  {jsonStructureCopied ? "Copied structure" : "Copy JSON structure"}
+                </Button>
+              </div>
+
+              <Textarea
+                value={jsonSource}
+                onChange={(e) => setJsonSource(e.target.value)}
+                placeholder="Paste the copied JSON structure here and replace the values with your question data."
+                className="min-h-[280px] resize-y font-mono-code text-xs leading-5"
+              />
+
+              {jsonErrors.length > 0 ? (
+                <div className="max-h-48 overflow-auto border border-destructive/30 bg-destructive/10 p-3 text-sm">
+                  <p className="font-medium text-destructive">Import validation failed</p>
+                  <ul className="mt-2 space-y-1">
+                    {jsonErrors.map((error, index) => (
+                      <li key={`${error.path}-${error.message}-${index}`}>
+                        <span className="font-mono-code text-xs">{error.path}</span>: {error.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="border border-border bg-muted/60 p-3 text-sm text-muted-foreground">
+                  Imported questions are added to the Questions tab, where you can set the marks and
+                  the languages students may answer in before scheduling.
+                </p>
+              )}
+
+              <div className="flex flex-wrap justify-end gap-3">
+                <Button type="button" variant="outline" asChild>
+                  <label className="cursor-pointer">
+                    <FileJson className="mr-2 h-4 w-4" /> Upload .json file
+                    <input
+                      type="file"
+                      accept="application/json,.json"
+                      className="sr-only"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        // Reset first, so picking the same file twice still fires a change.
+                        e.target.value = "";
+                        if (file) void importQuestionsFromFile(file);
+                      }}
+                    />
+                  </label>
+                </Button>
+                <Button type="button" onClick={() => importQuestionsFromJson(jsonSource)} disabled={!jsonSource.trim()}>
+                  <Upload className="mr-2 h-4 w-4" /> Validate & add questions
+                </Button>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="form" className="mt-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Questions</h2>
             <div className="flex flex-wrap gap-2">
@@ -383,11 +573,20 @@ export default function CreateClassTest() {
               </div>
 
               {question.type === "Coding" && (
-                <Input
-                  placeholder="Problem title"
-                  value={question.problemTitle}
-                  onChange={(e) => updateQuestion(question.key, { problemTitle: e.target.value })}
-                />
+                <div className="grid gap-3 md:grid-cols-[1fr_10rem]">
+                  <Input
+                    placeholder="Problem title"
+                    value={question.problemTitle}
+                    onChange={(e) => updateQuestion(question.key, { problemTitle: e.target.value })}
+                  />
+                  <ThemedSelect
+                    value={question.difficulty}
+                    onValueChange={(value) =>
+                      updateQuestion(question.key, { difficulty: value as DraftQuestion["difficulty"] })
+                    }
+                    options={["Easy", "Medium", "Hard"].map((d) => ({ value: d, label: d }))}
+                  />
+                </div>
               )}
 
               <Textarea
@@ -489,11 +688,130 @@ export default function CreateClassTest() {
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Pick one to force a single language — students then get no language choice at all.
+                    The server rejects any other language, so this holds even outside the editor.
                   </p>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <div>
+                      <Label className="text-xs">Input format</Label>
+                      <Textarea
+                        value={question.inputFormat}
+                        onChange={(e) => updateQuestion(question.key, { inputFormat: e.target.value })}
+                        placeholder="First line contains N…"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Output format</Label>
+                      <Textarea
+                        value={question.outputFormat}
+                        onChange={(e) => updateQuestion(question.key, { outputFormat: e.target.value })}
+                        placeholder="Print a single integer…"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <Label className="text-xs">Constraints</Label>
+                      <Textarea
+                        value={question.constraints}
+                        onChange={(e) => updateQuestion(question.key, { constraints: e.target.value })}
+                        placeholder="1 <= N <= 10^5"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Time limit (seconds)</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={question.timeLimitSeconds}
+                        onChange={(e) => updateQuestion(question.key, { timeLimitSeconds: Number(e.target.value) })}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Memory limit (MB)</Label>
+                      <Input
+                        type="number"
+                        min={16}
+                        max={1024}
+                        value={question.memoryLimitMb}
+                        onChange={(e) => updateQuestion(question.key, { memoryLimitMb: Number(e.target.value) })}
+                      />
+                    </div>
+                  </div>
+
+                  {(["sampleTestCases", "hiddenTestCases"] as const).map((bucket) => (
+                    <div key={bucket} className="mt-4 space-y-2">
+                      <Label className="text-xs">
+                        {bucket === "sampleTestCases" ? "Sample test cases (students see these)" : "Hidden test cases (used for marks)"}
+                      </Label>
+                      {question[bucket].map((testCase, caseIndex) => (
+                        <div key={caseIndex} className="space-y-2 border border-border p-3">
+                          <div className="grid gap-2 md:grid-cols-2">
+                            <Textarea
+                              value={testCase.input}
+                              onChange={(e) => updateTestCase(question.key, bucket, caseIndex, { input: e.target.value })}
+                              placeholder="Input"
+                              className="font-mono-code text-xs"
+                            />
+                            <Textarea
+                              value={testCase.output}
+                              onChange={(e) => updateTestCase(question.key, bucket, caseIndex, { output: e.target.value })}
+                              placeholder="Expected output"
+                              className="font-mono-code text-xs"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {bucket === "sampleTestCases" && (
+                              <Input
+                                value={testCase.explanation}
+                                onChange={(e) =>
+                                  updateTestCase(question.key, bucket, caseIndex, { explanation: e.target.value })
+                                }
+                                placeholder="Explanation (optional)"
+                              />
+                            )}
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="ml-auto"
+                              onClick={() =>
+                                updateQuestion(question.key, {
+                                  [bucket]: question[bucket].filter((_, i) => i !== caseIndex),
+                                } as Partial<DraftQuestion>)
+                              }
+                              aria-label="Remove test case"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          updateQuestion(question.key, {
+                            [bucket]: [...question[bucket], emptyTestCase()],
+                          } as Partial<DraftQuestion>)
+                        }
+                      >
+                        + Test case
+                      </Button>
+                      {bucket === "hiddenTestCases" && question.hiddenTestCases.every((tc) => tc.input.trim() === "" && tc.output.trim() === "") && (
+                        <p className="text-xs text-destructive">
+                          Add at least one hidden test case — without one, students are scored only on
+                          cases they can already see.
+                        </p>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           ))}
+            </TabsContent>
+          </Tabs>
         </Card>
 
         <div className="flex justify-end gap-3">

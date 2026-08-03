@@ -330,9 +330,9 @@ export default function ContestDetail() {
   const attemptIsLocked = Boolean(attempt && attempt.status !== "ACTIVE");
   const feedbackSubmitted = Boolean(contest.feedbackSubmitted);
   // Published results are withheld until the student submits feedback for this contest.
-  // Asked for as soon as the contest is over, while the experience is still fresh — not held
-  // back until results are published. It is still what unlocks the report and standings.
-  const feedbackDue = contestEnded && !feedbackSubmitted;
+  // Asked for the moment this student is done — they submitted, or the window shut on them —
+  // rather than held back until results are published. It is still what unlocks the report.
+  const feedbackDue = (attemptIsLocked || contestEnded) && !feedbackSubmitted;
   // The report — scores, correct answers, rank — appears only once faculty publishes results AND
   // the student has given feedback (the backend returns no report until both hold).
   const showReport = Boolean(report) && contest.resultsPublished && feedbackSubmitted;
@@ -487,6 +487,18 @@ export default function ContestDetail() {
             <p className="mt-1.5 text-sm text-muted-foreground">
               Your answers are locked in. Results are released after faculty publishes them.
             </p>
+            {/* Asked here, right after submitting, while the experience is still fresh — rather
+                than days later when results go out. */}
+            {!feedbackSubmitted && (
+              <div className="mt-4">
+                <p className="text-sm text-muted-foreground">
+                  While it is fresh — how did that go?
+                </p>
+                <Button asChild className="mt-2 bg-accent text-accent-foreground hover:bg-accent/90">
+                  <Link to={`/student/contests/${id}/feedback`}>Give feedback</Link>
+                </Button>
+              </div>
+            )}
             <div className="mt-4 flex justify-center">
               <ContestTimer deadline={contest.endAt} label="Contest closes in" />
             </div>

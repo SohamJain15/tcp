@@ -6,7 +6,7 @@ import type { ImperativePanelHandle } from "react-resizable-panels";
 import { ChevronDown, Play, Send } from "lucide-react";
 import { toast } from "sonner";
 
-import { contestsApi, submissionsApi } from "@/api/services";
+import { submissionsApi } from "@/api/services";
 import { EXECUTABLE_LANGUAGES, toLanguageLabel, toStatusLabel } from "@/api/mappers";
 import type {
   CodingContestQuestionDetail,
@@ -63,15 +63,51 @@ function getFileExtension(language: ExecutableLanguage): string {
 
 const DRAFT_AUTOSAVE_DELAY_MS = 1000;
 
+/**
+ * Where run / submit / draft-save go.
+ *
+ * Injected rather than hard-wired so the same workspace serves contests and class tests — the
+ * editor, console, verdict handling and draft persistence are identical, only the endpoints
+ * differ. Contests pass the contest implementation, so their behaviour is unchanged.
+ */
+export interface CodingWorkspaceApi {
+  run(input: CodingWorkspaceInput): Promise<{ result: SubmissionResult }>;
+  submit(input: CodingWorkspaceInput): Promise<{ submissionId: string }>;
+  saveDraft(input: CodingWorkspaceInput): Promise<unknown>;
+}
+
+export interface CodingWorkspaceInput {
+  questionId: string;
+  code: string;
+  language: ExecutableLanguage;
+}
+
+/**
+ * Only what the workspace actually renders. Kept structural rather than tied to the contest
+ * type so a class-test question satisfies it too.
+ */
+export interface CodingWorkspaceQuestion {
+  id: string;
+  title: string;
+  problemStatement: string;
+  constraints?: string;
+  inputFormat?: string;
+  outputFormat?: string;
+  sampleTestCases: { input: string; output: string; explanation?: string }[];
+  /** When set, the language picker offers only these — and disappears if there is just one. */
+  supportedLanguages?: ExecutableLanguage[];
+}
+
 interface ContestCodingBodyProps {
+  /** Namespaces the per-question sessionStorage drafts; any stable id works. */
   contestId: string;
   questionId: string;
   pathname: string;
-  question: CodingContestQuestionDetail;
-  attempt: ContestAttempt | null;
+  question: CodingWorkspaceQuestion;
   attemptIsActive: boolean;
   /** Refetch the attempt so the nav reflects the new "attempted" status after a submit. */
   onAfterSubmit: () => void;
+  codingApi: CodingWorkspaceApi;
 }
 
 /**
@@ -85,9 +121,9 @@ export function ContestCodingBody({
   questionId,
   pathname,
   question,
-  attempt,
   attemptIsActive,
   onAfterSubmit,
+  codingApi,
 }: ContestCodingBodyProps) {
   const editorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(null);
   const editorLockRef = useRef<(() => void) | null>(null);
@@ -108,11 +144,22 @@ export function ContestCodingBody({
     }
   };
 
+  // A question may restrict which languages it accepts (class tests do; contests offer all).
+  const availableLanguages: ExecutableLanguage[] =
+    question.supportedLanguages && question.supportedLanguages.length > 0
+      ? question.supportedLanguages
+      : (EXECUTABLE_LANGUAGES as ExecutableLanguage[]);
+
   // Reopen the question in whatever language it was last written in, otherwise a student who wrote
-  // Python and navigated away would come back to an empty default-language editor.
-  const [language, setLanguage] = useState<ExecutableLanguage>(
-    () => (getLanguage(questionId) as ExecutableLanguage | null) ?? ((EXECUTABLE_LANGUAGES[0] ?? "cpp") as ExecutableLanguage),
-  );
+  // Python and navigated away would come back to an empty default-language editor. A remembered
+  // language the question no longer allows is ignored.
+  const [language, setLanguage] = useState<ExecutableLanguage>(() => {
+    const remembered = getLanguage(questionId) as ExecutableLanguage | null;
+    if (remembered && availableLanguages.includes(remembered)) {
+      return remembered;
+    }
+    return availableLanguages[0] ?? ("cpp" as ExecutableLanguage);
+  });
   // Per-language edits for this question, seeded from the persisted draft.
   const [drafts, setDrafts] = useState<Partial<Record<ExecutableLanguage, string>>>({});
   const [runResult, setRunResult] = useState<SubmissionResult | null>(null);
@@ -139,8 +186,8 @@ export function ContestCodingBody({
       return;
     }
     autoSaveTimerRef.current = window.setTimeout(() => {
-      void contestsApi
-        .saveCodingDraft(contestId, { questionId, code: value, language }, pathname)
+      void codingApi
+        .saveDraft({ questionId, code: value, language })
         .catch(() => {
           // Best-effort: the local draft is still safe in sessionStorage.
         });
@@ -157,7 +204,7 @@ export function ContestCodingBody({
   );
 
   const runMutation = useMutation({
-    mutationFn: () => contestsApi.runCodingQuestion(contestId, { questionId, code, language }, pathname),
+    mutationFn: () => codingApi.run({ questionId, code, language }),
     onSuccess: (response) => {
       setRunResult(response.result);
       setVerdict(null);
@@ -170,7 +217,7 @@ export function ContestCodingBody({
 
   const submitMutation = useMutation({
     mutationFn: async () => {
-      const receipt = await contestsApi.submitCodingQuestion(contestId, { questionId, code, language }, pathname);
+      const receipt = await codingApi.submit({ questionId, code, language });
       // Wait for the judge so we can show a real verdict + pass count against all test cases.
       return pollSubmissionUntilComplete(receipt.submissionId, (id) =>
         submissionsApi.getById(id, pathname).then((envelope) => envelope.submission),
@@ -268,16 +315,23 @@ export function ContestCodingBody({
             <Card className="flex h-full flex-col overflow-hidden shadow-card">
             <div className="flex items-center justify-between border-b border-border px-3 py-2">
               <div className="flex items-center gap-2">
-                <ThemedSelect
-                  value={language}
-                  onValueChange={(value) => changeLanguage(value as ExecutableLanguage)}
-                  disabled={!attemptIsActive}
-                  triggerClassName="h-9 w-auto min-w-[130px] text-sm"
-                  options={EXECUTABLE_LANGUAGES.map((supportedLanguage) => ({
-                    value: supportedLanguage,
-                    label: toLanguageLabel(supportedLanguage),
-                  }))}
-                />
+                {availableLanguages.length > 1 ? (
+                  <ThemedSelect
+                    value={language}
+                    onValueChange={(value) => changeLanguage(value as ExecutableLanguage)}
+                    disabled={!attemptIsActive}
+                    triggerClassName="h-9 w-auto min-w-[130px] text-sm"
+                    options={availableLanguages.map((supportedLanguage) => ({
+                      value: supportedLanguage,
+                      label: toLanguageLabel(supportedLanguage),
+                    }))}
+                  />
+                ) : (
+                  // Exactly one allowed language: a dropdown with a single item is just noise.
+                  <div className="rounded-md bg-secondary px-3 py-1.5 text-sm text-secondary-foreground">
+                    {toLanguageLabel(language)}
+                  </div>
+                )}
                 <div className="rounded-md bg-secondary px-3 py-1.5 text-sm text-secondary-foreground">
                   Main.{getFileExtension(language)}
                 </div>

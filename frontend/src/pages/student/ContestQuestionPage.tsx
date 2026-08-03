@@ -223,9 +223,14 @@ export default function ContestQuestionPage() {
               questionId={questionId}
               pathname={pathname}
               question={question}
-              attempt={attempt}
               attemptIsActive={attemptIsActive}
               onAfterSubmit={() => void refetch()}
+              // The contest endpoints — identical to what the component called directly before.
+              codingApi={{
+                run: (input) => contestsApi.runCodingQuestion(id, input, pathname),
+                submit: (input) => contestsApi.submitCodingQuestion(id, input, pathname),
+                saveDraft: (input) => contestsApi.saveCodingDraft(id, input, pathname),
+              }}
             />
           ) : (
             <ContestObjectiveQuestion
