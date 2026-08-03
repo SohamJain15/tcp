@@ -36,6 +36,21 @@ export function createClassTestRouter(dependencies: ApplicationDependencies): Ro
     requireRole("STUDENT"),
     asyncHandler(controller.recordProctorEvent),
   );
+  router.post(
+    "/mine/:classTestId/coding-run",
+    requireRole("STUDENT"),
+    asyncHandler(controller.runCodingQuestion),
+  );
+  router.post(
+    "/mine/:classTestId/coding-submissions",
+    requireRole("STUDENT"),
+    asyncHandler(controller.submitCodingQuestion),
+  );
+  router.post(
+    "/mine/:classTestId/coding-draft",
+    requireRole("STUDENT"),
+    asyncHandler(controller.saveCodingDraft),
+  );
 
   router.get("/", requireRole("FACULTY"), asyncHandler(controller.listClassTests));
   router.post("/", requireRole("FACULTY"), asyncHandler(controller.createClassTest));

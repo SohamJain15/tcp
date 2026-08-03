@@ -67,7 +67,19 @@ const codingSchema = z.object({
     .min(1, "Choose at least one language students may answer in"),
 });
 
-const questionSchema = z.discriminatedUnion("type", [mcqSchema, msqSchema, shortAnswerSchema, codingSchema]);
+const questionSchema = z
+  .discriminatedUnion("type", [mcqSchema, msqSchema, shortAnswerSchema, codingSchema])
+  .superRefine((value, ctx) => {
+    // Marks are proportional to test cases passed, so a coding question with only visible
+    // samples scores every student on work they could already see. Contests refuse this too.
+    if (value.type === "Coding" && value.hiddenTestCases.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Add at least one hidden test case",
+        path: ["hiddenTestCases"],
+      });
+    }
+  });
 
 const audienceSchema = z
   .object({
@@ -125,6 +137,19 @@ export const classTestProctorEventSchema = z.object({
     "CONTEXT_MENU",
     "PRINT_SCREEN",
   ]),
+});
+
+export const classTestCodingRunSchema = z.object({
+  questionId: z.string().trim().min(1),
+  code: z.string().min(1, "Write some code first"),
+  language: z.enum(EXECUTABLE_LANGUAGES as [ExecutableLanguage, ...ExecutableLanguage[]]),
+});
+
+/** A draft may be empty — the student could have cleared the editor. */
+export const classTestCodingDraftSchema = z.object({
+  questionId: z.string().trim().min(1),
+  code: z.string(),
+  language: z.enum(EXECUTABLE_LANGUAGES as [ExecutableLanguage, ...ExecutableLanguage[]]),
 });
 
 export const gradeShortAnswerSchema = z.object({

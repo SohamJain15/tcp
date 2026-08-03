@@ -155,6 +155,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     problemRepository: repositories.problemRepository,
     contestRepository: repositories.contestRepository,
     contestAttemptRepository: repositories.contestAttemptRepository,
+    classTestRepository: repositories.classTestRepository,
     submissionRepository: repositories.submissionRepository,
     userRepository: repositories.userRepository,
     leaderboardRepository: repositories.leaderboardRepository,
@@ -211,6 +212,8 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     classTestProctoringRepository: repositories.classTestProctoringRepository,
     userRepository: repositories.userRepository,
     submissionRepository: repositories.submissionRepository,
+    executionProvider,
+    submissionQueue,
     now,
   });
 

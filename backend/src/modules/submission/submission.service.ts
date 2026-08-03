@@ -25,6 +25,8 @@ import {
   type ContestAttemptRecord,
 } from "../contest/contest.model";
 import type { ContestAttemptRepository, ContestRepository } from "../contest/contest.repository";
+import type { ClassTestCodingQuestion } from "../classtest/classtest.model";
+import type { ClassTestRepository } from "../classtest/classtest.repository";
 import type { ProblemRecord } from "../problem/problem.model";
 import type { ProblemRepository } from "../problem/problem.repository";
 import type { UserRecord } from "../user/user.model";
@@ -57,6 +59,7 @@ interface SubmissionServiceDependencies {
   problemRepository: ProblemRepository;
   contestRepository: ContestRepository;
   contestAttemptRepository: ContestAttemptRepository;
+  classTestRepository: ClassTestRepository;
   submissionRepository: SubmissionRepository;
   userRepository: UserRepository;
   leaderboardRepository: LeaderboardRepository;
@@ -401,7 +404,10 @@ async function finalizeSubmission(
 
   await dependencies.submissionRepository.save(updatedSubmission);
 
-  if (updatedSubmission.sourceType === "contest_coding") {
+  // Contest and class-test code is graded by its own module. Neither may award practice rating
+  // or mark a problem solved: `problemId` there is a question id, not a problem, and a class
+  // test is coursework that must never touch the public leaderboard.
+  if (updatedSubmission.sourceType !== "problem") {
     return updatedSubmission;
   }
 
@@ -501,6 +507,8 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
         contestId: null,
         contestTitleSnapshot: null,
         contestQuestionId: null,
+        classTestId: null,
+        classTestQuestionId: null,
         code: input.code,
         language: input.language,
         status: "QUEUED",
@@ -598,6 +606,43 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
               language: runningSubmission.language,
               testCases: [...question.sampleTestCases, ...question.hiddenTestCases],
               problemId: `${contest.id}:${question.id}`,
+              timeLimitSeconds: question.timeLimitSeconds,
+              memoryLimitMb: question.memoryLimitMb,
+            });
+          }
+        } else if (runningSubmission.sourceType === "classtest_coding") {
+          const classTest = runningSubmission.classTestId
+            ? await dependencies.classTestRepository.getById(runningSubmission.classTestId)
+            : null;
+          if (!classTest) {
+            throw new AppError(404, "Class test not found");
+          }
+
+          const question = classTest.questions.find(
+            (item): item is ClassTestCodingQuestion =>
+              item.id === runningSubmission.classTestQuestionId && item.type === "Coding",
+          );
+          if (!question) {
+            throw new AppError(404, "Class test question not found");
+          }
+
+          {
+            const program = generateSubmissionProgram(
+              runningSubmission.language,
+              runningSubmission.code,
+              question.harness,
+            );
+            result = await dependencies.executionProvider.executeSubmission({
+              code: program.source,
+              comparison: program.comparison,
+              batchProgram: buildBatchProgram(
+                runningSubmission.language,
+                runningSubmission.code,
+                question.harness,
+              ),
+              language: runningSubmission.language,
+              testCases: [...question.sampleTestCases, ...question.hiddenTestCases],
+              problemId: `${classTest.id}:${question.id}`,
               timeLimitSeconds: question.timeLimitSeconds,
               memoryLimitMb: question.memoryLimitMb,
             });

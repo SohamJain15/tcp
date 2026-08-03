@@ -194,6 +194,8 @@ function buildSubmission(
     contestId: "contest_report_1",
     contestTitleSnapshot: "Data Structures Sprint",
     contestQuestionId: "q_code_1",
+    classTestId: null,
+    classTestQuestionId: null,
     code: "int main(){}",
     language: "cpp",
     status: "ACCEPTED",

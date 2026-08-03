@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { env } from "../../config/env";
+import type { ExecutionProvider } from "../../execution/execution-provider";
+import { generateSubmissionProgram } from "../../execution/harness";
+import type { SubmissionQueue } from "../../queue/submission-queue";
 import { DEFAULT_PROBLEM_MEMORY_LIMIT_MB, DEFAULT_PROBLEM_TIME_LIMIT_SECONDS } from "../../shared/constants/domain";
 import { AppError } from "../../shared/errors/app-error";
 import type { AuthenticatedUser } from "../../shared/types/auth";
+import type { ExecutableLanguage } from "../../shared/types/domain";
 import type { UserRepository } from "../user/user.repository";
 import type { SubmissionRepository } from "../submission/submission.repository";
 import {
@@ -9,6 +14,7 @@ import {
   computeClassTestEndAt,
   computeClassTestStatus,
   isAssignedToClassTest,
+  isLanguageAllowed,
   matchesAudienceFilter,
   scoreObjectiveAnswer,
   toAssignedStudent,
@@ -16,6 +22,7 @@ import {
   type AssignedStudent,
   type ClassTestAttemptRecord,
   type ClassTestAudienceFilter,
+  type ClassTestCodingQuestion,
   type ClassTestQuestion,
   type ClassTestRecord,
   type StudentClassTestQuestion,
@@ -134,6 +141,19 @@ export interface ClassTestService {
   recordProctorEvent(user: AuthenticatedUser, classTestId: string, type: string): Promise<{ autoSubmitted: boolean; violationCount: number }>;
   getStudentResult(user: AuthenticatedUser, classTestId: string): Promise<StudentClassTestResult>;
 
+  // --- coding ---
+  runCodingQuestion(
+    user: AuthenticatedUser,
+    classTestId: string,
+    input: CodingRunInput,
+  ): Promise<ClassTestCodingRunResult>;
+  submitCodingQuestion(
+    user: AuthenticatedUser,
+    classTestId: string,
+    input: CodingRunInput,
+  ): Promise<{ submissionId: string; status: "queued" }>;
+  saveCodingDraft(user: AuthenticatedUser, classTestId: string, input: CodingDraftInput): Promise<void>;
+
   // --- grading ---
   listAttemptsForFaculty(user: AuthenticatedUser, classTestId: string): Promise<FacultyAttemptSummary[]>;
   getAttemptForGrading(user: AuthenticatedUser, classTestId: string, attemptId: string): Promise<FacultyAttemptDetail>;
@@ -144,6 +164,31 @@ export interface ClassTestService {
     input: GradeShortAnswerInput,
   ): Promise<FacultyAttemptDetail>;
   publishResults(user: AuthenticatedUser, classTestId: string, published: boolean): Promise<ClassTestRecord>;
+}
+
+export interface CodingRunInput {
+  questionId: string;
+  code: string;
+  language: ExecutableLanguage;
+}
+
+export interface CodingDraftInput {
+  questionId: string;
+  code: string;
+  language: ExecutableLanguage;
+}
+
+export interface ClassTestCodingRunResult {
+  questionId: string;
+  language: ExecutableLanguage;
+  status: string;
+  runtimeMs: number;
+  memoryKb: number;
+  passedCount: number;
+  totalCount: number;
+  executionProvider: string;
+  stdout?: string;
+  stderr?: string;
 }
 
 export interface FacultyAttemptSummary {
@@ -184,8 +229,12 @@ interface ClassTestServiceDependencies {
   classTestAttemptRepository: ClassTestAttemptRepository;
   classTestProctoringRepository: ClassTestProctoringRepository;
   userRepository: UserRepository;
-  /** Read-only: coding marks are taken from the final judged verdict at scoring time. */
+  /** Written when a student submits code; read back for its verdict at scoring time. */
   submissionRepository: SubmissionRepository;
+  /** Runs sample cases synchronously for the student's "Run" button. */
+  executionProvider: ExecutionProvider;
+  /** Full judging happens in the background, exactly as it does for problems and contests. */
+  submissionQueue: SubmissionQueue;
   now: () => Date;
 }
 
@@ -589,6 +638,146 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
       };
     },
 
+    // --- coding -------------------------------------------------------------
+
+    async runCodingQuestion(user, classTestId, input) {
+      const now = dependencies.now();
+      const { test, attempt } = await loadForStudent(user, classTestId);
+      const live = ensureWritableAttempt(test, attempt, now);
+      const question = ensureCodingQuestion(test, input.questionId, input.language);
+
+      // Sample cases only: "Run" is for checking your own work, so hidden cases stay hidden.
+      const program = generateSubmissionProgram(input.language, input.code, question.harness);
+      const result = await dependencies.executionProvider.executeRun({
+        code: program.source,
+        comparison: program.comparison,
+        language: input.language,
+        testCases: question.sampleTestCases,
+        problemId: `${test.id}:${question.id}`,
+        timeLimitSeconds: question.timeLimitSeconds,
+        memoryLimitMb: question.memoryLimitMb,
+      });
+
+      // Running is not answering — keep the draft current so a refresh does not lose the code.
+      await saveDraftOnAttempt(live, input, now);
+
+      return {
+        questionId: question.id,
+        language: input.language,
+        status: result.status,
+        runtimeMs: result.runtimeMs,
+        memoryKb: result.memoryKb,
+        passedCount: result.passedCount,
+        totalCount: result.totalCount,
+        executionProvider: result.provider,
+        stdout: result.stdout,
+        stderr: result.stderr,
+      };
+    },
+
+    async submitCodingQuestion(user, classTestId, input) {
+      const now = dependencies.now();
+      const { test, attempt } = await loadForStudent(user, classTestId);
+      const live = ensureWritableAttempt(test, attempt, now);
+      const question = ensureCodingQuestion(test, input.questionId, input.language);
+
+      const profile = await dependencies.userRepository.getByEmail(user.email);
+      const submissionId = `submission_${randomUUID()}`;
+      const totalCount = question.sampleTestCases.length + question.hiddenTestCases.length;
+
+      await dependencies.submissionRepository.create({
+        id: submissionId,
+        queueJobId: null,
+        judge0Token: null,
+        sourceType: "classtest_coding",
+        userEmail: user.email,
+        userRole: profile?.role ?? "STUDENT",
+        userDepartment: profile?.department ?? live.userDepartment ?? null,
+        resourceOwnerEmail: test.createdBy,
+        resourceTargetDepartment: test.audience.department,
+        problemId: question.id,
+        problemTitleSnapshot: question.problemTitle,
+        problemDifficultySnapshot: question.difficulty,
+        contestId: null,
+        contestTitleSnapshot: null,
+        contestQuestionId: null,
+        classTestId: test.id,
+        classTestQuestionId: question.id,
+        code: input.code,
+        language: input.language,
+        status: "QUEUED",
+        runtimeMs: 0,
+        memoryKb: 0,
+        passedCount: 0,
+        totalCount,
+        executionProvider: env.EXECUTION_PROVIDER,
+        ratingAwarded: 0,
+        stdout: null,
+        stderr: null,
+        createdAt: now,
+        updatedAt: now,
+        judgedAt: null,
+        finalizationAppliedAt: null,
+      });
+
+      // Point the question state at this submission. Scoring reads the verdict from here at
+      // grading time, so a late judge result is still picked up — nothing is scored now.
+      const questionStates = live.questionStates.map((state) =>
+        state.questionId === question.id
+          ? {
+              ...state,
+              lastSubmissionId: submissionId,
+              finalSubmissionLanguage: input.language,
+              finalSubmissionStatus: "QUEUED",
+              draftCode: input.code,
+              draftLanguage: input.language,
+            }
+          : state,
+      );
+      await dependencies.classTestAttemptRepository.save({
+        ...live,
+        questionStates,
+        updatedAt: now,
+      });
+
+      try {
+        const queueJobId = await dependencies.submissionQueue.enqueue(submissionId);
+        const persisted = await dependencies.submissionRepository.getById(submissionId);
+        if (persisted) {
+          await dependencies.submissionRepository.save({
+            ...persisted,
+            queueJobId,
+            updatedAt: dependencies.now(),
+          });
+        }
+      } catch (error) {
+        // The attempt keeps pointing at this submission, so the failure is visible to faculty
+        // at grading time rather than silently scoring zero with no explanation.
+        const persisted = await dependencies.submissionRepository.getById(submissionId);
+        if (persisted) {
+          await dependencies.submissionRepository.save({
+            ...persisted,
+            status: "INTERNAL_ERROR",
+            stderr: error instanceof Error ? error.message : "Failed to queue submission",
+            updatedAt: dependencies.now(),
+            judgedAt: dependencies.now(),
+            finalizationAppliedAt: dependencies.now(),
+          });
+        }
+        throw new AppError(500, "Failed to queue submission");
+      }
+
+      return { submissionId, status: "queued" as const };
+    },
+
+    async saveCodingDraft(user, classTestId, input) {
+      const now = dependencies.now();
+      const { test, attempt } = await loadForStudent(user, classTestId);
+      const live = ensureWritableAttempt(test, attempt, now);
+      ensureCodingQuestion(test, input.questionId, input.language);
+      await saveDraftOnAttempt(live, input, now);
+    },
+
     // --- grading ------------------------------------------------------------
 
     async listAttemptsForFaculty(user, classTestId) {
@@ -728,6 +917,50 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
       throw new AppError(409, "The test has ended");
     }
     return attempt;
+  }
+
+  /**
+   * The question, proven to be a coding question the student may answer in this language.
+   *
+   * The language check is the one contests do not make: they store `supportedLanguages` but
+   * only honour it in the editor, so a crafted API call slips past. Enforcing it here means a
+   * Java-only question really is Java-only.
+   */
+  function ensureCodingQuestion(
+    test: ClassTestRecord,
+    questionId: string,
+    language: ExecutableLanguage,
+  ): ClassTestCodingQuestion {
+    const question = test.questions.find((item) => item.id === questionId);
+    if (!question) {
+      throw new AppError(404, "Question not found");
+    }
+    if (question.type !== "Coding") {
+      throw new AppError(400, "That question does not accept code");
+    }
+    if (!isLanguageAllowed(question, language)) {
+      const allowed = question.supportedLanguages.join(", ");
+      throw new AppError(400, `This question must be answered in ${allowed}.`);
+    }
+    return question;
+  }
+
+  /** Persists the in-progress code so a refresh or a question switch never loses it. */
+  async function saveDraftOnAttempt(
+    attempt: ClassTestAttemptRecord,
+    input: CodingDraftInput,
+    now: Date,
+  ): Promise<void> {
+    const questionStates = attempt.questionStates.map((state) =>
+      state.questionId === input.questionId
+        ? { ...state, draftCode: input.code, draftLanguage: input.language }
+        : state,
+    );
+    await dependencies.classTestAttemptRepository.save({
+      ...attempt,
+      questionStates,
+      updatedAt: now,
+    });
   }
 
   function toStudentSummary(

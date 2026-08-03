@@ -733,6 +733,8 @@ async function createContestCodingSubmission(
     contestId: contest.id,
     contestTitleSnapshot: contest.title,
     contestQuestionId: question.id,
+    classTestId: null,
+    classTestQuestionId: null,
     code,
     language,
     status: "QUEUED",

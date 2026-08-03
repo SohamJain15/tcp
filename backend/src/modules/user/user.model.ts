@@ -1,6 +1,7 @@
 import type { UserRole } from "../../shared/types/auth";
 import type { Department, Difficulty, ExecutableLanguage } from "../../shared/types/domain";
 import { toIsoString } from "../../shared/utils/date";
+import type { SubmissionSourceType } from "../submission/submission.model";
 
 export interface UserRecord {
   email: string;
@@ -81,7 +82,7 @@ export interface UserProfileAnalyticsSubmissionItem {
   createdAt: string;
   runtimeMs: number;
   memoryKb: number;
-  sourceType: "problem" | "contest_coding";
+  sourceType: SubmissionSourceType;
   contestId: string | null;
   contestTitle: string | null;
 }
@@ -154,7 +155,7 @@ export function toUserProfileAnalyticsSubmissionItem(
     createdAt: Date;
     runtimeMs: number;
     memoryKb: number;
-    sourceType: "problem" | "contest_coding";
+    sourceType: SubmissionSourceType;
     contestId: string | null;
     contestTitleSnapshot: string | null;
   },

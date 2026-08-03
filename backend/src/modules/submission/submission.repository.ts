@@ -55,7 +55,10 @@ function mapSubmissionRecord(submissionId: string, data: Record<string, unknown>
     id: String(data.id ?? submissionId),
     queueJobId: typeof data.queueJobId === "string" ? data.queueJobId : null,
     judge0Token: typeof data.judge0Token === "string" ? data.judge0Token : null,
-    sourceType: data.sourceType === "contest_coding" ? "contest_coding" : "problem",
+    sourceType:
+      data.sourceType === "contest_coding" || data.sourceType === "classtest_coding"
+        ? data.sourceType
+        : "problem",
     userEmail: String(data.userEmail ?? ""),
     userRole: normalizeRole(data.userRole),
     userDepartment: normalizeDepartment(data.userDepartment),
@@ -67,6 +70,8 @@ function mapSubmissionRecord(submissionId: string, data: Record<string, unknown>
     contestId: typeof data.contestId === "string" ? data.contestId : null,
     contestTitleSnapshot: typeof data.contestTitleSnapshot === "string" ? data.contestTitleSnapshot : null,
     contestQuestionId: typeof data.contestQuestionId === "string" ? data.contestQuestionId : null,
+    classTestId: typeof data.classTestId === "string" ? data.classTestId : null,
+    classTestQuestionId: typeof data.classTestQuestionId === "string" ? data.classTestQuestionId : null,
     code: typeof data.code === "string" ? data.code : "",
     language: normalizeExecutableLanguage(data.language),
     status: normalizeSubmissionStatus(data.status),

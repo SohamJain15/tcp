@@ -35,6 +35,8 @@ function buildSubmission(id: string, overrides: Partial<SubmissionRecord> = {}):
     contestId: null,
     contestTitleSnapshot: null,
     contestQuestionId: null,
+    classTestId: null,
+    classTestQuestionId: null,
     code: "print(1)",
     language: "python",
     status: "ACCEPTED",

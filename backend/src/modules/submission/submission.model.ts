@@ -2,7 +2,7 @@ import type { UserRole } from "../../shared/types/auth";
 import type { Department, Difficulty, ExecutableLanguage, SubmissionStatus } from "../../shared/types/domain";
 import { toIsoString } from "../../shared/utils/date";
 
-export type SubmissionSourceType = "problem" | "contest_coding";
+export type SubmissionSourceType = "problem" | "contest_coding" | "classtest_coding";
 
 export interface SubmissionRecord {
   id: string;
@@ -20,6 +20,9 @@ export interface SubmissionRecord {
   contestId: string | null;
   contestTitleSnapshot: string | null;
   contestQuestionId: string | null;
+  /** Set only for `classtest_coding`; contests use the `contest*` fields above. */
+  classTestId: string | null;
+  classTestQuestionId: string | null;
   code: string;
   language: ExecutableLanguage;
   status: SubmissionStatus;

@@ -4,6 +4,8 @@ import type { ClassTestService } from "./classtest.service";
 import {
   audiencePreviewSchema,
   classTestAnswerSchema,
+  classTestCodingDraftSchema,
+  classTestCodingRunSchema,
   classTestProctorEventSchema,
   classTestResultsSchema,
   createClassTestSchema,
@@ -96,6 +98,29 @@ export function createClassTestController(classTestService: ClassTestService) {
       const classTestId = routeIdSchema.parse(getRouteParam(req.params.classTestId));
       const result = await classTestService.getStudentResult(req.user!, classTestId);
       res.json({ result });
+    },
+
+    // --- coding -------------------------------------------------------------
+
+    async runCodingQuestion(req: Request, res: Response): Promise<void> {
+      const classTestId = routeIdSchema.parse(getRouteParam(req.params.classTestId));
+      const payload = classTestCodingRunSchema.parse(req.body);
+      const result = await classTestService.runCodingQuestion(req.user!, classTestId, payload);
+      res.json({ result });
+    },
+
+    async submitCodingQuestion(req: Request, res: Response): Promise<void> {
+      const classTestId = routeIdSchema.parse(getRouteParam(req.params.classTestId));
+      const payload = classTestCodingRunSchema.parse(req.body);
+      const receipt = await classTestService.submitCodingQuestion(req.user!, classTestId, payload);
+      res.status(201).json(receipt);
+    },
+
+    async saveCodingDraft(req: Request, res: Response): Promise<void> {
+      const classTestId = routeIdSchema.parse(getRouteParam(req.params.classTestId));
+      const payload = classTestCodingDraftSchema.parse(req.body);
+      await classTestService.saveCodingDraft(req.user!, classTestId, payload);
+      res.json({ saved: true });
     },
 
     // --- grading ------------------------------------------------------------

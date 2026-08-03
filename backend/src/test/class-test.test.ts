@@ -251,6 +251,8 @@ describe("Class Test — authoring", () => {
               difficulty: "Easy",
               problemStatement: "Reverse it.",
               supportedLanguages: ["java"],
+              sampleTestCases: [{ input: "[1,2,3]", output: "[3,2,1]" }],
+              hiddenTestCases: [{ input: "[1]", output: "[1]" }],
             },
           ],
         }),
@@ -776,5 +778,194 @@ describe("Class Test — no ranking exists", () => {
       const response = await request(app).get(path).set(facultyHeaders);
       expect(response.status).toBe(404);
     }
+  });
+});
+
+const codingQuestion = {
+  type: "Coding" as const,
+  points: 10,
+  problemTitle: "Sum two numbers",
+  difficulty: "Easy" as const,
+  problemStatement: "Read two integers and print their sum.",
+  supportedLanguages: ["java"],
+  sampleTestCases: [{ input: "2 3", output: "5" }],
+  hiddenTestCases: [{ input: "10 5", output: "15" }],
+};
+
+async function createLiveCodingTest(app: Parameters<typeof request>[0]) {
+  const response = await request(app)
+    .post("/api/class-tests")
+    .set(facultyHeaders)
+    .send(
+      testPayload({
+        startAt: "2026-05-06T23:59:00.000Z",
+        durationMinutes: 60,
+        lifecycleState: "Published",
+        questions: [codingQuestion],
+      }),
+    );
+  expect(response.status).toBe(201);
+  return response.body.classTest;
+}
+
+describe("Class Test — coding", () => {
+  it("enforces the allowed language on run and submit, not just in the editor", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+    const test = await createLiveCodingTest(app);
+    const headers = studentHeaders("cta11@tcetmumbai.in");
+    await request(app).post(`/api/class-tests/mine/${test.id}/attempts`).set(headers);
+    const questionId = test.questions[0].id;
+
+    // Called straight at the API, bypassing any dropdown — this is the hole contests still have.
+    for (const path of ["coding-run", "coding-submissions"]) {
+      const response = await request(app)
+        .post(`/api/class-tests/mine/${test.id}/${path}`)
+        .set(headers)
+        .send({ questionId, code: "print(1)", language: "python" });
+      expect(response.status).toBe(400);
+      expect(response.body.message).toMatch(/must be answered in java/i);
+    }
+  });
+
+  it("runs sample cases and queues a submission in the allowed language", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+    const test = await createLiveCodingTest(app);
+    const headers = studentHeaders("cta11@tcetmumbai.in");
+    await request(app).post(`/api/class-tests/mine/${test.id}/attempts`).set(headers);
+    const questionId = test.questions[0].id;
+
+    const run = await request(app)
+      .post(`/api/class-tests/mine/${test.id}/coding-run`)
+      .set(headers)
+      .send({ questionId, code: "class Solution {}", language: "java" });
+    expect(run.status).toBe(200);
+    // Run only ever exercises the samples — hidden cases stay hidden while the test is live.
+    expect(run.body.result.totalCount).toBe(1);
+
+    const submit = await request(app)
+      .post(`/api/class-tests/mine/${test.id}/coding-submissions`)
+      .set(headers)
+      .send({ questionId, code: "class Solution {}", language: "java" });
+    expect(submit.status).toBe(201);
+    expect(submit.body.status).toBe("queued");
+
+    // The submission is tagged to the class test so it never mixes with contest work.
+    const submission = await repositories.submissionRepository.getById(submit.body.submissionId);
+    expect(submission?.sourceType).toBe("classtest_coding");
+    expect(submission?.classTestId).toBe(test.id);
+    expect(submission?.classTestQuestionId).toBe(questionId);
+    // Judged against every case, samples and hidden alike.
+    expect(submission?.totalCount).toBe(2);
+
+    // The attempt points at it, which is how grading finds the verdict later.
+    const [attempt] = await repositories.classTestAttemptRepository.listByTest(test.id);
+    const state = attempt.questionStates.find((item) => item.questionId === questionId);
+    expect(state?.lastSubmissionId).toBe(submit.body.submissionId);
+  });
+
+  it("judges a queued class-test submission without touching practice rating", async () => {
+    const { app, repositories, services } = createTestApp();
+    await seedClass(repositories);
+    const test = await createLiveCodingTest(app);
+    const headers = studentHeaders("cta11@tcetmumbai.in");
+    await request(app).post(`/api/class-tests/mine/${test.id}/attempts`).set(headers);
+    const questionId = test.questions[0].id;
+
+    const submit = await request(app)
+      .post(`/api/class-tests/mine/${test.id}/coding-submissions`)
+      .set(headers)
+      .send({ questionId, code: "class Solution {}", language: "java" });
+    expect(submit.status).toBe(201);
+
+    // The worker has to resolve the class-test question itself: `problemId` on a class-test
+    // submission is a question id, so the problem lookup the practice path uses would 404.
+    const judged = await services.submissionService.processQueuedSubmission(
+      submit.body.submissionId,
+      "job-classtest",
+    );
+    expect(judged.status).not.toBe("INTERNAL_ERROR");
+
+    const stored = await repositories.submissionRepository.getById(submit.body.submissionId);
+    expect(stored?.judgedAt).not.toBeNull();
+    // Both cases were judged, hidden included.
+    expect(stored?.totalCount).toBe(2);
+    // Coursework never feeds the public leaderboard.
+    expect(stored?.ratingAwarded).toBe(0);
+    const student = await repositories.userRepository.getByEmail("cta11@tcetmumbai.in");
+    expect(student?.rating ?? 0).toBe(0);
+  });
+
+  it("keeps code between questions via the draft endpoint", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+    const test = await createLiveCodingTest(app);
+    const headers = studentHeaders("cta11@tcetmumbai.in");
+    await request(app).post(`/api/class-tests/mine/${test.id}/attempts`).set(headers);
+
+    const response = await request(app)
+      .post(`/api/class-tests/mine/${test.id}/coding-draft`)
+      .set(headers)
+      .send({ questionId: test.questions[0].id, code: "half written", language: "java" });
+    expect(response.status).toBe(200);
+
+    const [attempt] = await repositories.classTestAttemptRepository.listByTest(test.id);
+    expect(attempt.questionStates[0].draftCode).toBe("half written");
+  });
+
+  it("refuses coding from a student who was never assigned the test", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+    const response = await request(app)
+      .post("/api/class-tests")
+      .set(facultyHeaders)
+      .send(
+        testPayload({
+          startAt: "2026-05-06T23:59:00.000Z",
+          durationMinutes: 60,
+          lifecycleState: "Published",
+          questions: [codingQuestion],
+          assignedEmails: ["cta11@tcetmumbai.in"],
+        }),
+      );
+    const test = response.body.classTest;
+
+    // In the same division and roll range, but unticked — 404, not 403, so the response does
+    // not even confirm the test exists.
+    const run = await request(app)
+      .post(`/api/class-tests/mine/${test.id}/coding-run`)
+      .set(studentHeaders("cta12@tcetmumbai.in"))
+      .send({ questionId: test.questions[0].id, code: "x", language: "java" });
+    expect(run.status).toBe(404);
+  });
+
+  it("refuses coding once the student has submitted the test", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+    const test = await createLiveCodingTest(app);
+    const headers = studentHeaders("cta11@tcetmumbai.in");
+    await request(app).post(`/api/class-tests/mine/${test.id}/attempts`).set(headers);
+    await request(app).post(`/api/class-tests/mine/${test.id}/attempts/submit`).set(headers);
+
+    const response = await request(app)
+      .post(`/api/class-tests/mine/${test.id}/coding-submissions`)
+      .set(headers)
+      .send({ questionId: test.questions[0].id, code: "class Solution {}", language: "java" });
+    expect(response.status).toBe(409);
+  });
+
+  it("refuses a coding question with no hidden test cases", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+
+    const response = await request(app)
+      .post("/api/class-tests")
+      .set(facultyHeaders)
+      .send(testPayload({ questions: [{ ...codingQuestion, hiddenTestCases: [] }] }));
+
+    // Marks are proportional to cases passed, so samples alone would score everyone on work
+    // they could already see.
+    expect(response.status).toBe(400);
   });
 });

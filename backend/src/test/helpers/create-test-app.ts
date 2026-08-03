@@ -258,6 +258,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       problemRepository,
       contestRepository,
       contestAttemptRepository,
+      classTestRepository,
       submissionRepository,
       userRepository,
       leaderboardRepository,
@@ -296,6 +297,8 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       classTestProctoringRepository,
       userRepository,
       submissionRepository,
+      executionProvider: new StubExecutionProvider(),
+      submissionQueue,
       now,
     }),
     reportService: createReportService({
