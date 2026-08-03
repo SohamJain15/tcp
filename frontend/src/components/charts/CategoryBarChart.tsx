@@ -1,3 +1,4 @@
+import { useIsNarrow } from "@/hooks/use-mobile";
 import { memo } from "react";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
@@ -31,6 +32,11 @@ export const CategoryBarChart = memo(function CategoryBarChart({
   layout = "horizontal",
   emptyMessage = "No data yet.",
 }: CategoryBarChartProps) {
+  // Category labels need room, but a fixed 140px is over a third of a 375px phone screen.
+  // Called before the empty-state return so hook order stays stable across renders.
+  const isNarrow = useIsNarrow();
+  const yAxisWidth = isNarrow ? 84 : 140;
+
   const isEmpty =
     data.length === 0 || data.every((entry) => bars.every((bar) => Number(entry[bar.dataKey] ?? 0) === 0));
 
@@ -53,7 +59,8 @@ export const CategoryBarChart = memo(function CategoryBarChart({
             <YAxis
               type="category"
               dataKey={categoryKey}
-              width={140}
+              // 140px swallows over a third of a phone screen; the label column scales instead.
+              width={yAxisWidth}
               tickLine={false}
               axisLine={false}
               tick={chartAxisTick}

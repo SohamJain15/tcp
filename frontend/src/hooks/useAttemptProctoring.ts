@@ -1,21 +1,35 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { contestsApi } from "@/api/services";
-import type { ContestAttempt, ContestProctoringPayload } from "@/api/types";
+import type { ContestProctoringPayload } from "@/api/types";
 
-interface UseContestProctoringOptions {
-  contestId: string;
-  pathname: string;
-  attempt: ContestAttempt | null;
-  maxViolations?: number;
-  onAttemptUpdate: (attempt: ContestAttempt) => void;
+/** What the caller's endpoint tells us back after an event is recorded. */
+export interface ProctoringEventResult {
+  violationCount: number;
+  autoSubmitted: boolean;
 }
 
-interface UseContestProctoringResult {
-  /** Browser is out of fullscreen — cover the contest until it is restored. */
+interface UseAttemptProctoringOptions {
+  /** Whether the attempt is open. Listeners are only bound while this holds. */
+  isAttemptActive: boolean;
+  /**
+   * Escape hatch for surfaces that must never engage proctoring — notably a handheld, where
+   * fullscreen cannot be held. Kept as a flag rather than a conditional hook call so the
+   * caller can still obey the rules of hooks.
+   */
+  enabled?: boolean;
+  maxViolations?: number;
+  violationCount: number;
+  /** Injected so contests and class tests can share this without either importing the other. */
+  recordEvent: (payload: ContestProctoringPayload) => Promise<ProctoringEventResult>;
+  /** Wording differs per surface ("contest" / "class test"). */
+  surfaceLabel?: string;
+}
+
+interface UseAttemptProctoringResult {
+  /** Browser is out of fullscreen — cover the paper until it is restored. */
   isLocked: boolean;
-  /** Window lost focus — blank the contest so off-browser capture tools get nothing. */
+  /** Window lost focus — blank the paper so off-browser capture tools get nothing. */
   isObscured: boolean;
   violationCount: number;
   /** Must run inside a user gesture; browsers reject programmatic fullscreen otherwise. */
@@ -69,19 +83,20 @@ async function wipeClipboard(): Promise<void> {
   }
 }
 
-export function useContestProctoring({
-  contestId,
-  pathname,
-  attempt,
+export function useAttemptProctoring({
+  isAttemptActive,
+  enabled = true,
   maxViolations = 3,
-  onAttemptUpdate,
-}: UseContestProctoringOptions): UseContestProctoringResult {
+  violationCount,
+  recordEvent,
+  surfaceLabel = "contest",
+}: UseAttemptProctoringOptions): UseAttemptProctoringResult {
   const cooldownsRef = useRef<Record<string, number>>({});
   const isRestoringRef = useRef(false);
   const [isLocked, setIsLocked] = useState(false);
   const [isObscured, setIsObscured] = useState(false);
 
-  const isActive = attempt?.status === "ACTIVE";
+  const isActive = enabled && isAttemptActive;
 
   const requestFullscreen = useCallback(() => {
     if (document.fullscreenElement || isRestoringRef.current) {
@@ -127,18 +142,15 @@ export function useContestProctoring({
       }
 
       try {
-        const response = await contestsApi.recordProctorEvent(contestId, payload, pathname);
-        onAttemptUpdate(response.attempt);
+        const result = await recordEvent(payload);
 
-        if (response.attempt.status === "AUTO_SUBMITTED") {
+        if (result.autoSubmitted) {
           toast.error(`${warning} Violation limit reached — your test has been submitted.`);
           return;
         }
 
         toast.warning(
-          scored
-            ? `${warning} Violation ${response.attempt.violationCount}/${maxViolations}.`
-            : warning,
+          scored ? `${warning} Violation ${result.violationCount}/${maxViolations}.` : warning,
         );
       } catch {
         // A logging failure must never interrupt the attempt itself.
@@ -170,7 +182,7 @@ export function useContestProctoring({
         void logEvent(
           { type: "VISIBILITY_LOSS", details: "Document hidden" },
           "focus",
-          "Leaving the contest tab is recorded.",
+          `Leaving the ${surfaceLabel} tab is recorded.`,
           true,
         );
         return;
@@ -183,13 +195,13 @@ export function useContestProctoring({
     };
 
     const onBlur = () => {
-      // Blank the contest the instant focus leaves, so a Snipping Tool or Alt+Tab capture taken
+      // Blank the paper the instant focus leaves, so a Snipping Tool or Alt+Tab capture taken
       // while the browser is in the background contains nothing readable.
       setIsObscured(true);
       void logEvent(
         { type: "TAB_SWITCH", details: "Window blurred" },
         "focus",
-        "Leaving the contest window is recorded.",
+        `Leaving the ${surfaceLabel} window is recorded.`,
         true,
       );
     };
@@ -236,7 +248,7 @@ export function useContestProctoring({
       void logEvent(
         { type, details: `${event.type} blocked` },
         event.type,
-        "Copy, cut and paste are disabled during the contest.",
+        `Copy, cut and paste are disabled during the ${surfaceLabel}.`,
         false,
       );
     };
@@ -246,7 +258,7 @@ export function useContestProctoring({
       void logEvent(
         { type: "CONTEXT_MENU", details: "Right click blocked" },
         "contextmenu",
-        "Right-click is disabled during the contest.",
+        `Right-click is disabled during the ${surfaceLabel}.`,
         false,
       );
     };
@@ -299,7 +311,7 @@ export function useContestProctoring({
       document.removeEventListener("dragstart", blockSelection);
       window.removeEventListener("beforeunload", onBeforeUnload);
     };
-  }, [contestId, isActive, maxViolations, onAttemptUpdate, pathname, requestFullscreen]);
+  }, [isActive, maxViolations, recordEvent, requestFullscreen, surfaceLabel]);
 
   // While locked out of fullscreen, the very next interaction anywhere on the page counts as the
   // gesture the Fullscreen API demands — so the student never has to find a button.
@@ -324,7 +336,7 @@ export function useContestProctoring({
   return {
     isLocked: isActive && isLocked,
     isObscured: isActive && isObscured,
-    violationCount: attempt?.violationCount ?? 0,
+    violationCount,
     requestFullscreen,
   };
 }

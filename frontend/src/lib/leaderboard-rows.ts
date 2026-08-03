@@ -1,3 +1,4 @@
+import { formatDuration } from "@/lib/duration";
 import type { ContestStandingItem, LeaderboardItem } from "@/api/types";
 
 export type LeaderboardMode = "problem" | "contest";
@@ -62,22 +63,8 @@ export function toContestLeaderboardRows(items: ContestStandingItem[]): Leaderbo
   }));
 }
 
-export function formatLeaderboardDuration(timeTakenMs: number | null): string {
-  if (timeTakenMs === null) {
-    return "-";
-  }
-
-  const totalSeconds = Math.max(0, Math.ceil(timeTakenMs / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-
-  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
-}
+/** @deprecated Use `formatDuration` from `@/lib/duration` directly. */
+export const formatLeaderboardDuration = formatDuration;
 
 export function getYearLabel(year: 1 | 2 | 3 | 4): string {
   return year === 1 ? "1st Year" : year === 2 ? "2nd Year" : year === 3 ? "3rd Year" : "4th Year";

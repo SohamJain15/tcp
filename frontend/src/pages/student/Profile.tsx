@@ -455,7 +455,7 @@ export default function StudentProfile() {
 
               <Separator className="my-5" />
 
-              <div className="grid grid-cols-[110px,1fr] gap-x-4 gap-y-3 text-sm">
+              <div className="grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[110px,1fr] sm:gap-y-3">
                 <span className="text-muted-foreground">Email</span>
                 <span className="min-w-0 truncate font-medium">{profile.email}</span>
 
@@ -570,30 +570,33 @@ export default function StudentProfile() {
               </CardHeader>
               <CardContent className="overflow-x-auto pb-6">
                 <SubmissionActivityHeatmap activity={analytics?.submissionHeatmap ?? []} />
+                {/* The grid is a fixed 860px — on a phone it scrolls, so say so rather than
+                    leaving it looking clipped. */}
+                <p className="mt-2 text-xs text-muted-foreground lg:hidden">Scroll sideways to see the full year.</p>
               </CardContent>
             </Card>
 
             <Card className="profile-card p-5">
                   <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Submission History</h2>
                   <div className="mt-4 overflow-hidden rounded-md border border-border">
-                    <div className="profile-table-header grid grid-cols-12 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-foreground/80">
+                    <div className="profile-table-header hidden grid-cols-12 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-foreground/80 sm:grid">
                       <div className="col-span-4">Problem</div>
                       <div className="col-span-2">Language</div>
                       <div className="col-span-2">Status</div>
                       <div className="col-span-2">When</div>
-                      <div className="col-span-2 text-right">Code</div>
+                      <div className="sm:col-span-2 sm:text-right">Code</div>
                     </div>
                     {(analytics?.submissionHistory ?? []).map((entry) => (
-                      <div key={entry.submissionId} className="grid grid-cols-12 border-t border-border px-4 py-3 text-sm">
-                        <div className="col-span-4">
+                      <div key={entry.submissionId} className="flex flex-col gap-1 border-t border-border px-4 py-3 text-sm sm:grid sm:grid-cols-12 sm:gap-0">
+                        <div className="sm:col-span-4">
                           <p className="font-medium">{entry.problemTitle}</p>
                           {entry.contestTitle && <p className="text-xs text-muted-foreground">{entry.contestTitle}</p>}
                         </div>
-                        <div className="col-span-2 self-center">{toLanguageLabel(entry.language)}</div>
-                        <div className="col-span-2 self-center">
+                        <div className="text-muted-foreground sm:col-span-2 sm:self-center sm:text-foreground">{toLanguageLabel(entry.language)}</div>
+                        <div className="sm:col-span-2 sm:self-center">
                           <StatusBadge status={toStatusLabel(entry.status)} />
                         </div>
-                        <div className="col-span-2 self-center text-xs text-muted-foreground">{formatWhen(entry.createdAt)}</div>
+                        <div className="text-xs text-muted-foreground sm:col-span-2 sm:self-center">{formatWhen(entry.createdAt)}</div>
                         <div className="col-span-2 text-right">
                           <button
                             type="button"

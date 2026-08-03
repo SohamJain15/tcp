@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { LogOut, Moon, Sun, User } from "lucide-react";
+import { LogOut, Menu, Moon, Sun, User } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTheme } from "./ThemeProvider";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { classTestApi, userApi } from "@/api/services";
 import type { UserRole } from "@/api/types";
@@ -71,6 +72,7 @@ export function Navbar() {
   const { theme, toggle } = useTheme();
   const { pathname } = useLocation();
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const profileMenuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const openProfileMenu = () => {
@@ -150,6 +152,50 @@ export function Navbar() {
             <span className="font-deva text-[11px] text-accent">॥ शास्त्रं कोडः तीर्थं चेतः ॥</span>
           </div>
         </Link>
+
+        {/* Below lg the desktop nav is hidden; without this the entire menu was unreachable on a
+            phone — logo, theme toggle and avatar were the only controls on screen. */}
+        {showLinks && (
+          <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+            <SheetTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Open menu"
+                className="ml-1 text-primary-foreground hover:bg-white/10 lg:hidden"
+              >
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-72 p-0">
+              <SheetTitle className="border-b border-border px-4 py-4 text-left font-display text-base font-bold">
+                Menu
+              </SheetTitle>
+              <nav className="flex flex-col p-2">
+                {links.map((l) => (
+                  <NavLink
+                    key={l.to}
+                    to={l.to}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={({ isActive }) =>
+                      cn(
+                        "flex items-center justify-between px-3 py-3 text-sm font-medium transition-colors",
+                        isActive ? "bg-accent text-accent-foreground" : "hover:bg-muted",
+                      )
+                    }
+                  >
+                    {l.label}
+                    {l.to === "/student/class-tests" && assignedClassTestCount > 0 && (
+                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-bold text-destructive-foreground">
+                        {assignedClassTestCount}
+                      </span>
+                    )}
+                  </NavLink>
+                ))}
+              </nav>
+            </SheetContent>
+          </Sheet>
+        )}
 
         <nav className="ml-6 hidden lg:flex items-center gap-1">
           {showLinks && links.map(l => (

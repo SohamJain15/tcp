@@ -1,3 +1,4 @@
+import { formatDuration } from "@/lib/duration";
 import { AlertTriangle, Clock, ShieldAlert, Target, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -17,13 +18,24 @@ const LANGUAGE_COLORS = [
   SERIES_COLORS.muted,
 ];
 
-function formatDuration(ms: number | null): string {
-  if (ms === null) {
-    return "-";
+/**
+ * The `Measured` column carries a different quantity per row, so a bare number was ambiguous —
+ * "Solve speed" in particular rendered raw milliseconds (e.g. `1234567`) with no unit at all.
+ * Component names come from `report.model.ts`.
+ */
+function formatMeasured(component: string, rawValue: number): string {
+  switch (component) {
+    case "Runtime efficiency":
+      return `${rawValue} ms`;
+    case "Memory efficiency":
+      return `${(rawValue / 1024).toFixed(1)} MB`;
+    case "Solve speed":
+      return formatDuration(rawValue);
+    case "Attempt efficiency":
+      return `${rawValue} attempt${rawValue === 1 ? "" : "s"}`;
+    default:
+      return String(rawValue);
   }
-  const minutes = Math.floor(ms / 60000);
-  const seconds = Math.round((ms % 60000) / 1000);
-  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
 
 function formatPercent(ratio: number): string {
@@ -147,7 +159,9 @@ function OptimalSubmissionCard({
                 <TableRow key={component.component}>
                   <TableCell>{component.component}</TableCell>
                   <TableCell className="text-right font-mono-code">{formatPercent(component.weight)}</TableCell>
-                  <TableCell className="text-right font-mono-code">{component.rawValue}</TableCell>
+                  <TableCell className="text-right font-mono-code">
+                    {formatMeasured(component.component, component.rawValue)}
+                  </TableCell>
                   <TableCell className="text-right font-mono-code">{component.normalized.toFixed(3)}</TableCell>
                   <TableCell className="text-right font-mono-code">{component.contribution.toFixed(3)}</TableCell>
                 </TableRow>

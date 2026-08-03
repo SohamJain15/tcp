@@ -1,3 +1,4 @@
+import { formatDuration } from "@/lib/duration";
 import { Link } from "react-router-dom";
 
 import type { FacultyContestAttemptReview } from "@/api/types";
@@ -50,7 +51,7 @@ export function ContestAttemptReviewDialog({
               <Card className="p-4 shadow-none">
                 <div className="text-xs uppercase tracking-wide text-muted-foreground">Time Taken</div>
                 <div className="mt-2 text-lg font-semibold">
-                  {review.timeTakenMs !== null ? `${Math.ceil(review.timeTakenMs / 1000)} sec` : "-"}
+                  {review.timeTakenMs !== null ? `${formatDuration(review.timeTakenMs)}` : "-"}
                 </div>
               </Card>
               <Card className="p-4 shadow-none">

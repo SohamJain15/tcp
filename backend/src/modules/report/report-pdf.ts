@@ -47,10 +47,19 @@ function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+/**
+ * Kept identical to `frontend/src/lib/duration.ts` so the exported PDF and the on-screen report
+ * never disagree about the same number. Both ceil to the second and both surface hours.
+ */
 function formatDuration(ms: number | null): string {
-  if (ms === null || ms === undefined) return "-";
-  const minutes = Math.floor(ms / 60000);
-  const seconds = Math.round((ms % 60000) / 1000);
+  if (ms === null || ms === undefined || Number.isNaN(ms)) return "-";
+
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m`;
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
 

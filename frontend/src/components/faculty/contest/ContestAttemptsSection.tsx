@@ -1,3 +1,4 @@
+import { formatDuration } from "@/lib/duration";
 import { Eye } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -46,7 +47,7 @@ export function ContestAttemptsSection({
               <TableCell>{attempt.status}</TableCell>
               {resultsPublished && <TableCell>{attempt.score}</TableCell>}
               <TableCell>
-                {attempt.timeTakenMs !== null ? `${Math.ceil(attempt.timeTakenMs / 1000)} sec` : "-"}
+                {attempt.timeTakenMs !== null ? `${formatDuration(attempt.timeTakenMs)}` : "-"}
               </TableCell>
               <TableCell>
                 {attempt.violationCount} ({attempt.violationPenaltyPoints} pts)

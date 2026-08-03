@@ -97,6 +97,9 @@ export interface StudentClassTestDetail extends StudentClassTestSummary {
   identity: { name: string | null; uid: string | null; rollNumber: string | null; division: string | null; department: string | null };
   answers: { questionId: string; submittedAnswer: string | string[] | null }[];
   deadlineAt: string | null;
+  /** Surfaced so the paper can show "Violations n/m", exactly as a contest does. */
+  maxViolations: number;
+  violationCount: number;
 }
 
 export interface StudentClassTestResult {
@@ -1013,6 +1016,8 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
           submittedAnswer: state.submittedAnswer,
         })) ?? [],
       deadlineAt: attempt?.deadlineAt.toISOString() ?? null,
+      maxViolations: test.maxViolations,
+      violationCount: attempt?.violationCount ?? 0,
     };
   }
 

@@ -1,3 +1,6 @@
+import { DesktopOnlyNotice } from "@/components/DesktopOnlyNotice";
+import { useIsHandheld } from "@/hooks/use-mobile";
+import { formatDuration } from "@/lib/duration";
 import { useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
@@ -38,17 +41,6 @@ function statusBadgeClass(status: "UNATTEMPTED" | "ATTEMPTED" | "SOLVED"): strin
   if (status === "SOLVED") return "bg-green-600 text-white hover:bg-green-600";
   if (status === "ATTEMPTED") return "bg-amber-500 text-white hover:bg-amber-500";
   return "bg-secondary text-secondary-foreground";
-}
-
-function formatTimeTaken(timeTakenMs: number | null): string {
-  if (timeTakenMs === null) {
-    return "-";
-  }
-
-  const totalSeconds = Math.ceil(timeTakenMs / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
 
 function formatAnswer(answer: string | string[] | null | undefined): string {
@@ -236,6 +228,7 @@ export default function ContestDetail() {
     enabled: Boolean(id),
   });
 
+  const isHandheld = useIsHandheld();
   const contest = data?.contest;
   const attempt = contest?.attempt ?? null;
   const report = contest?.report ?? null;
@@ -306,6 +299,15 @@ export default function ContestDetail() {
 
   if (!id) {
     return <Navigate to="/student/contests" replace />;
+  }
+
+  // Gate the whole contest, not just the Start button — a student should learn this on opening
+  // the contest rather than after filling in the pre-flight. Placing it here also makes
+  // `startAttemptMutation` unreachable on a phone, so `requestFullscreen()` can never fire.
+  if (isHandheld) {
+    return (
+      <DesktopOnlyNotice feature="contests" backTo="/student/contests" backLabel="Back to contests" />
+    );
   }
 
   if (isLoading) {
@@ -532,7 +534,7 @@ export default function ContestDetail() {
                 to={`/student/leaderboard?mode=contest&contestId=${id}`}
               />
               <ReportStat label="Score" value={String(report.score)} sub={`${report.solvedCount} solved`} />
-              <ReportStat label="Time Taken" value={formatTimeTaken(report.timeTakenMs)} />
+              <ReportStat label="Time Taken" value={formatDuration(report.timeTakenMs)} />
               <ReportStat label="Violation Penalty" value={`${report.violationPenaltyPoints} pts`} />
             </div>
 

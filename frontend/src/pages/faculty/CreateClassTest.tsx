@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CheckCircle2, ClipboardCopy, FileJson, Trash2, Upload, Users } from "lucide-react";
+import { ArrowDown, ArrowUp, CheckCircle2, ClipboardCopy, FileJson, Trash2, Upload, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -21,6 +21,10 @@ import { copyTextToClipboard } from "@/lib/clipboard";
 
 const PATHNAME = "/faculty/class-tests/create";
 const DIVISIONS = ["A", "B", "C", "D", "E"];
+const QUESTION_TYPES: ClassTestQuestionType[] = ["MCQ", "MSQ", "ShortAnswer", "Coding"];
+
+const questionTypeLabel = (type: ClassTestQuestionType) =>
+  type === "ShortAnswer" ? "Short answer" : type;
 const CODING_LANGUAGES = ["c", "cpp", "java", "python", "javascript", "typescript", "go", "kotlin"];
 
 interface DraftQuestion {
@@ -198,6 +202,28 @@ export default function CreateClassTest() {
     setQuestions((current) => current.map((q) => (q.key === key ? { ...q, ...patch } : q)));
   };
 
+  // Google-Forms style: a question can be added at the end or slotted in after any question,
+  // so faculty never has to scroll back to a toolbar at the top.
+  const addQuestion = (type: ClassTestQuestionType, afterIndex?: number) => {
+    setQuestions((current) => {
+      if (afterIndex === undefined) return [...current, blankQuestion(type)];
+      const next = [...current];
+      next.splice(afterIndex + 1, 0, blankQuestion(type));
+      return next;
+    });
+  };
+
+  // Question numbers are derived from array order, so moving an entry renumbers everything.
+  const moveQuestion = (index: number, direction: -1 | 1) => {
+    setQuestions((current) => {
+      const target = index + direction;
+      if (target < 0 || target >= current.length) return current;
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
+
   const updateTestCase = (
     key: string,
     bucket: "sampleTestCases" | "hiddenTestCases",
@@ -292,6 +318,9 @@ export default function CreateClassTest() {
                 id="ct-duration"
                 type="number"
                 min={1}
+                // The server caps this at 240; bounding it here means an inline nudge instead of
+                // a rejection after the whole form is filled in.
+                max={240}
                 value={durationMinutes}
                 onChange={(e) => setDurationMinutes(Number(e.target.value))}
               />
@@ -527,28 +556,40 @@ export default function CreateClassTest() {
             <TabsContent value="form" className="mt-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Questions</h2>
-            <div className="flex flex-wrap gap-2">
-              {(["MCQ", "MSQ", "ShortAnswer", "Coding"] as ClassTestQuestionType[]).map((type) => (
-                <Button
-                  key={type}
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setQuestions((current) => [...current, blankQuestion(type)])}
-                >
-                  + {type === "ShortAnswer" ? "Short answer" : type}
-                </Button>
-              ))}
-            </div>
+            <span className="text-xs text-muted-foreground">
+              {questions.length} question{questions.length === 1 ? "" : "s"} ·{" "}
+              {questions.reduce((total, q) => total + Number(q.points || 0), 0)} marks
+            </span>
           </div>
 
           {questions.map((question, index) => (
-            <div key={question.key} className="space-y-3 border border-border p-4">
+            <div key={question.key}>
+            <div className="space-y-3 border border-border p-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold">
-                  Q{index + 1} · {question.type === "ShortAnswer" ? "Short answer" : question.type}
+                  Q{index + 1} · {questionTypeLabel(question.type)}
                 </span>
                 <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    disabled={index === 0}
+                    onClick={() => moveQuestion(index, -1)}
+                    aria-label="Move question up"
+                  >
+                    <ArrowUp className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    disabled={index === questions.length - 1}
+                    onClick={() => moveQuestion(index, 1)}
+                    aria-label="Move question down"
+                  >
+                    <ArrowDown className="h-4 w-4" />
+                  </Button>
                   <Label htmlFor={`pts-${question.key}`} className="text-xs">
                     Marks
                   </Label>
@@ -717,7 +758,7 @@ export default function CreateClassTest() {
                       />
                     </div>
                     <div>
-                      <Label className="text-xs">Time limit (seconds)</Label>
+                      <Label className="text-xs">Program run limit (seconds)</Label>
                       <Input
                         type="number"
                         min={1}
@@ -725,6 +766,11 @@ export default function CreateClassTest() {
                         value={question.timeLimitSeconds}
                         onChange={(e) => updateQuestion(question.key, { timeLimitSeconds: Number(e.target.value) })}
                       />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Longest the student's code may run per test case before it is marked
+                        Timeout. Usually 1–5. This is not the time they get to answer — that is the
+                        test duration above.
+                      </p>
                     </div>
                     <div>
                       <Label className="text-xs">Memory limit (MB)</Label>
@@ -809,7 +855,46 @@ export default function CreateClassTest() {
                 </div>
               )}
             </div>
+
+            {/* Slot a question in right here, rather than appending and dragging it up. */}
+            <div className="flex flex-wrap items-center gap-1.5 py-2 pl-1">
+              <span className="text-xs text-muted-foreground">Insert after:</span>
+              {QUESTION_TYPES.map((type) => (
+                <Button
+                  key={type}
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => addQuestion(type, index)}
+                >
+                  + {questionTypeLabel(type)}
+                </Button>
+              ))}
+            </div>
+            </div>
           ))}
+
+          {questions.length === 0 && (
+            <p className="border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+              No questions yet — add one below.
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+            <span className="text-sm font-medium">Add question:</span>
+            {QUESTION_TYPES.map((type) => (
+              <Button
+                key={type}
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => addQuestion(type)}
+              >
+                + {questionTypeLabel(type)}
+              </Button>
+            ))}
+          </div>
             </TabsContent>
           </Tabs>
         </Card>

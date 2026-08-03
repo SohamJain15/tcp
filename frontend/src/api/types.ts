@@ -1209,6 +1209,8 @@ export interface StudentClassTestDetail extends StudentClassTestSummary {
   };
   answers: { questionId: string; submittedAnswer: string | string[] | null }[];
   deadlineAt: string | null;
+  maxViolations: number;
+  violationCount: number;
 }
 
 export interface StudentClassTestResult {

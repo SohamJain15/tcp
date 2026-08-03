@@ -103,17 +103,17 @@ export function LeaderboardTable({
           linkToProfile ? "block hover:text-accent" : undefined,
         )}
       </td>
-      {isContest && <td className="px-4 py-3">{row.year ? getYearLabel(row.year) : "-"}</td>}
-      <td className="px-4 py-3 text-right font-mono-code">
+      {isContest && <td className="hidden px-4 py-3 md:table-cell">{row.year ? getYearLabel(row.year) : "-"}</td>}
+      <td className="hidden px-2 py-3 text-right font-mono-code sm:table-cell sm:px-4">
         {row.total !== null ? `${row.solved}/${row.total}` : row.solved}
       </td>
       <td className="px-4 py-3 text-right font-mono-code font-semibold">{row.score}</td>
       {isContest ? (
         <>
-          <td className="px-4 py-3 text-right font-mono-code">{formatLeaderboardDuration(row.timeTakenMs)}</td>
+          <td className="hidden px-2 py-3 text-right font-mono-code sm:table-cell sm:px-4">{formatLeaderboardDuration(row.timeTakenMs)}</td>
           <td
             className={cn(
-              "px-4 py-3 text-right font-mono-code",
+              "hidden px-4 py-3 text-right font-mono-code md:table-cell",
               (row.violationCount ?? 0) > 0 && "text-destructive",
             )}
           >
@@ -121,7 +121,7 @@ export function LeaderboardTable({
           </td>
         </>
       ) : (
-        <td className="px-4 py-3 text-right font-mono-code">{row.accuracy ?? 0}%</td>
+        <td className="hidden px-2 py-3 text-right font-mono-code sm:table-cell sm:px-4">{row.accuracy ?? 0}%</td>
       )}
     </tr>
   );
@@ -198,16 +198,16 @@ export function LeaderboardTable({
               <tr className="text-left">
                 <th className="w-16 px-4 py-3 font-semibold">Rank</th>
                 <th className="px-4 py-3 font-semibold">Student</th>
-                {isContest && <th className="px-4 py-3 font-semibold">Year</th>}
-                <th className="px-4 py-3 text-right font-semibold">Solved</th>
+                {isContest && <th className="hidden px-4 py-3 font-semibold md:table-cell">Year</th>}
+                <th className="hidden px-2 py-3 text-right font-semibold sm:table-cell sm:px-4">Solved</th>
                 <th className="px-4 py-3 text-right font-semibold">Score</th>
                 {isContest ? (
                   <>
-                    <th className="px-4 py-3 text-right font-semibold">Time</th>
-                    <th className="px-4 py-3 text-right font-semibold">Violations</th>
+                    <th className="hidden px-2 py-3 text-right font-semibold sm:table-cell sm:px-4">Time</th>
+                    <th className="hidden px-4 py-3 text-right font-semibold md:table-cell">Violations</th>
                   </>
                 ) : (
-                  <th className="px-4 py-3 text-right font-semibold">Accuracy</th>
+                  <th className="hidden px-2 py-3 text-right font-semibold sm:table-cell sm:px-4">Accuracy</th>
                 )}
               </tr>
             </thead>

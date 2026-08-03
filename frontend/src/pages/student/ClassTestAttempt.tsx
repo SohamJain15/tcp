@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -7,26 +7,17 @@ import { classTestApi } from "@/api/services";
 import type { ExecutableLanguage, StudentClassTestQuestion } from "@/api/types";
 import { ContestCodingBody } from "@/components/ContestCodingBody";
 import { AppLayout } from "@/components/AppLayout";
-import { Badge } from "@/components/ui/badge";
+import { ContestLockOverlay } from "@/components/ContestLockOverlay";
+import { ContestScreenGuard } from "@/components/ContestScreenGuard";
+import { ContestTimer } from "@/components/ContestTimer";
+import { ContestWatermark } from "@/components/ContestWatermark";
+import { DesktopOnlyNotice } from "@/components/DesktopOnlyNotice";
+import { useAttemptProctoring } from "@/hooks/useAttemptProctoring";
+import { useIsHandheld } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-
-/** Counts down to the shared deadline every student in the class shares. */
-function useCountdown(deadlineAt: string | null): string {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  if (!deadlineAt) return "";
-  const remaining = Math.max(0, new Date(deadlineAt).getTime() - now);
-  const minutes = Math.floor(remaining / 60000);
-  const seconds = Math.floor((remaining % 60000) / 1000);
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
 
 export default function ClassTestAttempt() {
   const { id = "" } = useParams();
@@ -51,6 +42,9 @@ export default function ClassTestAttempt() {
     mutationFn: () => classTestApi.startAttempt(id, pathname),
     onSuccess: (data) => {
       setConfirmed(true);
+      // Must ride the same user gesture as the click; browsers refuse programmatic fullscreen
+      // outside one. Failure is not fatal — the lock overlay picks it up on the next interaction.
+      void document.documentElement.requestFullscreen?.().catch(() => undefined);
       setAnswers(
         Object.fromEntries(
           data.classTest.answers
@@ -79,48 +73,46 @@ export default function ClassTestAttempt() {
 
   const test = testQuery.data?.classTest;
   const active = test?.attemptStatus === "ACTIVE" && confirmed;
-  const countdown = useCountdown(active ? test?.deadlineAt ?? null : null);
+  const isHandheld = useIsHandheld();
+  const watermarkPrimary = test?.identity.uid ?? test?.identity.rollNumber ?? "";
 
-  // Proctoring: leaving the tab or the window is reported, and the server decides whether that
-  // ends the attempt. Registered only while the paper is actually open.
-  const reportedRef = useRef(false);
-  useEffect(() => {
-    if (!active) return;
+  // The same proctoring contests use: fullscreen enforcement, lock overlay, screen guard,
+  // blocked copy/paste and PrintScreen wiping. The server already scored and auto-submitted on
+  // every one of these event types — only this page was doing the bare minimum before.
+  const recordProctorEvent = useCallback(
+    async (payload: { type: string }) => {
+      const result = await classTestApi.recordProctorEvent(id, payload.type, pathname);
+      if (result.autoSubmitted) {
+        void queryClient.invalidateQueries({ queryKey: ["my-class-test", id] });
+      }
+      return { violationCount: result.violationCount, autoSubmitted: result.autoSubmitted };
+    },
+    [id, pathname, queryClient],
+  );
 
-    const report = (type: string) => {
-      if (reportedRef.current) return;
-      reportedRef.current = true;
-      classTestApi
-        .recordProctorEvent(id, type, pathname)
-        .then((result) => {
-          if (result.autoSubmitted) {
-            toast.error("Test auto-submitted — leaving the test window is not allowed");
-            void queryClient.invalidateQueries({ queryKey: ["my-class-test", id] });
-          }
-          reportedRef.current = false;
-        })
-        .catch(() => {
-          reportedRef.current = false;
-        });
-    };
-
-    const onVisibility = () => {
-      if (document.hidden) report("VISIBILITY_LOSS");
-    };
-    const onBlur = () => report("TAB_SWITCH");
-
-    document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("blur", onBlur);
-    };
-  }, [active, id, pathname, queryClient]);
+  const { isLocked, isObscured, violationCount, requestFullscreen } = useAttemptProctoring({
+    isAttemptActive: active,
+    enabled: !isHandheld,
+    maxViolations: test?.maxViolations,
+    violationCount: test?.violationCount ?? 0,
+    recordEvent: recordProctorEvent,
+    surfaceLabel: "class test",
+  });
 
   const setAnswer = (questionId: string, answer: string | string[]) => {
     setAnswers((current) => ({ ...current, [questionId]: answer }));
     saveMutation.mutate({ questionId, answer });
   };
+
+  if (isHandheld) {
+    return (
+      <DesktopOnlyNotice
+        feature="class tests"
+        backTo="/student/class-tests"
+        backLabel="Back to class tests"
+      />
+    );
+  }
 
   if (testQuery.isLoading || !test) {
     return (
@@ -239,39 +231,64 @@ export default function ClassTestAttempt() {
     );
   }
 
+  if (isObscured) {
+    return <ContestScreenGuard />;
+  }
+
+  if (isLocked) {
+    return <ContestLockOverlay onReturnToFullscreen={requestFullscreen} violationCount={violationCount} />;
+  }
+
+  // The live paper runs as its own full-screen surface — no site chrome, the same shell a contest
+  // uses. AppLayout is deliberately absent: a nav bar is an exit route out of a locked exam.
   return (
-    <AppLayout>
-      <div className="container max-w-3xl space-y-5 py-8">
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-background py-3">
-          <div>
-            <h1 className="font-display text-xl font-bold">{test.title}</h1>
+    <div className="flex h-screen flex-col overflow-hidden bg-background">
+      {watermarkPrimary && <ContestWatermark primary={watermarkPrimary} secondary={test.identity.name ?? undefined} />}
+
+      <header className="shrink-0 border-b border-border bg-card">
+        <div className="flex min-h-14 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2">
+          <div className="min-w-0">
+            <h1 className="truncate font-display text-base font-bold">{test.title}</h1>
             <p className="text-xs text-muted-foreground">{test.subject}</p>
           </div>
-          <Badge className="rounded-none font-mono-code text-base">{countdown}</Badge>
+          <div className="flex shrink-0 items-center gap-3">
+            <span className="text-xs text-muted-foreground">
+              Violations: {violationCount}/{test.maxViolations}
+            </span>
+            <ContestTimer
+              deadline={test.deadlineAt}
+              className="py-1"
+              onExpire={() => submitMutation.mutate()}
+            />
+          </div>
         </div>
+      </header>
 
-        {test.questions.map((question, index) => (
-          <QuestionCard
-            key={question.id}
-            index={index}
-            question={question}
-            value={answers[question.id]}
-            onChange={(answer) => setAnswer(question.id, answer)}
-            classTestId={id}
-            pathname={pathname}
-            attemptIsActive={active}
-          />
-        ))}
+      <main className="min-h-0 flex-1 overflow-y-auto">
+        <div className="container max-w-3xl space-y-5 py-6">
+          {test.questions.map((question, index) => (
+            <QuestionCard
+              key={question.id}
+              index={index}
+              question={question}
+              value={answers[question.id]}
+              onChange={(answer) => setAnswer(question.id, answer)}
+              classTestId={id}
+              pathname={pathname}
+              attemptIsActive={active}
+            />
+          ))}
 
-        <Button
-          className="w-full bg-accent text-accent-foreground hover:bg-accent/90"
-          onClick={() => submitMutation.mutate()}
-          disabled={submitMutation.isPending}
-        >
-          {submitMutation.isPending ? "Submitting…" : "Submit test"}
-        </Button>
-      </div>
-    </AppLayout>
+          <Button
+            className="w-full bg-accent text-accent-foreground hover:bg-accent/90"
+            onClick={() => submitMutation.mutate()}
+            disabled={submitMutation.isPending}
+          >
+            {submitMutation.isPending ? "Submitting…" : "Submit test"}
+          </Button>
+        </div>
+      </main>
+    </div>
   );
 }
 

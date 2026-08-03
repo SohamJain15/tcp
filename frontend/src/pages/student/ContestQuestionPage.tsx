@@ -18,8 +18,10 @@ import { ContestWatermark } from "@/components/ContestWatermark";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useContestCodeDrafts } from "@/hooks/useContestCodeDrafts";
 import { useVisitedQuestions } from "@/hooks/useVisitedQuestions";
-import type { ContestAttempt, ExecutableLanguage } from "@/api/types";
-import { useContestProctoring } from "./useContestProctoring";
+import type { ContestAttempt, ContestProctoringPayload, ExecutableLanguage } from "@/api/types";
+import { useAttemptProctoring } from "@/hooks/useAttemptProctoring";
+import { useIsHandheld } from "@/hooks/use-mobile";
+import { DesktopOnlyNotice } from "@/components/DesktopOnlyNotice";
 
 /**
  * One question of a live contest attempt. Coding and objective questions share this shell but each
@@ -74,12 +76,31 @@ export default function ContestQuestionPage() {
     [id, questionId, queryClient],
   );
 
-  const { isLocked, isObscured, violationCount, requestFullscreen } = useContestProctoring({
-    contestId: id,
-    pathname,
-    attempt,
+  const isHandheld = useIsHandheld();
+
+  // Behaviour is unchanged for contests — the endpoint call that used to live inside the hook is
+  // now passed in, so class tests can share the same proctoring without either importing the
+  // other. `enabled` keeps fullscreen from ever being requested on a handheld while still
+  // calling the hook unconditionally.
+  const recordProctorEvent = useCallback(
+    async (payload: ContestProctoringPayload) => {
+      const response = await contestsApi.recordProctorEvent(id, payload, pathname);
+      updateAttemptInCache(response.attempt);
+      return {
+        violationCount: response.attempt.violationCount,
+        autoSubmitted: response.attempt.status === "AUTO_SUBMITTED",
+      };
+    },
+    [id, pathname, updateAttemptInCache],
+  );
+
+  const { isLocked, isObscured, violationCount, requestFullscreen } = useAttemptProctoring({
+    isAttemptActive: attempt?.status === "ACTIVE",
+    enabled: !isHandheld,
     maxViolations: contest?.maxViolations,
-    onAttemptUpdate: updateAttemptInCache,
+    violationCount: attempt?.violationCount ?? 0,
+    recordEvent: recordProctorEvent,
+    surfaceLabel: "contest",
   });
 
   const submitAttemptMutation = useMutation({
@@ -127,6 +148,13 @@ export default function ContestQuestionPage() {
 
   if (!id || !questionId) {
     return <Navigate to="/student/contests" replace />;
+  }
+
+  // Direct-URL guard. `enabled: false` above already stopped proctoring from engaging.
+  if (isHandheld) {
+    return (
+      <DesktopOnlyNotice feature="contests" backTo="/student/contests" backLabel="Back to contests" />
+    );
   }
 
   if (isLoading) {

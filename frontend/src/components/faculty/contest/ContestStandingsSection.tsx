@@ -1,3 +1,4 @@
+import { formatDuration } from "@/lib/duration";
 import { Link } from "react-router-dom";
 
 import type { ContestStandingItem } from "@/api/types";
@@ -36,7 +37,7 @@ export function ContestStandingsSection({ standings, resultsPublished }: Contest
                 </Link>
               </TableCell>
               <TableCell>{entry.solvedCount}</TableCell>
-              <TableCell>{entry.timeTakenMs !== null ? `${Math.ceil(entry.timeTakenMs / 1000)} sec` : "-"}</TableCell>
+              <TableCell>{entry.timeTakenMs !== null ? `${formatDuration(entry.timeTakenMs)}` : "-"}</TableCell>
               <TableCell>{entry.violationCount}</TableCell>
               <TableCell>{entry.score}</TableCell>
             </TableRow>
