@@ -46,6 +46,16 @@ export function createClassTestRouter(dependencies: ApplicationDependencies): Ro
     requireRole("STUDENT"),
     asyncHandler(controller.submitCodingQuestion),
   );
+  router.get(
+    "/mine/:classTestId/feedback",
+    requireRole("STUDENT"),
+    asyncHandler(controller.getFeedbackStatus),
+  );
+  router.post(
+    "/mine/:classTestId/feedback",
+    requireRole("STUDENT"),
+    asyncHandler(controller.submitFeedback),
+  );
   router.post(
     "/mine/:classTestId/coding-draft",
     requireRole("STUDENT"),

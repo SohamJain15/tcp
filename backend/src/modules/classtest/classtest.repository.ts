@@ -15,6 +15,7 @@ import type {
   AssignedStudent,
   ClassTestAttemptRecord,
   ClassTestAudienceFilter,
+  ClassTestFeedbackRecord,
   ClassTestGradingStatus,
   ClassTestProctoringEventRecord,
   ClassTestQuestion,
@@ -36,6 +37,11 @@ export interface ClassTestAttemptRepository {
   save(attempt: ClassTestAttemptRecord): Promise<ClassTestAttemptRecord>;
   /** ACTIVE attempts past the shared deadline — used by the background finaliser. */
   listActiveExpired(now: Date): Promise<ClassTestAttemptRecord[]>;
+}
+
+export interface ClassTestFeedbackRepository {
+  getByTestAndUser(classTestId: string, userEmail: string): Promise<ClassTestFeedbackRecord | null>;
+  save(feedback: ClassTestFeedbackRecord): Promise<ClassTestFeedbackRecord>;
 }
 
 export interface ClassTestProctoringRepository {
@@ -366,5 +372,48 @@ export class MongoClassTestProctoringRepository implements ClassTestProctoringRe
         createdAt: toDate(record.createdAt) ?? new Date(0),
       };
     });
+  }
+}
+
+export class MongoClassTestFeedbackRepository implements ClassTestFeedbackRepository {
+  async getByTestAndUser(classTestId: string, userEmail: string): Promise<ClassTestFeedbackRecord | null> {
+    const document = await (await getCollection("class_test_feedback")).findOne({
+      classTestId,
+      // Emails are stored as entered but compared case-insensitively, matching the rest of the app.
+      userEmail: { $regex: `^${userEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
+    });
+    if (!document) return null;
+
+    const record = document as Record<string, unknown>;
+    return {
+      id: String(record.id ?? ""),
+      classTestId: String(record.classTestId ?? ""),
+      userEmail: String(record.userEmail ?? ""),
+      name: String(record.name ?? ""),
+      uid: String(record.uid ?? ""),
+      navigationEase: Number(record.navigationEase ?? 0),
+      visualDesignRating: Number(record.visualDesignRating ?? 0),
+      interfaceReadability: (record.interfaceReadability ??
+        "Need improvement") as ClassTestFeedbackRecord["interfaceReadability"],
+      editorResponsiveness: Number(record.editorResponsiveness ?? 0),
+      compilationLag: Number(record.compilationLag ?? 0),
+      errorMessageClarity: Number(record.errorMessageClarity ?? 0),
+      problemStatementClarity: (record.problemStatementClarity ??
+        "Needs improvement") as ClassTestFeedbackRecord["problemStatementClarity"],
+      bugsOrBrokenLinks: String(record.bugsOrBrokenLinks ?? ""),
+      oneNewFeature: String(record.oneNewFeature ?? ""),
+      recommendLikelihood: Number(record.recommendLikelihood ?? 0),
+      overallRating: record.overallRating === null || record.overallRating === undefined ? null : Number(record.overallRating),
+      createdAt: toDate(record.createdAt) ?? new Date(0),
+    };
+  }
+
+  async save(feedback: ClassTestFeedbackRecord): Promise<ClassTestFeedbackRecord> {
+    await (await getCollection("class_test_feedback")).updateOne(
+      { id: feedback.id },
+      { $set: { ...feedback } },
+      { upsert: true },
+    );
+    return feedback;
   }
 }

@@ -67,6 +67,28 @@ const codingSchema = z.object({
     .min(1, "Choose at least one language students may answer in"),
 });
 
+/**
+ * The class-test feedback questionnaire is deliberately identical to the contest one
+ * (`contest.validator.ts`), so the CoE can compare the two without reconciling shapes.
+ */
+const ratingSchema = z.coerce.number().int().min(1).max(5);
+
+export const classTestFeedbackSchema = z.object({
+  name: z.string().trim().min(1, "Name is required"),
+  uid: z.string().trim().min(1, "UID is required"),
+  navigationEase: ratingSchema,
+  visualDesignRating: ratingSchema,
+  interfaceReadability: z.enum(["Yes", "No", "Need improvement"]),
+  editorResponsiveness: ratingSchema,
+  compilationLag: ratingSchema,
+  errorMessageClarity: ratingSchema,
+  problemStatementClarity: z.enum(["Yes", "No", "Needs improvement"]),
+  bugsOrBrokenLinks: z.string().trim().min(1, "This field is required"),
+  oneNewFeature: z.string().trim().min(1, "This field is required"),
+  recommendLikelihood: ratingSchema,
+  overallRating: ratingSchema.nullish(),
+});
+
 const questionSchema = z
   .discriminatedUnion("type", [mcqSchema, msqSchema, shortAnswerSchema, codingSchema])
   .superRefine((value, ctx) => {

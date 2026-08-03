@@ -107,6 +107,30 @@ export interface ClassTestAudienceFilter {
   rollTo: number | null;
 }
 
+/**
+ * Same questionnaire contests collect, so the CoE can compare the platform experience across
+ * both without reconciling two shapes. One record per (classTestId, userEmail).
+ */
+export interface ClassTestFeedbackRecord {
+  id: string;
+  classTestId: string;
+  userEmail: string;
+  name: string;
+  uid: string;
+  navigationEase: number;
+  visualDesignRating: number;
+  interfaceReadability: "Yes" | "No" | "Need improvement";
+  editorResponsiveness: number;
+  compilationLag: number;
+  errorMessageClarity: number;
+  problemStatementClarity: "Yes" | "No" | "Needs improvement";
+  bugsOrBrokenLinks: string;
+  oneNewFeature: string;
+  recommendLikelihood: number;
+  overallRating: number | null;
+  createdAt: Date;
+}
+
 export interface ClassTestRecord {
   id: string;
   title: string;

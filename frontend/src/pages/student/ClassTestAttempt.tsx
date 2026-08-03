@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { classTestApi } from "@/api/services";
@@ -19,6 +19,22 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 
+/**
+ * The paper runs full-screen; once it is over the student must be handed back a normal window.
+ * Auto-submit (violation limit or the deadline sweeper) ends the attempt without any click of
+ * ours, so this is also called from an effect watching the attempt status.
+ */
+async function leaveFullscreen(): Promise<void> {
+  if (!document.fullscreenElement || !document.exitFullscreen) {
+    return;
+  }
+  try {
+    await document.exitFullscreen();
+  } catch {
+    // Nothing more to do — the browser is already leaving fullscreen or refuses to.
+  }
+}
+
 export default function ClassTestAttempt() {
   const { id = "" } = useParams();
   const pathname = `/student/class-tests/${id}`;
@@ -29,6 +45,13 @@ export default function ClassTestAttempt() {
   const testQuery = useQuery({
     queryKey: ["my-class-test", id],
     queryFn: () => classTestApi.getMine(id, pathname),
+    enabled: Boolean(id),
+  });
+
+  // Only meaningful once the paper is closed; the attempt page itself never shows it.
+  const feedbackQuery = useQuery({
+    queryKey: ["class-test-feedback-status", id],
+    queryFn: () => classTestApi.getFeedbackStatus(id, pathname),
     enabled: Boolean(id),
   });
 
@@ -64,7 +87,8 @@ export default function ClassTestAttempt() {
 
   const submitMutation = useMutation({
     mutationFn: () => classTestApi.submitAttempt(id, pathname),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await leaveFullscreen();
       toast.success("Test submitted");
       void queryClient.invalidateQueries({ queryKey: ["my-class-test", id] });
     },
@@ -98,6 +122,15 @@ export default function ClassTestAttempt() {
     recordEvent: recordProctorEvent,
     surfaceLabel: "class test",
   });
+
+  // Covers every way an attempt can end that is not our own submit click: the violation
+  // auto-submit, the shared deadline, or landing here on an already-finished attempt.
+  const attemptStatus = test?.attemptStatus;
+  useEffect(() => {
+    if (attemptStatus && attemptStatus !== "ACTIVE" && attemptStatus !== "NOT_STARTED") {
+      void leaveFullscreen();
+    }
+  }, [attemptStatus]);
 
   const setAnswer = (questionId: string, answer: string | string[]) => {
     setAnswers((current) => ({ ...current, [questionId]: answer }));
@@ -172,6 +205,16 @@ export default function ClassTestAttempt() {
             <p className="mt-2 text-muted-foreground">
               Your answers are recorded. Marks appear once your faculty publishes the results.
             </p>
+
+            {/* Asked now, while the experience is fresh — not held back until results land. */}
+            {!feedbackQuery.data?.submitted && (
+              <Button asChild className="mt-6 bg-accent text-accent-foreground hover:bg-accent/90">
+                <Link to={`/student/class-tests/${id}/feedback`}>Share your feedback</Link>
+              </Button>
+            )}
+            {feedbackQuery.data?.submitted && (
+              <p className="mt-6 text-sm text-muted-foreground">Thanks for your feedback.</p>
+            )}
           </Card>
         </div>
       </AppLayout>

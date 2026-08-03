@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, CheckCircle2, ClipboardCopy, FileJson, Trash2, Upload, Users } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { classTestApi } from "@/api/services";
@@ -84,6 +84,53 @@ function blankQuestion(type: ClassTestQuestionType): DraftQuestion {
   };
 }
 
+/** Inverse of `toPayloadQuestion` — rebuilds an editable draft from a stored question. */
+function toDraftQuestion(raw: Record<string, unknown>): DraftQuestion {
+  const type = String(raw.type ?? "MCQ") as ClassTestQuestionType;
+  const base = blankQuestion(type);
+  const testCases = (value: unknown): TestCaseDraft[] =>
+    Array.isArray(value)
+      ? value.map((entry) => {
+          const testCase = entry as Record<string, unknown>;
+          return {
+            input: String(testCase.input ?? ""),
+            output: String(testCase.output ?? ""),
+            explanation: String(testCase.explanation ?? ""),
+          };
+        })
+      : [];
+
+  return {
+    ...base,
+    points: Number(raw.points ?? base.points),
+    statement: String(raw.statement ?? raw.problemStatement ?? ""),
+    options: Array.isArray(raw.options) ? raw.options.map(String) : base.options,
+    correctAnswer: String(raw.correctAnswer ?? ""),
+    correctAnswers: Array.isArray(raw.correctAnswers) ? raw.correctAnswers.map(String) : [],
+    expectedSentences: Number(raw.expectedSentences ?? base.expectedSentences),
+    modelAnswer: String(raw.modelAnswer ?? ""),
+    problemTitle: String(raw.problemTitle ?? ""),
+    supportedLanguages: Array.isArray(raw.supportedLanguages)
+      ? raw.supportedLanguages.map(String)
+      : base.supportedLanguages,
+    difficulty: (raw.difficulty as DraftQuestion["difficulty"]) ?? base.difficulty,
+    constraints: String(raw.constraints ?? ""),
+    inputFormat: String(raw.inputFormat ?? ""),
+    outputFormat: String(raw.outputFormat ?? ""),
+    timeLimitSeconds: Number(raw.timeLimitSeconds ?? base.timeLimitSeconds),
+    memoryLimitMb: Number(raw.memoryLimitMb ?? base.memoryLimitMb),
+    sampleTestCases: testCases(raw.sampleTestCases),
+    hiddenTestCases: testCases(raw.hiddenTestCases),
+  };
+}
+
+/** `datetime-local` needs a local-time string without the timezone suffix. */
+function toDateTimeLocal(iso: string): string {
+  const date = new Date(iso);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 /** Strips the draft shape down to what the API expects for each question type. */
 function toPayloadQuestion(question: DraftQuestion) {
   const base = { points: Number(question.points) };
@@ -143,6 +190,10 @@ function toPayloadQuestion(question: DraftQuestion) {
 
 export default function CreateClassTest() {
   const navigate = useNavigate();
+  // The same form serves both routes: /create has no id, /:id/edit does.
+  const { id: editId } = useParams<{ id?: string }>();
+  const isEditing = Boolean(editId);
+  const pathname = isEditing ? `/faculty/class-tests/${editId}/edit` : PATHNAME;
 
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
@@ -165,6 +216,39 @@ export default function CreateClassTest() {
   const [jsonErrors, setJsonErrors] = useState<JsonImportFieldError[]>([]);
   const [jsonStructureCopied, setJsonStructureCopied] = useState(false);
 
+  const existingQuery = useQuery({
+    queryKey: ["class-test", editId],
+    queryFn: () => classTestApi.get(editId!, pathname),
+    enabled: isEditing,
+  });
+
+  // Editing the paper or the timing after anyone has started would mean two students sat
+  // different assessments, so the server refuses it — mirror that here instead of letting
+  // faculty fill in a form that will be rejected.
+  const attemptsQuery = useQuery({
+    queryKey: ["class-test-attempts", editId],
+    queryFn: () => classTestApi.listAttempts(editId!, pathname),
+    enabled: isEditing,
+  });
+  const testHasStarted = (attemptsQuery.data?.items.length ?? 0) > 0;
+
+  // Hydrate once. Re-running on every refetch would discard edits in progress.
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    const existing = existingQuery.data?.classTest;
+    if (!existing || hydratedRef.current) return;
+    hydratedRef.current = true;
+
+    setTitle(existing.title);
+    setSubject(existing.subject);
+    setInstructions(existing.instructions ?? "");
+    setStartAt(toDateTimeLocal(existing.startAt));
+    setDurationMinutes(existing.durationMinutes);
+    setMaxViolations(existing.maxViolations);
+    setAudience(existing.audience);
+    setQuestions(existing.questions.map(toDraftQuestion));
+  }, [existingQuery.data]);
+
   const previewMutation = useMutation({
     mutationFn: () => classTestApi.previewAudience(audience, PATHNAME),
     onError: (error: Error) => toast.error(error.message || "Could not load students"),
@@ -172,30 +256,43 @@ export default function CreateClassTest() {
   const candidates = previewMutation.data?.students ?? [];
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      classTestApi.create(
-        {
+    mutationFn: () => {
+      // Sending `audience`/`assignedEmails` makes the server rebuild the assignment. While
+      // editing, the faculty may never touch the student picker — sending the untouched (empty)
+      // candidate list would un-assign the whole class, so omit both unless they actually
+      // re-ran the search.
+      const assignmentTouched = !isEditing || previewMutation.isSuccess;
+
+      const payload = {
           title,
           subject,
           instructions: instructions || null,
-          startAt: new Date(startAt).toISOString(),
           durationMinutes: Number(durationMinutes),
           maxViolations: Number(maxViolations),
-          audience,
-          // Everyone the filter found, minus anyone the faculty unticked.
-          assignedEmails: candidates
-            .filter((student) => !excluded.has(student.email))
-            .map((student) => student.email),
           questions: questions.map(toPayloadQuestion),
           lifecycleState: "Published",
-        },
-        PATHNAME,
-      ),
+          ...(startAt ? { startAt: new Date(startAt).toISOString() } : {}),
+          ...(assignmentTouched
+            ? {
+                audience,
+                // Everyone the filter found, minus anyone the faculty unticked.
+                assignedEmails: candidates
+                  .filter((student) => !excluded.has(student.email))
+                  .map((student) => student.email),
+              }
+            : {}),
+      };
+
+      return isEditing
+        ? classTestApi.update(editId!, payload, pathname)
+        : classTestApi.create(payload, pathname);
+    },
     onSuccess: (data) => {
-      toast.success("Class test scheduled");
+      toast.success(isEditing ? "Class test updated" : "Class test scheduled");
       navigate(`/faculty/class-tests/${data.classTest.id}`);
     },
-    onError: (error: Error) => toast.error(error.message || "Could not create the class test"),
+    onError: (error: Error) =>
+      toast.error(error.message || `Could not ${isEditing ? "update" : "create"} the class test`),
   });
 
   const updateQuestion = (key: string, patch: Partial<DraftQuestion>) => {
@@ -294,7 +391,16 @@ export default function CreateClassTest() {
       <div className="container max-w-4xl space-y-6 py-8">
         <div>
           <p className="text-sm font-semibold uppercase tracking-widest text-accent">Class Test</p>
-          <h1 className="mt-1 font-display text-3xl font-bold">New Class Test</h1>
+          <h1 className="mt-1 font-display text-3xl font-bold">
+            {isEditing ? "Edit Class Test" : "New Class Test"}
+          </h1>
+          {isEditing && testHasStarted && (
+            <p className="mt-2 border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+              Students have already started this test. The questions, start time and duration are
+              locked — changing them now would mean different students sat different papers. Title,
+              instructions and the violation limit can still be edited.
+            </p>
+          )}
         </div>
 
         <Card className="profile-card space-y-4 p-5">
@@ -310,7 +416,13 @@ export default function CreateClassTest() {
             </div>
             <div>
               <Label htmlFor="ct-start">Scheduled start</Label>
-              <Input id="ct-start" type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
+              <Input
+                id="ct-start"
+                type="datetime-local"
+                value={startAt}
+                disabled={testHasStarted}
+                onChange={(e) => setStartAt(e.target.value)}
+              />
             </div>
             <div>
               <Label htmlFor="ct-duration">Duration (minutes)</Label>
@@ -318,6 +430,7 @@ export default function CreateClassTest() {
                 id="ct-duration"
                 type="number"
                 min={1}
+                disabled={testHasStarted}
                 // The server caps this at 240; bounding it here means an inline nudge instead of
                 // a rejection after the whole form is filled in.
                 max={240}
@@ -477,6 +590,13 @@ export default function CreateClassTest() {
         </Card>
 
         <Card className="profile-card space-y-4 p-5">
+          {testHasStarted && (
+            <p className="border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+              The paper is locked because students have started. You can still grade and publish
+              from the test page.
+            </p>
+          )}
+          <fieldset disabled={testHasStarted} className="contents">
           <Tabs value={authoringTab} onValueChange={setAuthoringTab}>
             <TabsList className="grid w-full max-w-md grid-cols-2">
               <TabsTrigger value="form">Questions</TabsTrigger>
@@ -897,6 +1017,7 @@ export default function CreateClassTest() {
           </div>
             </TabsContent>
           </Tabs>
+          </fieldset>
         </Card>
 
         <div className="flex justify-end gap-3">
@@ -906,9 +1027,23 @@ export default function CreateClassTest() {
           <Button
             className="bg-accent text-accent-foreground hover:bg-accent/90"
             onClick={() => createMutation.mutate()}
-            disabled={createMutation.isPending || assignedCount === 0 || !title || !subject || !startAt}
+            disabled={
+              createMutation.isPending ||
+              !title ||
+              !subject ||
+              !startAt ||
+              // When editing, an untouched student picker means "keep the existing class",
+              // so an empty candidate list is not a reason to block saving.
+              (!isEditing && assignedCount === 0)
+            }
           >
-            {createMutation.isPending ? "Scheduling…" : `Schedule for ${assignedCount} student(s)`}
+            {createMutation.isPending
+              ? isEditing
+                ? "Saving…"
+                : "Scheduling…"
+              : isEditing
+                ? "Save changes"
+                : `Schedule for ${assignedCount} student(s)`}
           </Button>
         </div>
       </div>

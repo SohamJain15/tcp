@@ -11,6 +11,7 @@ import {
   createClassTestSchema,
   gradeShortAnswerSchema,
   updateClassTestSchema,
+  classTestFeedbackSchema,
 } from "./classtest.validator";
 
 const routeIdSchema = z.string().regex(/^[a-z0-9_-]{4,80}$/i);
@@ -24,6 +25,18 @@ export function createClassTestController(classTestService: ClassTestService) {
     async listClassTests(req: Request, res: Response): Promise<void> {
       const items = await classTestService.listForFaculty(req.user!);
       res.json({ items });
+    },
+
+    async getFeedbackStatus(req: Request, res: Response): Promise<void> {
+      const classTestId = routeIdSchema.parse(getRouteParam(req.params.classTestId));
+      res.json(await classTestService.getFeedbackStatus(req.user!, classTestId));
+    },
+
+    async submitFeedback(req: Request, res: Response): Promise<void> {
+      const classTestId = routeIdSchema.parse(getRouteParam(req.params.classTestId));
+      const payload = classTestFeedbackSchema.parse(req.body);
+      const feedback = await classTestService.submitFeedback(req.user!, classTestId, payload);
+      res.status(201).json({ feedback });
     },
 
     async getClassTest(req: Request, res: Response): Promise<void> {

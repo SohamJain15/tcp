@@ -1,10 +1,12 @@
 import type {
   ClassTestAttemptRecord,
+  ClassTestFeedbackRecord,
   ClassTestProctoringEventRecord,
   ClassTestRecord,
 } from "../../modules/classtest/classtest.model";
 import type {
   ClassTestAttemptRepository,
+  ClassTestFeedbackRepository,
   ClassTestProctoringRepository,
   ClassTestRepository,
 } from "../../modules/classtest/classtest.repository";
@@ -532,6 +534,23 @@ export class InMemoryClassTestAttemptRepository implements ClassTestAttemptRepos
     return Array.from(this.attempts.values())
       .filter((attempt) => attempt.status === "ACTIVE" && attempt.deadlineAt.getTime() <= now.getTime())
       .map(cloneClassTestAttempt);
+  }
+}
+
+export class InMemoryClassTestFeedbackRepository implements ClassTestFeedbackRepository {
+  private readonly feedback = new Map<string, ClassTestFeedbackRecord>();
+
+  private key(classTestId: string, userEmail: string): string {
+    return `${classTestId}::${userEmail.toLowerCase()}`;
+  }
+
+  async getByTestAndUser(classTestId: string, userEmail: string): Promise<ClassTestFeedbackRecord | null> {
+    return this.feedback.get(this.key(classTestId, userEmail)) ?? null;
+  }
+
+  async save(record: ClassTestFeedbackRecord): Promise<ClassTestFeedbackRecord> {
+    this.feedback.set(this.key(record.classTestId, record.userEmail), { ...record });
+    return { ...record };
   }
 }
 

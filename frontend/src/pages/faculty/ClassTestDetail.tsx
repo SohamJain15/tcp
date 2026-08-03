@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Eye } from "lucide-react";
-import { useParams } from "react-router-dom";
+import { AlertTriangle, Eye, Pencil } from "lucide-react";
+import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { classTestApi } from "@/api/services";
@@ -94,6 +94,14 @@ export default function ClassTestDetail() {
               {test.assignedCount} assigned · {test.totalPoints} marks
             </p>
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+          {!ended && (
+            <Button asChild variant="outline">
+              <Link to={`/faculty/class-tests/${id}/edit`}>
+                <Pencil className="mr-2 h-4 w-4" /> Edit test
+              </Link>
+            </Button>
+          )}
           {ended && !test.resultsPublished && (
             <Button
               className="bg-accent text-accent-foreground hover:bg-accent/90"
@@ -105,6 +113,7 @@ export default function ClassTestDetail() {
             </Button>
           )}
           {test.resultsPublished && <Badge className="rounded-none bg-success/15 text-success">Results published</Badge>}
+          </div>
         </div>
 
         {!ended && (
@@ -218,17 +227,25 @@ export default function ClassTestDetail() {
                     </div>
                   )}
 
-                  {answer.requiresManualGrading && ended && (
-                    <GradeRow
-                      max={answer.maxPoints}
-                      initialPoints={answer.awardedPoints}
-                      initialNote={answer.graderNote ?? ""}
-                      saving={gradeMutation.isPending}
-                      onSave={(awardedPoints, graderNote) =>
-                        gradeMutation.mutate({ questionId: answer.questionId, awardedPoints, graderNote })
-                      }
-                    />
-                  )}
+                  {answer.requiresManualGrading &&
+                    (ended ? (
+                      <GradeRow
+                        max={answer.maxPoints}
+                        initialPoints={answer.awardedPoints}
+                        initialNote={answer.graderNote ?? ""}
+                        saving={gradeMutation.isPending}
+                        onSave={(awardedPoints, graderNote) =>
+                          gradeMutation.mutate({ questionId: answer.questionId, awardedPoints, graderNote })
+                        }
+                      />
+                    ) : (
+                      // The marking controls exist — they unlock when the test closes. Saying so
+                      // here stops it looking like written answers simply cannot be graded.
+                      <p className="border border-dashed border-border p-3 text-xs text-muted-foreground">
+                        You mark this answer yourself. The marks box appears here once the test
+                        ends — the server refuses grading while students are still writing.
+                      </p>
+                    ))}
                 </div>
               ))}
             </div>

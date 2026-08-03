@@ -501,6 +501,16 @@ export const classTestApi = {
       `/api/class-tests/mine/${encodeURIComponent(classTestId)}/proctor-events`,
       { method: "POST", body: { type }, pathname },
     ),
+  getFeedbackStatus: (classTestId: string, pathname?: string) =>
+    apiRequest<{ submitted: boolean; feedback: unknown | null }>(
+      `/api/class-tests/mine/${encodeURIComponent(classTestId)}/feedback`,
+      { pathname },
+    ),
+  submitFeedback: (classTestId: string, payload: ContestFeedbackPayload, pathname?: string) =>
+    apiRequest<{ feedback: unknown }>(
+      `/api/class-tests/mine/${encodeURIComponent(classTestId)}/feedback`,
+      { method: "POST", body: payload, pathname },
+    ),
   getResult: (classTestId: string, pathname?: string) =>
     apiRequest<{ result: StudentClassTestResult }>(
       `/api/class-tests/mine/${encodeURIComponent(classTestId)}/result`,

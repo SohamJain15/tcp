@@ -492,6 +492,98 @@ describe("Class Test — proctoring", () => {
   });
 });
 
+
+const feedbackPayload = {
+  name: "CT Student 11",
+  uid: "24-AIDSA11-28",
+  navigationEase: 4,
+  visualDesignRating: 4,
+  interfaceReadability: "Yes",
+  editorResponsiveness: 5,
+  compilationLag: 4,
+  errorMessageClarity: 3,
+  problemStatementClarity: "Yes",
+  bugsOrBrokenLinks: "None",
+  oneNewFeature: "Dark mode for the editor",
+  recommendLikelihood: 5,
+  overallRating: 5,
+};
+
+describe("Class Test — feedback", () => {
+  it("refuses feedback while the student is still writing", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+    const test = await createLiveTest(app);
+    const headers = studentHeaders("cta11@tcetmumbai.in");
+    await request(app).post(`/api/class-tests/mine/${test.id}/attempts`).set(headers);
+
+    const response = await request(app)
+      .post(`/api/class-tests/mine/${test.id}/feedback`)
+      .set(headers)
+      .send(feedbackPayload);
+
+    // Mid-test is the worst moment to interrupt someone.
+    expect(response.status).toBe(409);
+  });
+
+  it("accepts feedback the moment the student submits, and stores it once", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+    const test = await createLiveTest(app);
+    const headers = studentHeaders("cta11@tcetmumbai.in");
+    await request(app).post(`/api/class-tests/mine/${test.id}/attempts`).set(headers);
+    await request(app).post(`/api/class-tests/mine/${test.id}/attempts/submit`).set(headers);
+
+    const first = await request(app)
+      .post(`/api/class-tests/mine/${test.id}/feedback`)
+      .set(headers)
+      .send(feedbackPayload);
+    expect(first.status).toBe(201);
+    expect(first.body.feedback.oneNewFeature).toBe("Dark mode for the editor");
+
+    // A repeat submit returns the stored record rather than creating a second one.
+    const second = await request(app)
+      .post(`/api/class-tests/mine/${test.id}/feedback`)
+      .set(headers)
+      .send({ ...feedbackPayload, oneNewFeature: "Something else" });
+    expect(second.status).toBe(201);
+    expect(second.body.feedback.id).toBe(first.body.feedback.id);
+    expect(second.body.feedback.oneNewFeature).toBe("Dark mode for the editor");
+  });
+
+  it("reports whether this student has already given feedback", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+    const test = await createLiveTest(app);
+    const headers = studentHeaders("cta11@tcetmumbai.in");
+    await request(app).post(`/api/class-tests/mine/${test.id}/attempts`).set(headers);
+
+    const before = await request(app).get(`/api/class-tests/mine/${test.id}/feedback`).set(headers);
+    expect(before.body).toEqual({ submitted: false, feedback: null });
+
+    await request(app).post(`/api/class-tests/mine/${test.id}/attempts/submit`).set(headers);
+    await request(app).post(`/api/class-tests/mine/${test.id}/feedback`).set(headers).send(feedbackPayload);
+
+    const after = await request(app).get(`/api/class-tests/mine/${test.id}/feedback`).set(headers);
+    expect(after.body.submitted).toBe(true);
+  });
+
+  it("refuses feedback from a student who was never assigned the test", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+    const test = await createLiveTest(app, { assignedEmails: ["cta11@tcetmumbai.in"] });
+
+    // Same division and roll range, but unticked — 404, not 403, so the response does not even
+    // confirm the test exists.
+    const response = await request(app)
+      .post(`/api/class-tests/mine/${test.id}/feedback`)
+      .set(studentHeaders("cta12@tcetmumbai.in"))
+      .send(feedbackPayload);
+
+    expect(response.status).toBe(404);
+  });
+});
+
 /** An ended test: startAt well before the fixed clock, so grading is open. */
 async function createEndedTest(
   app: Parameters<typeof request>[0],

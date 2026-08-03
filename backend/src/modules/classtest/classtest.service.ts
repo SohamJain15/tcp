@@ -23,12 +23,14 @@ import {
   type ClassTestAttemptRecord,
   type ClassTestAudienceFilter,
   type ClassTestCodingQuestion,
+  type ClassTestFeedbackRecord,
   type ClassTestQuestion,
   type ClassTestRecord,
   type StudentClassTestQuestion,
 } from "./classtest.model";
 import type {
   ClassTestAttemptRepository,
+  ClassTestFeedbackRepository,
   ClassTestProctoringRepository,
   ClassTestRepository,
 } from "./classtest.repository";
@@ -38,6 +40,7 @@ import type {
   GradeShortAnswerInput,
   UpdateClassTestInput,
 } from "./classtest.validator";
+import type { classTestFeedbackSchema } from "./classtest.validator";
 
 /**
  * Evasions the browser cannot hard-block, so they count against the student. Clipboard and
@@ -167,6 +170,15 @@ export interface ClassTestService {
     input: GradeShortAnswerInput,
   ): Promise<FacultyAttemptDetail>;
   publishResults(user: AuthenticatedUser, classTestId: string, published: boolean): Promise<ClassTestRecord>;
+  submitFeedback(
+    user: AuthenticatedUser,
+    classTestId: string,
+    input: ClassTestFeedbackInput,
+  ): Promise<ClassTestFeedbackRecord>;
+  getFeedbackStatus(
+    user: AuthenticatedUser,
+    classTestId: string,
+  ): Promise<{ submitted: boolean; feedback: ClassTestFeedbackRecord | null }>;
 }
 
 export interface CodingRunInput {
@@ -227,8 +239,11 @@ export interface FacultyAttemptDetail extends FacultyAttemptSummary {
   }[];
 }
 
+type ClassTestFeedbackInput = import("zod").infer<typeof classTestFeedbackSchema>;
+
 interface ClassTestServiceDependencies {
   classTestRepository: ClassTestRepository;
+  classTestFeedbackRepository: ClassTestFeedbackRepository;
   classTestAttemptRepository: ClassTestAttemptRepository;
   classTestProctoringRepository: ClassTestProctoringRepository;
   userRepository: UserRepository;
@@ -812,6 +827,56 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
       // human never has to grade against a blank sheet.
       const scored = await ensureAutoScored(test, attempt, now);
       return toFacultyAttemptDetail(test, scored, computeClassTestStatus(test, now) === "Ended");
+    },
+
+    async getFeedbackStatus(user, classTestId) {
+      // loadForStudent 404s anyone who was not assigned this test.
+      await loadForStudent(user, classTestId);
+      const feedback = await dependencies.classTestFeedbackRepository.getByTestAndUser(
+        classTestId,
+        user.email,
+      );
+      return { submitted: feedback !== null, feedback };
+    },
+
+    async submitFeedback(user, classTestId, input) {
+      const { test, attempt } = await loadForStudent(user, classTestId);
+
+      // Asked the moment this student is done — they submitted, or the window shut on them.
+      // A student still writing is refused: mid-test is the worst moment to interrupt.
+      const attemptFinished = attempt !== null && attempt.status !== "ACTIVE";
+      if (!attemptFinished && computeClassTestStatus(test, dependencies.now()) !== "Ended") {
+        throw new AppError(409, "Feedback opens once you submit, or once the test ends");
+      }
+
+      // One record per (classTestId, userEmail): a repeat submit returns the stored feedback.
+      const existing = await dependencies.classTestFeedbackRepository.getByTestAndUser(
+        classTestId,
+        user.email,
+      );
+      if (existing) {
+        return existing;
+      }
+
+      return dependencies.classTestFeedbackRepository.save({
+        id: `classtest_feedback_${randomUUID()}`,
+        classTestId,
+        userEmail: user.email,
+        name: input.name.trim(),
+        uid: input.uid.trim(),
+        navigationEase: input.navigationEase,
+        visualDesignRating: input.visualDesignRating,
+        interfaceReadability: input.interfaceReadability,
+        editorResponsiveness: input.editorResponsiveness,
+        compilationLag: input.compilationLag,
+        errorMessageClarity: input.errorMessageClarity,
+        problemStatementClarity: input.problemStatementClarity,
+        bugsOrBrokenLinks: input.bugsOrBrokenLinks.trim(),
+        oneNewFeature: input.oneNewFeature.trim(),
+        recommendLikelihood: input.recommendLikelihood,
+        overallRating: input.overallRating ?? null,
+        createdAt: dependencies.now(),
+      });
     },
 
     async gradeShortAnswer(user, classTestId, attemptId, input) {

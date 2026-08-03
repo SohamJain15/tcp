@@ -19,9 +19,11 @@ import {
 } from "../modules/contest/contest.repository";
 import {
   MongoClassTestAttemptRepository,
+  MongoClassTestFeedbackRepository,
   MongoClassTestProctoringRepository,
   MongoClassTestRepository,
   type ClassTestAttemptRepository,
+  type ClassTestFeedbackRepository,
   type ClassTestProctoringRepository,
   type ClassTestRepository,
 } from "../modules/classtest/classtest.repository";
@@ -71,6 +73,7 @@ export interface RepositoryBundle {
   contestFeedbackRepository: ContestFeedbackRepository;
   classTestRepository: ClassTestRepository;
   classTestAttemptRepository: ClassTestAttemptRepository;
+  classTestFeedbackRepository: ClassTestFeedbackRepository;
   classTestProctoringRepository: ClassTestProctoringRepository;
   contestReportRepository: ContestReportRepository;
 }
@@ -122,6 +125,8 @@ function createRepositories(overrides?: Partial<RepositoryBundle>): RepositoryBu
     classTestRepository: overrides?.classTestRepository ?? new MongoClassTestRepository(),
     classTestAttemptRepository:
       overrides?.classTestAttemptRepository ?? new MongoClassTestAttemptRepository(),
+    classTestFeedbackRepository:
+      overrides?.classTestFeedbackRepository ?? new MongoClassTestFeedbackRepository(),
     classTestProctoringRepository:
       overrides?.classTestProctoringRepository ?? new MongoClassTestProctoringRepository(),
     contestReportRepository: overrides?.contestReportRepository ?? new MongoContestReportRepository(),
@@ -209,6 +214,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
   const classTestService = createClassTestService({
     classTestRepository: repositories.classTestRepository,
     classTestAttemptRepository: repositories.classTestAttemptRepository,
+    classTestFeedbackRepository: repositories.classTestFeedbackRepository,
     classTestProctoringRepository: repositories.classTestProctoringRepository,
     userRepository: repositories.userRepository,
     submissionRepository: repositories.submissionRepository,

@@ -105,6 +105,14 @@ export default function FacultyClassTests() {
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">
                         {test.resultsPublished ? "Published" : "Not published"}
+                        {test.computedStatus !== "Ended" && (
+                          <Link
+                            to={`/faculty/class-tests/${test.id}/edit`}
+                            className="ml-3 text-xs font-medium text-accent hover:underline"
+                          >
+                            Edit
+                          </Link>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))

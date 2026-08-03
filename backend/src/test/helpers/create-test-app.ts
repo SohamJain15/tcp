@@ -22,6 +22,7 @@ import { normalizeRole } from "../../shared/utils/normalize";
 import {
   InMemoryContestAttemptRepository,
   InMemoryClassTestAttemptRepository,
+  InMemoryClassTestFeedbackRepository,
   InMemoryClassTestProctoringRepository,
   InMemoryClassTestRepository,
   InMemoryContestFeedbackRepository,
@@ -209,6 +210,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
   const contestFeedbackRepository = new InMemoryContestFeedbackRepository();
   const classTestRepository = new InMemoryClassTestRepository();
   const classTestAttemptRepository = new InMemoryClassTestAttemptRepository();
+  const classTestFeedbackRepository = new InMemoryClassTestFeedbackRepository();
   const classTestProctoringRepository = new InMemoryClassTestProctoringRepository();
   const contestReportRepository = new InMemoryContestReportRepository();
   let tick = 0;
@@ -294,6 +296,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
     classTestService: createClassTestService({
       classTestRepository,
       classTestAttemptRepository,
+      classTestFeedbackRepository,
       classTestProctoringRepository,
       userRepository,
       submissionRepository,
@@ -340,6 +343,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       contestReportRepository,
       classTestRepository,
       classTestAttemptRepository,
+      classTestFeedbackRepository,
       classTestProctoringRepository,
     },
     services: {
