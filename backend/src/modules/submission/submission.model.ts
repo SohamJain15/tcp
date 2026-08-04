@@ -1,8 +1,77 @@
+import type { FailedTestCase } from "../../execution/execution-provider";
 import type { UserRole } from "../../shared/types/auth";
 import type { Department, Difficulty, ExecutableLanguage, SubmissionStatus } from "../../shared/types/domain";
 import { toIsoString } from "../../shared/utils/date";
 
+export type { FailedTestCase } from "../../execution/execution-provider";
+
 export type SubmissionSourceType = "problem" | "contest_coding" | "classtest_coding";
+
+/** How much of a captured failing case a student is allowed to see. */
+export type FailedTestVisibility = "full" | "truncated";
+
+/** Contest/class-test students see enough input to reproduce, not enough to reconstruct the case. */
+const TRUNCATED_FIELD_CHARS = 200;
+
+/**
+ * A failing case as shown to a student.
+ *
+ * `expectedOutput` is optional rather than blanked: under `truncated` the field is absent
+ * entirely, so the UI can say "hidden during contests" instead of rendering an empty box that
+ * reads like the answer really was an empty string.
+ */
+export interface FailedTestCaseView {
+  index: number;
+  isHidden: boolean;
+  status: SubmissionStatus;
+  input: string;
+  expectedOutput?: string;
+  actualOutput: string;
+  truncated: boolean;
+}
+
+/**
+ * Practice problems exist to be learned from, so the whole case is fair game. A contest or class
+ * test is being graded live, and handing back the expected output of a hidden case would let a
+ * student reconstruct the answer key one wrong submission at a time.
+ */
+export function resolveFailedTestVisibility(sourceType: SubmissionSourceType): FailedTestVisibility {
+  return sourceType === "problem" ? "full" : "truncated";
+}
+
+function truncate(value: string): string {
+  return value.length <= TRUNCATED_FIELD_CHARS ? value : `${value.slice(0, TRUNCATED_FIELD_CHARS)}…`;
+}
+
+export function redactFailedTest(
+  failedTest: FailedTestCase | null | undefined,
+  visibility: FailedTestVisibility,
+): FailedTestCaseView | null {
+  if (!failedTest) {
+    return null;
+  }
+
+  if (visibility === "full") {
+    return {
+      index: failedTest.index,
+      isHidden: failedTest.isHidden,
+      status: failedTest.status,
+      input: failedTest.input,
+      expectedOutput: failedTest.expectedOutput,
+      actualOutput: failedTest.actualOutput,
+      truncated: false,
+    };
+  }
+
+  return {
+    index: failedTest.index,
+    isHidden: failedTest.isHidden,
+    status: failedTest.status,
+    input: truncate(failedTest.input),
+    actualOutput: truncate(failedTest.actualOutput),
+    truncated: true,
+  };
+}
 
 export interface SubmissionRecord {
   id: string;
@@ -34,6 +103,8 @@ export interface SubmissionRecord {
   ratingAwarded: number;
   stdout: string | null;
   stderr: string | null;
+  /** Captured unredacted; `toSubmissionResponse` decides what the requester may see. */
+  failedTest: FailedTestCase | null;
   createdAt: Date;
   updatedAt: Date;
   judgedAt: Date | null;
@@ -68,6 +139,7 @@ export interface SubmissionResponse {
   ratingAwarded: number;
   stdout?: string | null;
   stderr?: string | null;
+  failedTest: FailedTestCaseView | null;
   createdAt: string;
   updatedAt: string;
   judgedAt: string | null;
@@ -90,6 +162,7 @@ export interface SubmissionRunResponse {
   executionProvider: string;
   stdout?: string;
   stderr?: string;
+  failedTest: FailedTestCaseView | null;
 }
 
 export function toSubmissionResponse(
@@ -120,6 +193,7 @@ export function toSubmissionResponse(
     ratingAwarded: submission.ratingAwarded,
     stdout: submission.stdout,
     stderr: submission.stderr,
+    failedTest: redactFailedTest(submission.failedTest, resolveFailedTestVisibility(submission.sourceType)),
     createdAt: toIsoString(submission.createdAt) ?? new Date(0).toISOString(),
     updatedAt: toIsoString(submission.updatedAt) ?? new Date(0).toISOString(),
     judgedAt: toIsoString(submission.judgedAt),

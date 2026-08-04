@@ -94,6 +94,7 @@ function createDefaultUser(authUser: AuthenticatedUser, now: Date): UserRecord {
     accuracy: 0,
     avgAcceptedRuntimeMs: 0,
     avgAcceptedMemoryKb: 0,
+    primaryLanguage: null,
     createdAt: now,
     updatedAt: now,
     lastLoginAt: now,

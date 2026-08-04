@@ -49,6 +49,8 @@ function classStudent(roll: number, division: string, department = COMP): UserRe
     accuracy: 0,
     avgAcceptedRuntimeMs: 0,
     avgAcceptedMemoryKb: 0,
+
+    primaryLanguage: null,
     createdAt: new Date(0),
     updatedAt: new Date(0),
     lastLoginAt: null,

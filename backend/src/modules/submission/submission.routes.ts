@@ -22,6 +22,8 @@ export function createSubmissionRouter(dependencies: ApplicationDependencies): R
     asyncHandler(controller.createSubmission),
   );
   router.get("/", asyncHandler(controller.listSubmissions));
+  // Before the bare `/:submissionId` so the literal segment is not swallowed by it.
+  router.get("/:submissionId/stats", requireRole("STUDENT"), asyncHandler(controller.getSubmissionStats));
   router.get("/:submissionId", asyncHandler(controller.getSubmissionById));
 
   return router;

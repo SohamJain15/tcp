@@ -5,6 +5,8 @@ import {
   createProblemSchema,
   manageProblemQuerySchema,
   problemDraftImportSchema,
+  problemHintsUpdateSchema,
+  problemLeaderboardQuerySchema,
   problemStateSchema,
   studentProblemQuerySchema,
   toCanonicalProblemPayload,
@@ -26,6 +28,34 @@ export function createProblemController(problemService: ProblemService) {
       const problem = routeIdSchema.parse(req.params.problemId);
       const problemDetail = await problemService.getStudentProblemDetail(req.user!, problem);
       res.json({ problem: problemDetail });
+    },
+
+    async getProblemLeaderboard(req: Request, res: Response): Promise<void> {
+      const problemId = routeIdSchema.parse(req.params.problemId);
+      const query = problemLeaderboardQuerySchema.parse(req.query);
+      const leaderboard = await problemService.getProblemLeaderboard(req.user!, problemId, query);
+      res.json(leaderboard);
+    },
+
+    async getProblemHints(req: Request, res: Response): Promise<void> {
+      const problemId = routeIdSchema.parse(req.params.problemId);
+      res.json(await problemService.getProblemHints(req.user!, problemId));
+    },
+
+    async revealProblemHint(req: Request, res: Response): Promise<void> {
+      const problemId = routeIdSchema.parse(req.params.problemId);
+      res.json(await problemService.revealProblemHint(req.user!, problemId));
+    },
+
+    async generateProblemHints(req: Request, res: Response): Promise<void> {
+      const problemId = routeIdSchema.parse(req.params.problemId);
+      res.json(await problemService.generateProblemHints(req.user!, problemId));
+    },
+
+    async updateProblemHints(req: Request, res: Response): Promise<void> {
+      const problemId = routeIdSchema.parse(req.params.problemId);
+      const payload = problemHintsUpdateSchema.parse(req.body);
+      res.json(await problemService.updateProblemHints(req.user!, problemId, payload.hints));
     },
 
     async listManageProblems(req: Request, res: Response): Promise<void> {

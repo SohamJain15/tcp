@@ -8,6 +8,7 @@ import { AppError } from "../../shared/errors/app-error";
 import type { AuthenticatedUser } from "../../shared/types/auth";
 import type { ExecutableLanguage } from "../../shared/types/domain";
 import type { UserRepository } from "../user/user.repository";
+import { redactFailedTest } from "../submission/submission.model";
 import type { SubmissionRepository } from "../submission/submission.repository";
 import {
   classTestTotalPoints,
@@ -671,6 +672,7 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
         comparison: program.comparison,
         language: input.language,
         testCases: question.sampleTestCases,
+        sampleCaseCount: question.sampleTestCases.length,
         problemId: `${test.id}:${question.id}`,
         timeLimitSeconds: question.timeLimitSeconds,
         memoryLimitMb: question.memoryLimitMb,
@@ -690,6 +692,8 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
         executionProvider: result.provider,
         stdout: result.stdout,
         stderr: result.stderr,
+        // Run only judges sample cases, which the question already shows in full.
+        failedTest: redactFailedTest(result.failedTest, "full"),
       };
     },
 
@@ -732,6 +736,7 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
         ratingAwarded: 0,
         stdout: null,
         stderr: null,
+        failedTest: null,
         createdAt: now,
         updatedAt: now,
         judgedAt: null,

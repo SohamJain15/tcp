@@ -46,6 +46,8 @@ import type {
   ManageProblemSummary,
   PaginatedResponse,
   ProblemEnvelope,
+  ProblemHintsResponse,
+  ProblemLeaderboardResponse,
   ProblemDraftImportEnvelope,
   ProblemLifecycleState,
   ProblemUpdatePayload,
@@ -56,6 +58,7 @@ import type {
   StudentProblemSummary,
   Submission,
   SubmissionEnvelope,
+  SubmissionStatsEnvelope,
   SubmissionQueueReceipt,
   SubmissionResult,
   SubmissionStatus,
@@ -129,6 +132,18 @@ export const problemsApi = {
     apiRequest<PaginatedResponse<StudentProblemSummary>>("/api/problems", { query, pathname }),
   getStudentDetail: (problemId: string, pathname?: string) =>
     apiRequest<ProblemEnvelope<StudentProblemDetail>>(`/api/problems/${problemId}`, { pathname }),
+  getLeaderboard: (problemId: string, query: { pageSize?: number; cursor?: string } = {}, pathname?: string) =>
+    apiRequest<ProblemLeaderboardResponse>(`/api/problems/${problemId}/leaderboard`, {
+      query,
+      pathname,
+    }),
+  getHints: (problemId: string, pathname?: string) =>
+    apiRequest<ProblemHintsResponse>(`/api/problems/${problemId}/hints`, { pathname }),
+  revealHint: (problemId: string, pathname?: string) =>
+    apiRequest<ProblemHintsResponse>(`/api/problems/${problemId}/hints/reveal`, {
+      method: "POST",
+      pathname,
+    }),
   listManage: (query: ManageProblemsQuery = {}, pathname?: string) =>
     apiRequest<PaginatedResponse<ManageProblemSummary>>("/api/problems/manage", { query, pathname }),
   getManageDetail: (problemId: string, pathname?: string) =>
@@ -179,6 +194,10 @@ export const submissionsApi = {
     }),
   getById: (submissionId: string, pathname?: string) =>
     apiRequest<SubmissionEnvelope>(`/api/submissions/${submissionId}`, {
+      pathname,
+    }),
+  getStats: (submissionId: string, pathname?: string) =>
+    apiRequest<SubmissionStatsEnvelope>(`/api/submissions/${submissionId}/stats`, {
       pathname,
     }),
 };

@@ -193,8 +193,18 @@ export function normalizeExecutableLanguage(
   value: unknown,
   fallback: ExecutableLanguage = "cpp",
 ): ExecutableLanguage {
+  return tryNormalizeExecutableLanguage(value) ?? fallback;
+}
+
+/**
+ * Null instead of a default language, for fields where "not recorded yet" is a real state.
+ *
+ * Defaulting to `cpp` would silently file every student who has never solved anything into the
+ * C++ percentile bucket and skew it.
+ */
+export function tryNormalizeExecutableLanguage(value: unknown): ExecutableLanguage | null {
   const normalized = tryNormalizeSupportedLanguage(value);
-  return normalized && isExecutableLanguage(normalized) ? normalized : fallback;
+  return normalized && isExecutableLanguage(normalized) ? normalized : null;
 }
 
 export function normalizeSubmissionStatus(value: unknown): SubmissionStatus {

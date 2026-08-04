@@ -208,6 +208,22 @@ export interface ProblemEnvelope<T> {
   problem: T;
 }
 
+/**
+ * The first test case a submission got wrong.
+ *
+ * `expectedOutput` is absent whenever `truncated` is true — the server withholds it during
+ * contests and class tests so a wrong submission cannot be used to read back the answer key.
+ */
+export interface FailedTestCase {
+  index: number;
+  isHidden: boolean;
+  status: SubmissionStatus;
+  input: string;
+  expectedOutput?: string;
+  actualOutput: string;
+  truncated: boolean;
+}
+
 export interface SubmissionResult {
   problemId: string;
   language: ExecutableLanguage;
@@ -219,10 +235,86 @@ export interface SubmissionResult {
   executionProvider: string;
   stdout?: string;
   stderr?: string;
+  failedTest: FailedTestCase | null;
 }
 
 export interface RunResultEnvelope {
   result: SubmissionResult;
+}
+
+/**
+ * A row of a problem's submission leaderboard.
+ *
+ * Intentionally carries no `code` field: students compare efficiency, they do not read each
+ * other's solutions. The server enforces this too — the rows are read through a projection that
+ * strips source at the database.
+ */
+export interface ProblemLeaderboardItem {
+  rank: number;
+  submissionId: string;
+  userEmail: string;
+  userName: string | null;
+  userUid: string | null;
+  userDepartment: Department | null;
+  language: ExecutableLanguage;
+  runtimeMs: number;
+  memoryKb: number;
+  optimizationScore: number;
+  submittedAt: string;
+  isCurrentUser: boolean;
+}
+
+export interface ProblemLeaderboardResponse extends PaginatedResponse<ProblemLeaderboardItem> {
+  currentUserEntry: ProblemLeaderboardItem | null;
+}
+
+export interface DistributionBucket {
+  rangeStart: number;
+  rangeEnd: number;
+  count: number;
+  isYours: boolean;
+}
+
+export interface MetricDistribution {
+  buckets: DistributionBucket[];
+  yourValue: number;
+  /** Percentage of the compared field this submission beat, 0-100. */
+  beatsPercent: number;
+}
+
+export interface SubmissionStats {
+  submissionId: string;
+  problemId: string;
+  language: ExecutableLanguage;
+  runtime: MetricDistribution;
+  memory: MetricDistribution;
+  /** Who this was compared against — must be shown next to any percentage. */
+  basis: string;
+  sampleSize: number;
+  confidence: "high" | "low";
+}
+
+export interface SubmissionStatsEnvelope {
+  stats: SubmissionStats;
+}
+
+/**
+ * A hint as delivered to a student.
+ *
+ * `text` is null until the hint is revealed — the server never sends locked text, so this is a
+ * real gate rather than a visual one.
+ */
+export interface StudentHint {
+  order: number;
+  revealed: boolean;
+  text: string | null;
+}
+
+export interface ProblemHintsResponse {
+  totalHints: number;
+  revealedCount: number;
+  available: boolean;
+  hints: StudentHint[];
 }
 
 export type SubmissionSourceType = "problem" | "contest_coding";
@@ -250,6 +342,7 @@ export interface Submission {
   ratingAwarded: number;
   stdout?: string | null;
   stderr?: string | null;
+  failedTest: FailedTestCase | null;
   createdAt: string;
   updatedAt: string;
   judgedAt: string | null;
@@ -280,8 +373,13 @@ export interface LeaderboardItem {
   submissionCount: number;
   acceptedSubmissionCount: number;
   accuracy: number;
-  /** Memory efficiency relative to the ranked field, 0-1. Null when nobody has measured code. */
+  /**
+   * Runtime + memory efficiency measured against others writing the same language, 0-1.
+   * Null when nobody in the field has measured code.
+   */
   optimizationScore: number | null;
+  /** The language bucket `optimizationScore` was measured against. */
+  primaryLanguage: ExecutableLanguage | null;
   avgAcceptedRuntimeMs: number;
   updatedAt: string;
   lastAcceptedAt: string | null;

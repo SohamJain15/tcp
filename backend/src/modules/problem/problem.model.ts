@@ -46,8 +46,34 @@ export interface ProblemRecord {
    * absent, the problem uses legacy raw-stdin judging.
    */
   harness?: HarnessSpec;
+  /**
+   * Cached AI-generated hints, in reveal order. Empty until generated.
+   *
+   * Cached on the problem rather than generated per request so every student sees the same three
+   * hints, faculty can review and correct them, and revealing a hint costs a database read
+   * instead of a multi-second model call.
+   */
+  hints: ProblemHint[];
+  /**
+   * Set while a generation is in flight, so two students opening the hints panel at the same
+   * moment do not both drive the model. Reclaimed after `AI_STALE_LOCK_MS`, so a crash
+   * mid-generation cannot wedge a problem's hints forever.
+   */
+  hintsLockedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface ProblemHint {
+  /** 1-based position in the reveal sequence. */
+  order: number;
+  text: string;
+  generatedAt: Date | null;
+  /** Model that produced it, or null once a human has rewritten it. */
+  model: string | null;
+  promptVersion: string | null;
+  /** Email of the faculty member who last edited the text, if any. */
+  editedBy: string | null;
 }
 
 export interface StudentProblemSummaryResponse {

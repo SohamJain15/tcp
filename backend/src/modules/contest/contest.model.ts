@@ -2,6 +2,7 @@ import type { HarnessSpec } from "../../execution/harness/contract";
 import type { UserRole } from "../../shared/types/auth";
 import type { Department, Difficulty, ExecutableLanguage } from "../../shared/types/domain";
 import { toIsoString } from "../../shared/utils/date";
+import { buildLanguagePercentileScorer } from "../../shared/utils/language-percentile";
 import { lowerIsBetterPercentile } from "../../shared/utils/percentile";
 import type { StudentYear } from "../../shared/utils/student-year";
 
@@ -935,10 +936,18 @@ export function toContestRegistrationItem(
  */
 const OPTIMIZATION_WEIGHTS = { memory: 0.6, attempts: 0.4 } as const;
 
+/** Standing in for an attempt that solved nothing in a recorded language. */
+const UNKNOWN_LANGUAGE_BUCKET = "unknown";
+
 export interface AttemptEfficiency {
   totalRuntimeMs: number;
   totalMemoryKb: number;
   totalAttempts: number;
+  /**
+   * The language this attempt is compared against, taken from the majority of its solved coding
+   * questions. Null when nothing was solved in a recorded language.
+   */
+  primaryLanguage: ExecutableLanguage | null;
   /** False when this attempt solved no coding question, so there is nothing to measure. */
   hasCodingData: boolean;
 }
@@ -954,6 +963,7 @@ export function computeAttemptEfficiency(attempt: ContestAttemptRecord): Attempt
   let totalMemoryKb = 0;
   let totalAttempts = 0;
   let hasCodingData = false;
+  const languageCounts = new Map<ExecutableLanguage, number>();
 
   for (const state of attempt.questionStates) {
     if (state.questionType !== "Coding" || state.status !== "SOLVED") {
@@ -963,9 +973,28 @@ export function computeAttemptEfficiency(attempt: ContestAttemptRecord): Attempt
     totalRuntimeMs += Math.max(0, state.finalRuntimeMs);
     totalMemoryKb += Math.max(0, state.finalMemoryKb);
     totalAttempts += Math.max(0, state.attemptsCount);
+    if (state.finalSubmissionLanguage) {
+      languageCounts.set(
+        state.finalSubmissionLanguage,
+        (languageCounts.get(state.finalSubmissionLanguage) ?? 0) + 1,
+      );
+    }
   }
 
-  return { totalRuntimeMs, totalMemoryKb, totalAttempts, hasCodingData };
+  // Ties break alphabetically so the bucket an attempt lands in does not depend on the order
+  // its question states happen to be stored in.
+  let primaryLanguage: ExecutableLanguage | null = null;
+  let winningCount = 0;
+  for (const [language, count] of [...languageCounts.entries()].sort(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
+    if (count > winningCount) {
+      primaryLanguage = language;
+      winningCount = count;
+    }
+  }
+
+  return { totalRuntimeMs, totalMemoryKb, totalAttempts, primaryLanguage, hasCodingData };
 }
 
 /**
@@ -977,6 +1006,9 @@ export function computeAttemptEfficiency(attempt: ContestAttemptRecord): Attempt
  * comparison pools once and returns a comparator, rather than being a standalone pairwise
  * function. Attempts with no solved coding question (an MCQ-only contest, or a student who
  * solved nothing) score 0 on optimization and sort last among equal scores.
+ *
+ * The memory term is normalized per language, matching the practice board — see
+ * `buildLanguagePercentileScorer`.
  */
 export interface StandingsRanker {
   compare: (left: ContestAttemptRecord, right: ContestAttemptRecord) => number;
@@ -991,7 +1023,16 @@ export function buildStandingsRanker(attempts: readonly ContestAttemptRecord[]):
   }
 
   const measured = [...efficiencyByAttemptId.values()].filter((entry) => entry.hasCodingData);
-  const memoryPool = measured.map((entry) => entry.totalMemoryKb);
+
+  // Memory is language-normalized: a Python attempt measured against C++ memory is being scored
+  // on its runtime's allocator, not on the student's solution.
+  const memoryScorer = buildLanguagePercentileScorer(measured, {
+    languageOf: (entry) => entry.primaryLanguage ?? UNKNOWN_LANGUAGE_BUCKET,
+    valueOf: (entry) => entry.totalMemoryKb,
+  });
+
+  // Attempts stay pooled across languages on purpose — how many submissions it took to get a
+  // question right is a property of the student's debugging, not of the language they chose.
   const attemptsPool = measured.map((entry) => entry.totalAttempts);
 
   const optimizationOf = (attempt: ContestAttemptRecord): number => {
@@ -1000,7 +1041,7 @@ export function buildStandingsRanker(attempts: readonly ContestAttemptRecord[]):
       return 0;
     }
     return (
-      lowerIsBetterPercentile(memoryPool, efficiency.totalMemoryKb) * OPTIMIZATION_WEIGHTS.memory +
+      memoryScorer.scoreFor(efficiency) * OPTIMIZATION_WEIGHTS.memory +
       lowerIsBetterPercentile(attemptsPool, efficiency.totalAttempts) * OPTIMIZATION_WEIGHTS.attempts
     );
   };

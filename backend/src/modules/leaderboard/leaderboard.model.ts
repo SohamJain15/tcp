@@ -1,8 +1,8 @@
 import { toIsoString } from "../../shared/utils/date";
-import { lowerIsBetterPercentile } from "../../shared/utils/percentile";
+import { buildLanguagePercentileScorer } from "../../shared/utils/language-percentile";
 import { deriveStudentYearFromSemester, type StudentYear } from "../../shared/utils/student-year";
 import type { UserRole } from "../../shared/types/auth";
-import type { Department } from "../../shared/types/domain";
+import type { Department, ExecutableLanguage } from "../../shared/types/domain";
 import type { UserRecord } from "../user/user.model";
 
 export interface LeaderboardEntry {
@@ -21,6 +21,8 @@ export interface LeaderboardEntry {
   accuracy: number;
   avgAcceptedRuntimeMs: number;
   avgAcceptedMemoryKb: number;
+  /** Bucket for the efficiency percentiles; null until the student has an accepted submission. */
+  primaryLanguage: ExecutableLanguage | null;
   createdAt: Date;
   updatedAt: Date;
   lastAcceptedAt: Date | null;
@@ -41,8 +43,13 @@ export interface LeaderboardListItem {
   submissionCount: number;
   acceptedSubmissionCount: number;
   accuracy: number;
-  /** Memory efficiency of this student's accepted code relative to the ranked field, 0-1. */
+  /**
+   * Runtime + memory efficiency of this student's accepted code, 0-1, measured against others
+   * who write in the same language. Null when nobody in the field has measured code.
+   */
   optimizationScore: number | null;
+  /** Shown alongside the score so students can see which pool they were compared against. */
+  primaryLanguage: ExecutableLanguage | null;
   avgAcceptedRuntimeMs: number;
   updatedAt: string;
   lastAcceptedAt: string | null;
@@ -65,6 +72,7 @@ export function buildLeaderboardEntryFromUser(user: UserRecord): LeaderboardEntr
     accuracy: user.accuracy,
     avgAcceptedRuntimeMs: user.avgAcceptedRuntimeMs,
     avgAcceptedMemoryKb: user.avgAcceptedMemoryKb,
+    primaryLanguage: user.primaryLanguage,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
     lastAcceptedAt: user.lastAcceptedAt,
@@ -84,42 +92,69 @@ export interface LeaderboardRanker {
 }
 
 /**
- * Ranks practice standings.
+ * Relative pull of the two efficiency signals inside `optimizationScore`.
  *
- *   rating DESC → accuracy DESC → optimization DESC → avg runtime ASC → solved DESC → email ASC
+ * Runtime leads because it is what a student can actually attack by choosing a better algorithm;
+ * memory is more often a property of the language's runtime than of the solution. These mirror
+ * the contest weights so a student's optimization score means the same thing on both boards.
+ */
+export const PRACTICE_OPTIMIZATION_WEIGHTS = { runtime: 0.6, memory: 0.4 } as const;
+
+/**
+ * Ranks practice standings, mirroring how contests rank.
  *
- * Optimization here is **memory only**, unlike contests where it also covers attempt
- * efficiency. `accuracy` is already accepted ÷ submissions — that *is* attempt efficiency — and
- * it sits above this step, so folding attempts in again would count the same behaviour twice.
+ *   rating DESC → optimization DESC → accuracy DESC → avg runtime ASC → solved DESC → email ASC
  *
- * A percentile is only meaningful against the whole field, so this is a factory: the pool is
+ * Optimization sits directly under rating: among students who have solved equally much, the one
+ * who wrote the more efficient code ranks higher. Accuracy drops below it — a student who
+ * submits carefully but writes slow code should not outrank one who iterated to a fast solution.
+ *
+ * The score is a **language-normalized** blend of runtime and memory. Comparing a Python
+ * student's raw milliseconds against a C++ student's ranks the language rather than the person,
+ * so each student is scored against others who chose the same language (see
+ * `buildLanguagePercentileScorer` for the small-sample fallback).
+ *
+ * A percentile is only meaningful against the whole field, so this is a factory: the pools are
  * built once from values already on the entries, adding no I/O to a hot path that today reads
  * user records only.
  */
 export function buildLeaderboardRanker(entries: readonly LeaderboardEntry[]): LeaderboardRanker {
-  const memoryPool = entries
-    .filter((entry) => entry.avgAcceptedMemoryKb > 0)
-    .map((entry) => entry.avgAcceptedMemoryKb);
+  // Unset only for students with no accepted code, who score 0 either way.
+  const languageOf = (entry: LeaderboardEntry): string => entry.primaryLanguage ?? "unknown";
+
+  const runtimeScorer = buildLanguagePercentileScorer(entries, {
+    languageOf,
+    valueOf: (entry) => entry.avgAcceptedRuntimeMs,
+  });
+  const memoryScorer = buildLanguagePercentileScorer(entries, {
+    languageOf,
+    valueOf: (entry) => entry.avgAcceptedMemoryKb,
+  });
+
+  const hasMeasuredField = !runtimeScorer.isEmpty || !memoryScorer.isEmpty;
 
   const optimizationOf = (entry: LeaderboardEntry): number =>
-    entry.avgAcceptedMemoryKb > 0 ? lowerIsBetterPercentile(memoryPool, entry.avgAcceptedMemoryKb) : 0;
+    runtimeScorer.scoreFor(entry) * PRACTICE_OPTIMIZATION_WEIGHTS.runtime +
+    memoryScorer.scoreFor(entry) * PRACTICE_OPTIMIZATION_WEIGHTS.memory;
 
   const compare = (left: LeaderboardEntry, right: LeaderboardEntry): number => {
     if (right.rating !== left.rating) {
       return right.rating - left.rating;
     }
 
-    if (right.accuracy !== left.accuracy) {
-      return right.accuracy - left.accuracy;
-    }
-
-    if (memoryPool.length > 0) {
+    if (hasMeasuredField) {
       const leftOptimization = optimizationOf(left);
       const rightOptimization = optimizationOf(right);
       if (leftOptimization !== rightOptimization) {
         return rightOptimization - leftOptimization;
       }
+    }
 
+    if (right.accuracy !== left.accuracy) {
+      return right.accuracy - left.accuracy;
+    }
+
+    if (hasMeasuredField) {
       // A student with no accepted code has no runtime either; sort them after someone who has.
       const leftRuntime = left.avgAcceptedRuntimeMs || Number.MAX_SAFE_INTEGER;
       const rightRuntime = right.avgAcceptedRuntimeMs || Number.MAX_SAFE_INTEGER;
@@ -138,7 +173,7 @@ export function buildLeaderboardRanker(entries: readonly LeaderboardEntry[]): Le
   return {
     compare,
     optimizationScoreFor: (entry) =>
-      memoryPool.length > 0 ? Number(optimizationOf(entry).toFixed(4)) : null,
+      hasMeasuredField ? Number(optimizationOf(entry).toFixed(4)) : null,
   };
 }
 
@@ -163,6 +198,7 @@ export function toLeaderboardListItem(
     acceptedSubmissionCount: entry.acceptedSubmissionCount,
     accuracy: entry.accuracy,
     optimizationScore,
+    primaryLanguage: entry.primaryLanguage,
     avgAcceptedRuntimeMs: entry.avgAcceptedRuntimeMs,
     updatedAt: toIsoString(entry.updatedAt) ?? new Date(0).toISOString(),
     lastAcceptedAt: toIsoString(entry.lastAcceptedAt),

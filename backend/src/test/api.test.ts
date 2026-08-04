@@ -334,7 +334,7 @@ describe("TCET Coding Platform backend APIs", () => {
     expect(editorOnlyRunResponse.body.message).toBe("Validation failed");
   });
 
-  it("excludes faculty from the leaderboard, breaks rating ties by accuracy, and scopes submissions correctly", async () => {
+  it("excludes faculty from the leaderboard, breaks rating ties by optimization, and scopes submissions correctly", async () => {
     const { app, services } = createTestApp();
     const facultyProfileResponse = await request(app).get("/api/users/me").set(facultyHeaders);
     expect(facultyProfileResponse.status).toBe(200);
@@ -394,13 +394,30 @@ describe("TCET Coding Platform backend APIs", () => {
     expect(leaderboardResponse.body.items.map((item: { email: string }) => item.email)).not.toContain(
       "faculty1@tcetmumbai.in",
     );
-    expect(leaderboardResponse.body.items[0].email).toBe("student2@tcetmumbai.in");
-    expect(leaderboardResponse.body.items[0].rating).toBe(200);
-    expect(leaderboardResponse.body.items[0].accuracy).toBe(100);
-    expect(leaderboardResponse.body.items[1].email).toBe("student1@tcetmumbai.in");
-    expect(leaderboardResponse.body.items[1].rating).toBe(200);
-    expect(leaderboardResponse.body.items[1].accuracy).toBeCloseTo(66.67, 2);
-    expect(leaderboardResponse.body.items[1].problemsSolved).toBe(2);
+    // Both students reached rating 200, so the tie falls to optimization — the efficiency of
+    // their accepted code within their own language — before accuracy is consulted at all.
+    const rankedStudents = leaderboardResponse.body.items as Array<{
+      email: string;
+      rating: number;
+      accuracy: number;
+      optimizationScore: number | null;
+      problemsSolved: number;
+    }>;
+
+    expect(rankedStudents.map((item) => item.email).sort()).toEqual([
+      "student1@tcetmumbai.in",
+      "student2@tcetmumbai.in",
+    ]);
+    expect(rankedStudents.every((item) => item.rating === 200)).toBe(true);
+    expect(rankedStudents[0].optimizationScore).toBeGreaterThanOrEqual(
+      rankedStudents[1].optimizationScore ?? 0,
+    );
+
+    const studentOne = rankedStudents.find((item) => item.email === "student1@tcetmumbai.in")!;
+    const studentTwo = rankedStudents.find((item) => item.email === "student2@tcetmumbai.in")!;
+    expect(studentTwo.accuracy).toBe(100);
+    expect(studentOne.accuracy).toBeCloseTo(66.67, 2);
+    expect(studentOne.problemsSolved).toBe(2);
 
     const studentSubmissionList = await request(app).get("/api/submissions");
     expect(studentSubmissionList.status).toBe(200);

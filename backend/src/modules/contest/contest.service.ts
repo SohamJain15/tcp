@@ -8,6 +8,7 @@ import { normalizeDepartment } from "../../shared/utils/normalize";
 import { paginateArray, type PaginatedResult, type PaginationInput } from "../../shared/utils/pagination";
 import { matchesStudentYearSemester, type StudentYear } from "../../shared/utils/student-year";
 import type { SubmissionQueue } from "../../queue/submission-queue";
+import { redactFailedTest } from "../submission/submission.model";
 import type { SubmissionRepository } from "../submission/submission.repository";
 import type { UserRepository } from "../user/user.repository";
 import type {
@@ -748,6 +749,7 @@ async function createContestCodingSubmission(
     ratingAwarded: 0,
     stdout: null,
     stderr: null,
+    failedTest: null,
     createdAt: now,
     updatedAt: now,
     judgedAt: null,
@@ -1456,6 +1458,7 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         comparison: program.comparison,
         language: input.language,
         testCases: question.sampleTestCases,
+        sampleCaseCount: question.sampleTestCases.length,
         problemId: `${contest.id}:${question.id}`,
         timeLimitSeconds: question.timeLimitSeconds,
         memoryLimitMb: question.memoryLimitMb,
@@ -1472,6 +1475,8 @@ export function createContestService(dependencies: ContestServiceDependencies): 
         executionProvider: result.provider,
         stdout: result.stdout,
         stderr: result.stderr,
+        // Run only judges sample cases, which the question already shows in full.
+        failedTest: redactFailedTest(result.failedTest, "full"),
       };
     },
 

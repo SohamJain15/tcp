@@ -20,7 +20,17 @@ export function createProblemRouter(dependencies: ApplicationDependencies): Rout
   router.post("/", requireRole("FACULTY"), asyncHandler(controller.createProblem));
   router.patch("/:problemId/state", requireRole("FACULTY"), asyncHandler(controller.updateProblemState));
   router.patch("/:problemId", requireRole("FACULTY"), asyncHandler(controller.updateProblem));
+  router.post("/:problemId/hints/generate", requireRole("FACULTY"), asyncHandler(controller.generateProblemHints));
+  router.patch("/:problemId/hints", requireRole("FACULTY"), asyncHandler(controller.updateProblemHints));
   router.get("/", asyncHandler(controller.listStudentProblems));
+  // Registered before the bare `/:problemId` so the literal segments are not swallowed by it.
+  router.get("/:problemId/leaderboard", asyncHandler(controller.getProblemLeaderboard));
+  router.get("/:problemId/hints", requireRole("STUDENT"), asyncHandler(controller.getProblemHints));
+  router.post(
+    "/:problemId/hints/reveal",
+    requireRole("STUDENT"),
+    asyncHandler(controller.revealProblemHint),
+  );
   router.get("/:problemId", asyncHandler(controller.getStudentProblemDetail));
 
   return router;

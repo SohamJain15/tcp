@@ -1,4 +1,5 @@
 import { env } from "../../../config/env";
+import { callOllamaJson, probeOllama } from "../../../shared/ai/ollama";
 import {
   assignNarrativeSection,
   type ContestAnalytics,
@@ -36,10 +37,6 @@ export interface AiGenerationResult {
 export interface AiReportGenerator {
   getStatus(): Promise<AiRuntimeStatus>;
   generate(metrics: ContestAnalytics): Promise<AiGenerationResult>;
-}
-
-interface OllamaChatResponse {
-  message?: { content?: string };
 }
 
 const HEALTH_CACHE_MS = 60_000;
@@ -140,79 +137,17 @@ export class OllamaReportGenerator implements AiReportGenerator {
   }
 
   private async probe(): Promise<AiRuntimeStatus> {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/tags`, {
-        signal: AbortSignal.timeout(2000),
-      });
-      if (!response.ok) {
-        return {
-          available: false,
-          model: this.model,
-          baseUrl: this.baseUrl,
-          reason: `Local model runtime responded with HTTP ${response.status}.`,
-        };
-      }
-
-      const body = (await response.json()) as { models?: { name?: string }[] };
-      const installed = (body.models ?? [])
-        .map((entry) => entry.name)
-        .filter((name): name is string => typeof name === "string");
-
-      // Ollama reports tags as "qwen2.5:3b"; a bare "qwen2.5" in config should still match.
-      const hasModel = installed.some(
-        (name) => name === this.model || name.split(":")[0] === this.model.split(":")[0],
-      );
-
-      if (!hasModel) {
-        return {
-          available: false,
-          model: this.model,
-          baseUrl: this.baseUrl,
-          reason: `Model "${this.model}" is not installed. Run: ollama pull ${this.model}`,
-        };
-      }
-
-      return { available: true, model: this.model, baseUrl: this.baseUrl, reason: null };
-    } catch (error) {
-      return {
-        available: false,
-        model: this.model,
-        baseUrl: this.baseUrl,
-        reason: `Local model runtime unreachable at ${this.baseUrl} (${
-          error instanceof Error ? error.message : "unknown error"
-        }).`,
-      };
-    }
+    return probeOllama(this.baseUrl, this.model);
   }
 
   private async chat(system: string, user: string): Promise<string | null> {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/chat`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          model: this.model,
-          stream: false,
-          format: "json",
-          messages: [
-            { role: "system", content: system },
-            { role: "user", content: user },
-          ],
-          // temperature 0 + a fixed seed is what makes two runs over the same metrics comparable.
-          options: { temperature: 0, seed: 42, num_ctx: 8192 },
-        }),
-        signal: AbortSignal.timeout(this.timeoutMs),
-      });
-
-      if (!response.ok) {
-        return null;
-      }
-
-      const body = (await response.json()) as OllamaChatResponse;
-      return body.message?.content ?? null;
-    } catch {
-      return null;
-    }
+    return callOllamaJson({
+      baseUrl: this.baseUrl,
+      model: this.model,
+      timeoutMs: this.timeoutMs,
+      system,
+      user,
+    });
   }
 
   async generate(metrics: ContestAnalytics): Promise<AiGenerationResult> {

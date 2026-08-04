@@ -34,6 +34,14 @@ export interface UserRecord {
    */
   avgAcceptedRuntimeMs: number;
   avgAcceptedMemoryKb: number;
+  /**
+   * Which language the two averages above should be read against, drawn from the same
+   * first-accepted set. Null until a student has an accepted submission.
+   *
+   * Comparing raw runtime and memory across languages ranks the runtime, not the student, so the
+   * board buckets by this before taking percentiles.
+   */
+  primaryLanguage: ExecutableLanguage | null;
   createdAt: Date;
   updatedAt: Date;
   lastLoginAt: Date | null;

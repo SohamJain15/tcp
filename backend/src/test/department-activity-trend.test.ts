@@ -48,6 +48,8 @@ function buildSubmission(id: string, overrides: Partial<SubmissionRecord> = {}):
     ratingAwarded: 0,
     stdout: null,
     stderr: null,
+
+    failedTest: null,
     createdAt: DAY,
     updatedAt: DAY,
     judgedAt: DAY,

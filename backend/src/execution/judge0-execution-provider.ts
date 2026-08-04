@@ -1,7 +1,13 @@
 import { env } from "../config/env";
 import type { ExecutableLanguage, SubmissionStatus } from "../shared/types/domain";
 import { isExecutableLanguage, tryNormalizeSupportedLanguage } from "../shared/utils/normalize";
-import type { ExecutionProvider, ExecutionRequest, ExecutionResult, ExecutionTestCase } from "./execution-provider";
+import type {
+  ExecutionProvider,
+  ExecutionRequest,
+  ExecutionResult,
+  ExecutionTestCase,
+  FailedTestCase,
+} from "./execution-provider";
 import { compareOutput, isDelegatedComparison } from "./harness";
 import { BATCH_CASE_SEPARATOR } from "./harness/contract";
 import {
@@ -20,6 +26,12 @@ const MAX_CPU_TIME_LIMIT_SECONDS = 5;
  */
 const MAX_BATCH_CPU_TIME_LIMIT_SECONDS = 20;
 
+/**
+ * Per-field cap on a captured failing case. A problem with a megabyte of generated input would
+ * otherwise write that megabyte into every failed submission document.
+ */
+const MAX_CAPTURED_FIELD_CHARS = 4000;
+
 const EDITOR_ONLY_BLOCKLIST = new Set(["react", "html", "css"]);
 
 type LanguageIdMap = Record<ExecutableLanguage, number | null>;
@@ -30,6 +42,12 @@ interface TestExecutionOutcome {
   memoryKb: number;
   stdout?: string;
   stderr?: string;
+}
+
+function clip(value: string): string {
+  return value.length <= MAX_CAPTURED_FIELD_CHARS
+    ? value
+    : `${value.slice(0, MAX_CAPTURED_FIELD_CHARS)}\n… (truncated)`;
 }
 
 const LANGUAGE_RUNTIME_ALIASES: Partial<Record<ExecutableLanguage, ExecutableLanguage>> = {
@@ -204,6 +222,9 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
         provider: PROVIDER_NAME,
         stdout: result.stdout,
         stderr: result.stderr,
+        // Run only ever executes sample cases, which the student can already read in the
+        // statement — nothing is disclosed here that the problem page does not already show.
+        failedTest: this.captureFailedTest(request, [result], request.testCases.length),
       };
     } catch (error) {
       const judge0Error = error as { response?: { data?: unknown }; message?: string };
@@ -287,6 +308,7 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
         provider: PROVIDER_NAME,
         stdout: diagnostic?.stdout,
         stderr: diagnostic?.stderr,
+        failedTest: this.captureFailedTest(request, results),
       };
     } catch (error) {
       const judge0Error = error as { response?: { data?: unknown }; message?: string };
@@ -352,6 +374,7 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
       provider: PROVIDER_NAME,
       stdout: diagnostic?.stdout,
       stderr: diagnostic?.stderr,
+      failedTest: this.captureFailedTest(request, outcomes),
     };
   }
 
@@ -677,6 +700,38 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
       results.find((result) => result.status === finalStatus && (result.stderr || result.stdout)) ??
       results.find((result) => result.stderr || result.stdout)
     );
+  }
+
+  /**
+   * The first case that did not pass, paired back with the input the caller sent.
+   *
+   * `outcomes` is index-aligned with `request.testCases` on both judging paths — the per-case
+   * path pushes case 0 then each chunk in order, the batch path pushes each group in order —
+   * and both stop at the first failing chunk, so the first non-ACCEPTED entry here is also the
+   * first failing case overall.
+   */
+  private captureFailedTest(
+    request: ExecutionRequest,
+    outcomes: readonly TestExecutionOutcome[],
+    sampleCaseCount = request.sampleCaseCount ?? 0,
+  ): FailedTestCase | undefined {
+    const index = outcomes.findIndex((outcome) => outcome.status !== "ACCEPTED");
+    const testCase = index >= 0 ? request.testCases[index] : undefined;
+    if (!testCase) {
+      return undefined;
+    }
+
+    const outcome = outcomes[index];
+
+    return {
+      index,
+      isHidden: index >= sampleCaseCount,
+      status: outcome.status,
+      input: clip(testCase.input),
+      expectedOutput: clip(testCase.output),
+      // A timeout or crash often produces nothing at all; an empty string is the honest answer.
+      actualOutput: clip(outcome.stdout ?? ""),
+    };
   }
 
   private buildInternalErrorResult(totalCount: number, stderr: string): ExecutionResult {

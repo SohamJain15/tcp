@@ -193,6 +193,7 @@ describe("computeAttemptEfficiency", () => {
       totalRuntimeMs: 25,
       totalMemoryKb: 2048,
       totalAttempts: 3,
+      primaryLanguage: "cpp",
       hasCodingData: true,
     });
   });
@@ -205,6 +206,7 @@ describe("computeAttemptEfficiency", () => {
       totalRuntimeMs: 0,
       totalMemoryKb: 0,
       totalAttempts: 0,
+      primaryLanguage: null,
       hasCodingData: false,
     });
   });
@@ -214,6 +216,7 @@ describe("computeAttemptEfficiency", () => {
       totalRuntimeMs: 0,
       totalMemoryKb: 0,
       totalAttempts: 0,
+      primaryLanguage: null,
       hasCodingData: false,
     });
   });

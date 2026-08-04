@@ -35,6 +35,11 @@ import {
 } from "../modules/leaderboard/leaderboard.repository";
 import { createLeaderboardService, type LeaderboardService } from "../modules/leaderboard/leaderboard.service";
 import { FirestoreProblemRepository, type ProblemRepository } from "../modules/problem/problem.repository";
+import {
+  MongoHintRevealRepository,
+  type HintRevealRepository,
+} from "../modules/problem/hint-reveal.repository";
+import { NoopHintGenerator, OllamaHintGenerator } from "../modules/problem/ai/hint-generator";
 import { createProblemService, type ProblemService } from "../modules/problem/problem.service";
 import {
   FirestoreSubmissionRepository,
@@ -64,6 +69,7 @@ import { env } from "../config/env";
 export interface RepositoryBundle {
   userRepository: UserRepository;
   problemRepository: ProblemRepository;
+  hintRevealRepository: HintRevealRepository;
   submissionRepository: SubmissionRepository;
   leaderboardRepository: LeaderboardRepository;
   contestRepository: ContestRepository;
@@ -111,6 +117,7 @@ function createRepositories(overrides?: Partial<RepositoryBundle>): RepositoryBu
   return {
     userRepository: overrides?.userRepository ?? new FirestoreUserRepository(),
     problemRepository: overrides?.problemRepository ?? new FirestoreProblemRepository(),
+    hintRevealRepository: overrides?.hintRevealRepository ?? new MongoHintRevealRepository(),
     submissionRepository: overrides?.submissionRepository ?? new FirestoreSubmissionRepository(),
     leaderboardRepository: overrides?.leaderboardRepository ?? new FirestoreLeaderboardRepository(),
     contestRepository: overrides?.contestRepository ?? new FirestoreContestRepository(),
@@ -153,6 +160,9 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
   const problemService = createProblemService({
     problemRepository: repositories.problemRepository,
     submissionRepository: repositories.submissionRepository,
+    userRepository: repositories.userRepository,
+    hintRevealRepository: repositories.hintRevealRepository,
+    hintGenerator: env.AI_ENABLED ? new OllamaHintGenerator() : new NoopHintGenerator(),
     now,
   });
 

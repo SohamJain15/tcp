@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { MIN_LANGUAGE_SAMPLE } from "../../shared/utils/language-percentile";
 import { lowerIsBetterPercentile } from "../../shared/utils/percentile";
 
 import type { Department, Difficulty, ExecutableLanguage } from "../../shared/types/domain";
@@ -34,8 +35,11 @@ import type { SubmissionAnalyticsRecord } from "../submission/submission.reposit
  * Below this many submissions a per-language distribution is noise, not a baseline. Such languages are
  * still reported (faculty should see that someone used Rust) but are flagged `low` and kept out of
  * cross-language comparisons and the "most optimal overall" pick.
+ *
+ * Shared with the leaderboards so "too small to trust" means one thing platform-wide: a student
+ * cannot be called low-confidence on the report card and high-confidence on the board.
  */
-export const MIN_LANGUAGE_SAMPLE = 5;
+export { MIN_LANGUAGE_SAMPLE };
 
 // Re-exported from its new shared home so existing importers and tests are unaffected.
 export { lowerIsBetterPercentile };

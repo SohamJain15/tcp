@@ -11,7 +11,7 @@ import {
   normalizeRole,
   normalizeSubmissionStatus,
 } from "../../shared/utils/normalize";
-import type { SubmissionRecord } from "./submission.model";
+import type { FailedTestCase, SubmissionRecord } from "./submission.model";
 import type { SubmissionSourceType } from "./submission.model";
 
 export interface SubmissionListFilters {
@@ -36,7 +36,7 @@ export interface SubmissionListFilters {
  * read through this type so that leaking a student's code from an aggregate endpoint
  * is a compile error rather than something a reviewer has to catch by eye.
  */
-export type SubmissionAnalyticsRecord = Omit<SubmissionRecord, "code" | "stdout" | "stderr">;
+export type SubmissionAnalyticsRecord = Omit<SubmissionRecord, "code" | "stdout" | "stderr" | "failedTest">;
 
 export interface SubmissionRepository {
   getById(submissionId: string): Promise<SubmissionRecord | null>;
@@ -45,6 +45,23 @@ export interface SubmissionRepository {
   list(filters?: SubmissionListFilters): Promise<SubmissionRecord[]>;
   /** Same query as `list`, projected to exclude code/stdout/stderr. */
   listForAnalytics(filters?: SubmissionListFilters): Promise<SubmissionAnalyticsRecord[]>;
+}
+
+/** Absent on every submission judged before failing cases were captured, hence the null. */
+function mapFailedTestCase(value: unknown): FailedTestCase | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const data = value as Record<string, unknown>;
+  return {
+    index: normalizeNumber(data.index, 0),
+    isHidden: data.isHidden === true,
+    status: normalizeSubmissionStatus(data.status),
+    input: typeof data.input === "string" ? data.input : "",
+    expectedOutput: typeof data.expectedOutput === "string" ? data.expectedOutput : "",
+    actualOutput: typeof data.actualOutput === "string" ? data.actualOutput : "",
+  };
 }
 
 function mapSubmissionRecord(submissionId: string, data: Record<string, unknown>): SubmissionRecord {
@@ -83,6 +100,7 @@ function mapSubmissionRecord(submissionId: string, data: Record<string, unknown>
     ratingAwarded: normalizeNumber(data.ratingAwarded, 0),
     stdout: typeof data.stdout === "string" ? data.stdout : null,
     stderr: typeof data.stderr === "string" ? data.stderr : null,
+    failedTest: mapFailedTestCase(data.failedTest),
     createdAt,
     updatedAt,
     judgedAt: toDate(data.judgedAt),
@@ -149,18 +167,23 @@ export class FirestoreSubmissionRepository implements SubmissionRepository {
   async listForAnalytics(filters: SubmissionListFilters = {}): Promise<SubmissionAnalyticsRecord[]> {
     const collection = await getCollection();
     // Projected away at the database, so code never enters the process on this path.
+    // `failedTest` joins the list for the same reason: it carries verbatim test-case data, which
+    // no aggregate consumer needs and none of them should be able to re-emit.
     const documents = await collection
       .find(buildFilter(filters))
-      .project({ code: 0, stdout: 0, stderr: 0 })
+      .project({ code: 0, stdout: 0, stderr: 0, failedTest: 0 })
       .sort({ createdAt: -1 })
       .toArray();
 
     return documents.map((document) => {
       const data = document as Record<string, unknown>;
-      const { code: _code, stdout: _stdout, stderr: _stderr, ...rest } = mapSubmissionRecord(
-        String(data.id ?? ""),
-        data,
-      );
+      const {
+        code: _code,
+        stdout: _stdout,
+        stderr: _stderr,
+        failedTest: _failedTest,
+        ...rest
+      } = mapSubmissionRecord(String(data.id ?? ""), data);
       return rest;
     });
   }

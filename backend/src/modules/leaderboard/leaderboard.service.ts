@@ -107,6 +107,9 @@ export function createLeaderboardService(dependencies: LeaderboardServiceDepende
           acceptedSubmissionCount: entry.acceptedSubmissionCount,
           accuracy: entry.accuracy,
           optimizationScore: ranker.optimizationScoreFor(entry) ?? "",
+          // Without this the score is uninterpretable in a spreadsheet — a 0.9 means nothing
+          // unless you know which language field it was measured against.
+          primaryLanguage: entry.primaryLanguage ?? "",
           avgAcceptedRuntimeMs: entry.avgAcceptedRuntimeMs,
         }));
 

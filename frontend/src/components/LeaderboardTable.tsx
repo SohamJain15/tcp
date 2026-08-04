@@ -81,8 +81,9 @@ export function LeaderboardTable({
   const currentPinned = Boolean(
     currentRow && !visibleRows.some((row) => row.key === currentRow.key),
   );
-  // Rank + Student + Solved + Score, plus Year/Time/Violations (contest) or Accuracy (problem).
-  const columnCount = isContest ? 9 : 5;
+  // Rank + Student + Solved + Score, plus Year/Time/Efficiency/Runtime/Violations (contest) or
+  // Efficiency/Accuracy (problem).
+  const columnCount = isContest ? 9 : 6;
 
   const withProfileLink = (row: LeaderboardRow, children: ReactNode, className?: string) =>
     linkToProfile ? (
@@ -136,7 +137,19 @@ export function LeaderboardTable({
           </td>
         </>
       ) : (
-        <td className="hidden px-2 py-3 text-right font-mono-code sm:table-cell sm:px-4">{row.accuracy ?? 0}%</td>
+        <>
+          <td
+            className="hidden px-4 py-3 text-right font-mono-code lg:table-cell"
+            title={
+              row.primaryLanguage
+                ? `Compared against other ${row.primaryLanguage} submissions`
+                : undefined
+            }
+          >
+            {formatEfficiency(row.optimizationScore)}
+          </td>
+          <td className="hidden px-2 py-3 text-right font-mono-code sm:table-cell sm:px-4">{row.accuracy ?? 0}%</td>
+        </>
       )}
     </tr>
   );
@@ -224,9 +237,11 @@ export function LeaderboardTable({
                     <th className="hidden px-4 py-3 text-right font-semibold md:table-cell">Violations</th>
                   </>
                 ) : (
-                  // Efficiency and runtime are shown for contests only for now — the practice
-                  // board still ranks on them, it just does not display them.
-                  <th className="hidden px-2 py-3 text-right font-semibold sm:table-cell sm:px-4">Accuracy</th>
+                  <>
+                    {/* Efficiency outranks accuracy in the ordering, so it is shown first. */}
+                    <th className="hidden px-4 py-3 text-right font-semibold lg:table-cell">Efficiency</th>
+                    <th className="hidden px-2 py-3 text-right font-semibold sm:table-cell sm:px-4">Accuracy</th>
+                  </>
                 )}
               </tr>
             </thead>

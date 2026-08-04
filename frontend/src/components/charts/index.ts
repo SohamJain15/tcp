@@ -2,6 +2,7 @@ export { ChartCard, ChartEmptyState } from "./ChartCard";
 export { CategoryBarChart, type BarSeries } from "./CategoryBarChart";
 export { DonutChart, type DonutDatum } from "./DonutChart";
 export { TrendAreaChart, type TrendSeries } from "./TrendAreaChart";
+export { SubmissionDistributionChart } from "./SubmissionDistributionChart";
 export {
   ACTIVITY_LEVEL_COLORS,
   DIFFICULTY_COLORS,

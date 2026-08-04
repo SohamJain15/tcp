@@ -241,6 +241,55 @@ describe("Judge0ExecutionProvider compile handling", () => {
   });
 });
 
+describe("Judge0ExecutionProvider failing-case capture", () => {
+  it("reports the first failing case paired with the input that produced it", async () => {
+    // Case 0 passes, case 1 is wrong. Cases 1..3 go out in one chunk, so the provider must pick
+    // the first failure by index rather than by whichever response happened to arrive first.
+    const client = new CountingJudge0Client((callIndex) => (callIndex === 1 ? 4 : 3));
+    const provider = new Judge0ExecutionProvider(client as never);
+
+    const result = await provider.executeSubmission({ ...cppRequest(4), sampleCaseCount: 1 });
+
+    expect(result.failedTest).toEqual({
+      index: 1,
+      isHidden: true,
+      status: "WRONG_ANSWER",
+      input: "1",
+      expectedOutput: "1",
+      actualOutput: "",
+    });
+  });
+
+  it("marks a failure inside the sample range as visible", async () => {
+    const client = new CountingJudge0Client(() => 4);
+    const provider = new Judge0ExecutionProvider(client as never);
+
+    const result = await provider.executeSubmission({ ...cppRequest(4), sampleCaseCount: 2 });
+
+    expect(result.failedTest?.index).toBe(0);
+    expect(result.failedTest?.isHidden).toBe(false);
+  });
+
+  it("captures nothing when every case passes", async () => {
+    const client = new CountingJudge0Client(() => 3);
+    const provider = new Judge0ExecutionProvider(client as never);
+
+    const result = await provider.executeSubmission({ ...cppRequest(4), sampleCaseCount: 1 });
+
+    expect(result.failedTest).toBeUndefined();
+  });
+
+  it("captures nothing for a compilation error, which has no case to blame", async () => {
+    const client = new CountingJudge0Client(() => 6);
+    const provider = new Judge0ExecutionProvider(client as never);
+
+    const result = await provider.executeSubmission({ ...cppRequest(4), sampleCaseCount: 1 });
+
+    expect(result.status).toBe("COMPILATION_ERROR");
+    expect(result.failedTest).toBeUndefined();
+  });
+});
+
 /**
  * Serves a scripted stdout per call so we can drive the batch path: the batched job is
  * always call 0, and any later calls are the per-case fallback.

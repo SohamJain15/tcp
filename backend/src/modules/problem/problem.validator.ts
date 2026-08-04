@@ -128,6 +128,24 @@ export const studentProblemQuerySchema = z.object({
   pageSize: z.coerce.number().int().positive().optional(),
 });
 
+export const problemHintsUpdateSchema = z.object({
+  hints: z
+    .array(
+      z.object({
+        order: z.number().int().positive(),
+        // 400 chars matches MAX_HINT_CHARS: a "hint" longer than that is a walkthrough.
+        text: z.string().trim().min(1).max(400),
+      }),
+    )
+    .min(1)
+    .max(3),
+});
+
+export const problemLeaderboardQuerySchema = z.object({
+  cursor: z.string().optional(),
+  pageSize: z.coerce.number().int().positive().max(100).optional(),
+});
+
 export const manageProblemQuerySchema = studentProblemQuerySchema.extend({
   lifecycleState: z
     .string()

@@ -11,7 +11,7 @@ import {
 } from "../../shared/utils/normalize";
 import type { HarnessSpec } from "../../execution/harness/contract";
 import { harnessSpecSchema } from "../../execution/harness/schema";
-import type { ProblemRecord, ProblemTestCase } from "./problem.model";
+import type { ProblemHint, ProblemRecord, ProblemTestCase } from "./problem.model";
 
 export interface ProblemRepository {
   getById(problemId: string): Promise<ProblemRecord | null>;
@@ -132,9 +132,41 @@ function mapProblemRecord(problemId: string, data: Record<string, unknown>): Pro
           ? hiddenFromExamples
           : normalizeTestCaseList(data.testCases),
     harness: normalizeHarness(data.harness),
+    hints: normalizeHints(data.hints),
+    hintsLockedAt: toDate(data.hintsLockedAt),
     createdAt,
     updatedAt,
   };
+}
+
+/** Absent on every problem created before hints existed, hence the empty-array default. */
+function normalizeHints(value: unknown): ProblemHint[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry, index): ProblemHint | null => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+      const data = entry as Record<string, unknown>;
+      const text = typeof data.text === "string" ? data.text.trim() : "";
+      if (!text) {
+        return null;
+      }
+
+      return {
+        order: typeof data.order === "number" ? data.order : index + 1,
+        text,
+        generatedAt: toDate(data.generatedAt),
+        model: typeof data.model === "string" ? data.model : null,
+        promptVersion: typeof data.promptVersion === "string" ? data.promptVersion : null,
+        editedBy: typeof data.editedBy === "string" ? data.editedBy : null,
+      };
+    })
+    .filter((hint): hint is ProblemHint => hint !== null)
+    .sort((left, right) => left.order - right.order);
 }
 
 function toProblemDocument(problem: ProblemRecord): Record<string, unknown> {

@@ -10,6 +10,7 @@ import {
 } from "../modules/submission/submission.service";
 import type { SubmissionRecord } from "../modules/submission/submission.model";
 import type { UserRecord } from "../modules/user/user.model";
+import type { ExecutableLanguage } from "../shared/types/domain";
 import {
   InMemoryLeaderboardRepository,
   InMemorySubmissionRepository,
@@ -17,10 +18,11 @@ import {
 } from "./helpers/in-memory-repositories";
 
 /**
- * Practice ranking: rating → accuracy → optimization (memory) → avg runtime → solved → email.
+ * Practice ranking: rating → optimization → accuracy → avg runtime → solved → email.
  *
- * Optimization is memory only here, unlike contests: `accuracy` already expresses attempt
- * efficiency and sits above it, so counting attempts again would double-count the same thing.
+ * Optimization is a language-normalized blend of runtime and memory, matching how contests rank,
+ * and sits directly under rating: among students who solved equally much, the more efficient
+ * solution wins. Accuracy sits below it rather than above.
  */
 
 interface EntrySpec {
@@ -30,6 +32,7 @@ interface EntrySpec {
   memoryKb?: number;
   runtimeMs?: number;
   problemsSolved?: number;
+  language?: ExecutableLanguage;
 }
 
 function entry(spec: EntrySpec): LeaderboardEntry {
@@ -49,6 +52,7 @@ function entry(spec: EntrySpec): LeaderboardEntry {
     accuracy: spec.accuracy ?? 50,
     avgAcceptedRuntimeMs: spec.runtimeMs ?? 10,
     avgAcceptedMemoryKb: spec.memoryKb ?? 1024,
+    primaryLanguage: spec.language ?? "cpp",
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     lastAcceptedAt: null,
@@ -68,27 +72,27 @@ describe("practice leaderboard order", () => {
     expect(rankedEmails([weak, strong])).toEqual(["zzz-strong", "aaa-weak"]);
   });
 
-  it("still ranks by accuracy before efficiency", () => {
-    const accurate = entry({ email: "zzz-accurate", accuracy: 90, memoryKb: 8192 });
-    const sloppy = entry({ email: "aaa-sloppy", accuracy: 40, memoryKb: 128 });
+  it("ranks efficiency ahead of accuracy", () => {
+    // The priority the platform now advertises: writing the better solution beats submitting
+    // it more tidily. Names oppose the expected order so the email tiebreak cannot fake it.
+    const efficient = entry({ email: "zzz-efficient", accuracy: 40, memoryKb: 128, runtimeMs: 5 });
+    const accurate = entry({ email: "aaa-accurate", accuracy: 90, memoryKb: 8192, runtimeMs: 500 });
 
-    expect(rankedEmails([sloppy, accurate])).toEqual(["zzz-accurate", "aaa-sloppy"]);
+    expect(rankedEmails([accurate, efficient])).toEqual(["zzz-efficient", "aaa-accurate"]);
   });
 
-  it("breaks equal rating and accuracy on memory efficiency", () => {
-    // Names oppose the expected order, so the final email tiebreak cannot produce this result
-    // by accident — only the optimization step can.
-    const lean = entry({ email: "zzz-lean", memoryKb: 256 });
-    const heavy = entry({ email: "aaa-heavy", memoryKb: 8192 });
+  it("breaks equal rating on efficiency", () => {
+    const lean = entry({ email: "zzz-lean", memoryKb: 256, runtimeMs: 5 });
+    const heavy = entry({ email: "aaa-heavy", memoryKb: 8192, runtimeMs: 500 });
 
     expect(rankedEmails([heavy, lean])).toEqual(["zzz-lean", "aaa-heavy"]);
   });
 
-  it("falls through to average runtime when memory also ties", () => {
-    const quick = entry({ email: "zzz-quick", memoryKb: 1024, runtimeMs: 5 });
-    const slow = entry({ email: "aaa-slow", memoryKb: 1024, runtimeMs: 500 });
+  it("falls through to accuracy when efficiency ties exactly", () => {
+    const accurate = entry({ email: "zzz-accurate", accuracy: 90 });
+    const sloppy = entry({ email: "aaa-sloppy", accuracy: 40 });
 
-    expect(rankedEmails([slow, quick])).toEqual(["zzz-quick", "aaa-slow"]);
+    expect(rankedEmails([sloppy, accurate])).toEqual(["zzz-accurate", "aaa-sloppy"]);
   });
 
   it("sorts a student with no measured code after one who has some", () => {
@@ -108,8 +112,45 @@ describe("practice leaderboard order", () => {
   });
 
   it("reports no optimization score when nobody has measured code", () => {
-    const entries = [entry({ email: "a", memoryKb: 0 })];
+    const entries = [entry({ email: "a", memoryKb: 0, runtimeMs: 0 })];
     expect(buildLeaderboardRanker(entries).optimizationScoreFor(entries[0])).toBeNull();
+  });
+
+  it("compares a student against their own language, not against faster runtimes", () => {
+    // Five Python students so the language bucket clears MIN_LANGUAGE_SAMPLE and is trusted on
+    // its own. The Python student is the best Python student but slower than every C++ student
+    // in raw milliseconds — pooling languages would bury them.
+    const cpp = Array.from({ length: 5 }, (_, index) =>
+      entry({ email: `cpp-${index}`, language: "cpp", runtimeMs: 5, memoryKb: 256 }),
+    );
+    const pythonPeers = Array.from({ length: 4 }, (_, index) =>
+      entry({ email: `py-peer-${index}`, language: "python", runtimeMs: 900, memoryKb: 9000 }),
+    );
+    const pythonBest = entry({
+      email: "zzz-py-best",
+      language: "python",
+      runtimeMs: 300,
+      memoryKb: 4000,
+    });
+
+    const ranker = buildLeaderboardRanker([...cpp, ...pythonPeers, pythonBest]);
+
+    // Best in their own bucket scores top marks despite being 60x slower than the C++ field.
+    expect(ranker.optimizationScoreFor(pythonBest)).toBe(1);
+    expect(ranker.optimizationScoreFor(pythonPeers[0])).toBeLessThan(1);
+  });
+
+  it("widens to the whole field when a language bucket is too small to trust", () => {
+    // A single Rust student cannot be percentile-ranked against themselves, so they are scored
+    // against everyone rather than handed a meaningless 1.0.
+    const cpp = Array.from({ length: 5 }, (_, index) =>
+      entry({ email: `cpp-${index}`, language: "cpp", runtimeMs: 10, memoryKb: 256 }),
+    );
+    const loneRust = entry({ email: "rust", language: "rust", runtimeMs: 900, memoryKb: 9000 });
+
+    const ranker = buildLeaderboardRanker([...cpp, loneRust]);
+
+    expect(ranker.optimizationScoreFor(loneRust)).toBe(0);
   });
 });
 
@@ -143,6 +184,8 @@ function submission(overrides: Partial<SubmissionRecord>): SubmissionRecord {
     ratingAwarded: 0,
     stdout: null,
     stderr: null,
+
+    failedTest: null,
     createdAt: new Date("2026-05-01T00:00:00.000Z"),
     updatedAt: new Date("2026-05-01T00:00:00.000Z"),
     judgedAt: new Date("2026-05-01T00:00:00.000Z"),
@@ -241,6 +284,8 @@ describe("efficiency reaches the collection the board actually reads", () => {
       accuracy: 0,
       avgAcceptedRuntimeMs: 0,
       avgAcceptedMemoryKb: 0,
+
+      primaryLanguage: null,
       createdAt: new Date("2026-01-01T00:00:00.000Z"),
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       lastLoginAt: null,

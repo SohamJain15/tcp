@@ -7,10 +7,33 @@ export interface ExecutionTestCase {
   explanation?: string;
 }
 
+/**
+ * The first test case a submission got wrong, kept so the student can be shown *which* case
+ * broke rather than a bare pass count.
+ *
+ * Always captured in full; how much of it a given student may see is decided at the response
+ * boundary (see `redactFailedTest` in the submission module), because a practice problem and a
+ * live contest have very different answers to that question.
+ */
+export interface FailedTestCase {
+  /** Position in the `[...sampleTestCases, ...hiddenTestCases]` array the caller supplied. */
+  index: number;
+  isHidden: boolean;
+  status: SubmissionStatus;
+  input: string;
+  expectedOutput: string;
+  actualOutput: string;
+}
+
 export interface ExecutionRequest {
   code: string;
   language: ExecutableLanguage;
   testCases: ExecutionTestCase[];
+  /**
+   * How many leading entries of {@link testCases} are sample (student-visible) cases. Lets the
+   * provider label a failure hidden or not without needing the problem record.
+   */
+  sampleCaseCount?: number;
   problemId: string;
   timeLimitSeconds: number;
   memoryLimitMb: number;
@@ -40,6 +63,8 @@ export interface ExecutionResult {
   provider: string;
   stdout?: string;
   stderr?: string;
+  /** Absent when every case passed, or when the failure has no case to point at (compile error). */
+  failedTest?: FailedTestCase;
 }
 
 export interface ExecutionProvider {

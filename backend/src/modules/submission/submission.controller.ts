@@ -30,5 +30,11 @@ export function createSubmissionController(submissionService: SubmissionService)
       const submission = await submissionService.getSubmissionById(req.user!, submissionId);
       res.json({ submission });
     },
+
+    async getSubmissionStats(req: Request, res: Response): Promise<void> {
+      const submissionId = submissionIdSchema.parse(req.params.submissionId);
+      const stats = await submissionService.getSubmissionStats(req.user!, submissionId);
+      res.json({ stats });
+    },
   };
 }

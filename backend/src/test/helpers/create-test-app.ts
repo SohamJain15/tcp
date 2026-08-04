@@ -30,15 +30,19 @@ import {
   InMemoryContestRegistrationRepository,
   InMemoryContestReportRepository,
   InMemoryContestRepository,
+  InMemoryHintRevealRepository,
   InMemoryLeaderboardRepository,
   InMemoryProblemRepository,
   InMemorySubmissionRepository,
   InMemoryUserRepository,
 } from "./in-memory-repositories";
+import { NoopHintGenerator, type HintGenerator } from "../../modules/problem/ai/hint-generator";
 
 export interface CreateTestAppOptions {
   /** Override the report narrator to exercise the AI path (and its failure modes) deterministically. */
   aiReportGenerator?: AiReportGenerator;
+  /** Override the hint generator to exercise hint generation without a local model. */
+  hintGenerator?: HintGenerator;
 }
 
 export function createTestApp(options: CreateTestAppOptions = {}) {
@@ -66,6 +70,8 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       accuracy: 0,
       avgAcceptedRuntimeMs: 0,
       avgAcceptedMemoryKb: 0,
+
+      primaryLanguage: null,
       createdAt: seedTime,
       updatedAt: seedTime,
       lastLoginAt: seedTime,
@@ -93,6 +99,8 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       accuracy: 0,
       avgAcceptedRuntimeMs: 0,
       avgAcceptedMemoryKb: 0,
+
+      primaryLanguage: null,
       createdAt: seedTime,
       updatedAt: seedTime,
       lastLoginAt: seedTime,
@@ -120,6 +128,8 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       accuracy: 0,
       avgAcceptedRuntimeMs: 0,
       avgAcceptedMemoryKb: 0,
+
+      primaryLanguage: null,
       createdAt: seedTime,
       updatedAt: seedTime,
       lastLoginAt: seedTime,
@@ -149,6 +159,8 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       accuracy: 0,
       avgAcceptedRuntimeMs: 0,
       avgAcceptedMemoryKb: 0,
+
+      primaryLanguage: null,
       createdAt: seedTime,
       updatedAt: seedTime,
       lastLoginAt: seedTime,
@@ -178,6 +190,8 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       accuracy: 0,
       avgAcceptedRuntimeMs: 0,
       avgAcceptedMemoryKb: 0,
+
+      primaryLanguage: null,
       createdAt: seedTime,
       updatedAt: seedTime,
       lastLoginAt: seedTime,
@@ -206,6 +220,8 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       accuracy: 0,
       avgAcceptedRuntimeMs: 0,
       avgAcceptedMemoryKb: 0,
+
+      primaryLanguage: null,
       createdAt: seedTime,
       updatedAt: seedTime,
       lastLoginAt: seedTime,
@@ -213,6 +229,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
     },
   ]);
   const problemRepository = new InMemoryProblemRepository();
+  const hintRevealRepository = new InMemoryHintRevealRepository();
   const submissionRepository = new InMemorySubmissionRepository();
   const leaderboardRepository = new InMemoryLeaderboardRepository();
   const contestRepository = new InMemoryContestRepository();
@@ -266,6 +283,10 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
     problemService: createProblemService({
       problemRepository,
       submissionRepository,
+      userRepository,
+      hintRevealRepository,
+      // Offline by default: tests must not depend on a local model being installed.
+      hintGenerator: options.hintGenerator ?? new NoopHintGenerator(),
       now,
     }),
     submissionService: createSubmissionService({

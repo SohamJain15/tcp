@@ -10,7 +10,7 @@ import type { HarnessSpec } from "../../execution/harness/contract";
 import { DIFFICULTY_RATING_WEIGHTS } from "../../shared/constants/domain";
 import { AppError } from "../../shared/errors/app-error";
 import type { AuthenticatedUser } from "../../shared/types/auth";
-import type { Department, SupportedLanguage } from "../../shared/types/domain";
+import type { Department, ExecutableLanguage, SupportedLanguage } from "../../shared/types/domain";
 import { isFinalSubmissionStatus, normalizeDepartment } from "../../shared/utils/normalize";
 import { paginateArray, type PaginatedResult, type PaginationInput } from "../../shared/utils/pagination";
 import type { ExecutionProvider, ExecutionResult } from "../../execution/execution-provider";
@@ -38,7 +38,8 @@ import type {
   SubmissionRunResponse,
   SubmissionUserSnapshot,
 } from "./submission.model";
-import { toSubmissionResponse } from "./submission.model";
+import { redactFailedTest, toSubmissionResponse } from "./submission.model";
+import { buildSubmissionStats, type SubmissionStatsResponse } from "./submission-stats.model";
 import type { SubmissionListFilters, SubmissionRepository } from "./submission.repository";
 
 export type { ExecutionProvider } from "../../execution/execution-provider";
@@ -53,6 +54,7 @@ export interface SubmissionService {
     query: SubmissionListQuery,
   ): Promise<PaginatedResult<SubmissionResponse>>;
   getSubmissionById(user: AuthenticatedUser, submissionId: string): Promise<SubmissionResponse>;
+  getSubmissionStats(user: AuthenticatedUser, submissionId: string): Promise<SubmissionStatsResponse>;
 }
 
 interface SubmissionServiceDependencies {
@@ -149,6 +151,8 @@ async function ensureUser(
     accuracy: 0,
     avgAcceptedRuntimeMs: 0,
     avgAcceptedMemoryKb: 0,
+
+    primaryLanguage: null,
     createdAt: now,
     updatedAt: now,
     lastLoginAt: now,
@@ -232,6 +236,8 @@ function buildSubmissionRunResponse(
     executionProvider: result.provider,
     stdout: result.stdout,
     stderr: result.stderr,
+    // Run judges sample cases only, so there is nothing hidden to protect here.
+    failedTest: redactFailedTest(result.failedTest, "full"),
   };
 }
 
@@ -264,6 +270,7 @@ export function calculateUserAggregateSnapshot(submissions: SubmissionRecord[]):
   accuracy: number;
   avgAcceptedRuntimeMs: number;
   avgAcceptedMemoryKb: number;
+  primaryLanguage: ExecutableLanguage | null;
   lastAcceptedAt: Date | null;
 } {
   const finalized = submissions.filter(
@@ -313,8 +320,34 @@ export function calculateUserAggregateSnapshot(submissions: SubmissionRecord[]):
     accuracy: calculateAccuracy(accepted.length, finalized.length),
     avgAcceptedRuntimeMs: averageOf((submission) => submission.runtimeMs),
     avgAcceptedMemoryKb: averageOf((submission) => submission.memoryKb),
+    primaryLanguage: resolvePrimaryLanguage(firstAccepted),
     lastAcceptedAt,
   };
+}
+
+/**
+ * The language a student's efficiency averages should be judged against.
+ *
+ * Drawn from the same first-accepted-per-problem set the averages come from, so the label and
+ * the numbers it explains always describe the same submissions. Ties break on the alphabetically
+ * first language purely so the choice is stable across runs rather than dependent on read order.
+ */
+function resolvePrimaryLanguage(firstAccepted: readonly SubmissionRecord[]): ExecutableLanguage | null {
+  const counts = new Map<ExecutableLanguage, number>();
+  for (const submission of firstAccepted) {
+    counts.set(submission.language, (counts.get(submission.language) ?? 0) + 1);
+  }
+
+  let winner: ExecutableLanguage | null = null;
+  let winningCount = 0;
+  for (const [language, count] of [...counts.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+    if (count > winningCount) {
+      winner = language;
+      winningCount = count;
+    }
+  }
+
+  return winner;
 }
 
 function calculateProblemAggregateSnapshot(submissions: SubmissionRecord[]): {
@@ -366,6 +399,7 @@ export async function syncUserAndLeaderboard(
     accuracy: aggregates.accuracy,
     avgAcceptedRuntimeMs: aggregates.avgAcceptedRuntimeMs,
     avgAcceptedMemoryKb: aggregates.avgAcceptedMemoryKb,
+    primaryLanguage: aggregates.primaryLanguage,
     lastAcceptedAt: aggregates.lastAcceptedAt,
     updatedAt: now,
   };
@@ -423,6 +457,8 @@ async function finalizeSubmission(
     executionProvider: result.provider,
     stdout: result.stdout ?? existingSubmission.stdout,
     stderr: result.stderr ?? existingSubmission.stderr,
+    // Null on a pass, so re-judging a previously failed submission clears the stale case.
+    failedTest: result.failedTest ?? null,
     judgedAt: now,
     finalizationAppliedAt: now,
     updatedAt: now,
@@ -501,6 +537,7 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
         comparison: program.comparison,
         language: input.language,
         testCases: problem.sampleTestCases,
+        sampleCaseCount: problem.sampleTestCases.length,
         problemId: problem.id,
         timeLimitSeconds: problem.timeLimitSeconds,
         memoryLimitMb: problem.memoryLimitMb,
@@ -546,6 +583,7 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
         ratingAwarded: 0,
         stdout: null,
         stderr: null,
+        failedTest: null,
         createdAt: now,
         updatedAt: now,
         judgedAt: null,
@@ -631,6 +669,7 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
               ),
               language: runningSubmission.language,
               testCases: [...question.sampleTestCases, ...question.hiddenTestCases],
+              sampleCaseCount: question.sampleTestCases.length,
               problemId: `${contest.id}:${question.id}`,
               timeLimitSeconds: question.timeLimitSeconds,
               memoryLimitMb: question.memoryLimitMb,
@@ -668,6 +707,7 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
               ),
               language: runningSubmission.language,
               testCases: [...question.sampleTestCases, ...question.hiddenTestCases],
+              sampleCaseCount: question.sampleTestCases.length,
               problemId: `${classTest.id}:${question.id}`,
               timeLimitSeconds: question.timeLimitSeconds,
               memoryLimitMb: question.memoryLimitMb,
@@ -695,6 +735,7 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
               ),
               language: runningSubmission.language,
               testCases: [...problem.sampleTestCases, ...problem.hiddenTestCases],
+              sampleCaseCount: problem.sampleTestCases.length,
               problemId: problem.id,
               timeLimitSeconds: problem.timeLimitSeconds,
               memoryLimitMb: problem.memoryLimitMb,
@@ -869,6 +910,38 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
         name: submissionUser?.name ?? null,
         uid: submissionUser?.uid ?? null,
       });
+    },
+
+    async getSubmissionStats(user, submissionId) {
+      const submission = await dependencies.submissionRepository.getById(submissionId);
+      if (!submission) {
+        throw new AppError(404, "Submission not found");
+      }
+
+      // Stats are a self-assessment view, so they stay with the author. Faculty have the report
+      // and analytics surfaces for the same question across a whole cohort.
+      if (submission.userEmail !== user.email) {
+        throw new AppError(403, "You are not allowed to view this submission");
+      }
+
+      if (submission.sourceType !== "problem") {
+        throw new AppError(409, "Statistics are available for practice submissions only");
+      }
+
+      if (submission.status !== "ACCEPTED") {
+        throw new AppError(409, "Statistics are available for accepted submissions only");
+      }
+
+      const accepted = await dependencies.submissionRepository.listForAnalytics({
+        problemId: submission.problemId,
+        sourceType: "problem",
+        status: "ACCEPTED",
+      });
+
+      const { code: _code, stdout: _stdout, stderr: _stderr, failedTest: _failedTest, ...analytics } =
+        submission;
+
+      return buildSubmissionStats(analytics, accepted);
     },
   };
 }

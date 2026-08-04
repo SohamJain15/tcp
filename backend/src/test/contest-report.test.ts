@@ -207,6 +207,8 @@ function buildSubmission(
     ratingAwarded: 0,
     stdout: null,
     stderr: null,
+
+    failedTest: null,
     createdAt: CONTEST_START,
     updatedAt: CONTEST_START,
     judgedAt: CONTEST_START,

@@ -47,6 +47,8 @@ describe("submission recovery", () => {
         ratingAwarded: 0,
         stdout: null,
         stderr: null,
+
+        failedTest: null,
         createdAt: new Date(Date.UTC(2026, 4, 12, 0, 0, 0)),
         updatedAt: new Date(Date.UTC(2026, 4, 12, 0, 0, 0)),
         judgedAt: null,
@@ -81,6 +83,7 @@ describe("submission recovery", () => {
         ratingAwarded: 0,
         stdout: null,
         stderr: "old error",
+        failedTest: null,
         createdAt: new Date(Date.UTC(2026, 4, 12, 0, 1, 0)),
         updatedAt: new Date(Date.UTC(2026, 4, 12, 0, 1, 0)),
         judgedAt: null,
@@ -115,6 +118,8 @@ describe("submission recovery", () => {
         ratingAwarded: 0,
         stdout: null,
         stderr: null,
+
+        failedTest: null,
         createdAt: new Date(Date.UTC(2026, 4, 12, 0, 9, 45)),
         updatedAt: new Date(Date.UTC(2026, 4, 12, 0, 9, 45)),
         judgedAt: null,

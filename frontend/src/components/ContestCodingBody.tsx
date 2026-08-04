@@ -7,6 +7,7 @@ import { ChevronDown, Play, Send } from "lucide-react";
 import { toast } from "sonner";
 
 import { submissionsApi } from "@/api/services";
+import { FailedTestCasePanel, shouldShowFailedTest } from "@/components/FailedTestCasePanel";
 import { EXECUTABLE_LANGUAGES, toLanguageLabel, toStatusLabel } from "@/api/mappers";
 import type {
   CodingContestQuestionDetail,
@@ -437,7 +438,10 @@ export function ContestCodingBody({
             </div>
 
             {/* Scrolls inside its own panel so a long compiler error can never push the editor away. */}
-            <div className="min-h-0 flex-1 overflow-y-auto p-3 font-mono-code text-xs">
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 font-mono-code text-xs">
+              {shouldShowFailedTest(output?.failedTest) && (
+                <FailedTestCasePanel failedTest={output!.failedTest!} />
+              )}
               {output && (output.stdout || output.stderr) ? (
                 <>
                   {output.stdout && <pre className="whitespace-pre-wrap break-words">{output.stdout}</pre>}

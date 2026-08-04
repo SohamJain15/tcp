@@ -3,7 +3,12 @@ import { getMongoDatabase } from "../../config/mongodb";
 import type { UserRole } from "../../shared/types/auth";
 import type { Department } from "../../shared/types/domain";
 import { toDate } from "../../shared/utils/date";
-import { normalizeDepartment, normalizeNumber, normalizeRole } from "../../shared/utils/normalize";
+import {
+  normalizeDepartment,
+  normalizeNumber,
+  normalizeRole,
+  tryNormalizeExecutableLanguage,
+} from "../../shared/utils/normalize";
 import type { UserRecord } from "./user.model";
 
 export type UserRecordUpdate = Partial<Omit<UserRecord, "email" | "createdAt">>;
@@ -56,6 +61,7 @@ function mapUserRecord(email: string, data: Record<string, unknown>): UserRecord
     // them in, and 0 means "no measured code" rather than "perfectly efficient".
     avgAcceptedRuntimeMs: normalizeNumber(data.avgAcceptedRuntimeMs, 0),
     avgAcceptedMemoryKb: normalizeNumber(data.avgAcceptedMemoryKb, 0),
+    primaryLanguage: tryNormalizeExecutableLanguage(data.primaryLanguage),
     createdAt,
     updatedAt,
     lastLoginAt: toDate(data.lastLoginAt),

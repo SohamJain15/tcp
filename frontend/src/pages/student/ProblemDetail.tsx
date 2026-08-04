@@ -27,6 +27,9 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { DifficultyBadge, StatusBadge } from "@/components/Badges";
+import { FailedTestCasePanel, shouldShowFailedTest } from "@/components/FailedTestCasePanel";
+import { SubmissionDistributionChart } from "@/components/charts";
+import { ProblemHintsPanel } from "@/components/ProblemHintsPanel";
 import { cn } from "@/lib/utils";
 import { submissionsApi, problemsApi, userApi } from "@/api/services";
 import {
@@ -215,7 +218,7 @@ export default function ProblemDetail() {
   const [draftsByLanguage, setDraftsByLanguage] = useState<Partial<Record<ExecutableLanguage, string>>>({
     cpp: getStarterCode("cpp"),
   });
-  const [tab, setTab] = useState<"console" | "subs">("console");
+  const [tab, setTab] = useState<"console" | "subs" | "board">("console");
   const [runResult, setRunResult] = useState<SubmissionResult | null>(null);
   const [submitResult, setSubmitResult] = useState<Submission | null>(null);
   const [pendingSubmissionId, setPendingSubmissionId] = useState<string | null>(null);
@@ -379,6 +382,21 @@ export default function ProblemDetail() {
     retry: false,
   });
 
+  // Only fetched when the board is actually on screen — it scans every accepted submission for
+  // the problem, which is wasted work for the majority of visits that never open the tab.
+  const { data: problemLeaderboard } = useQuery({
+    queryKey: ["student-problem-leaderboard", id],
+    queryFn: () => problemsApi.getLeaderboard(id, { pageSize: 50 }),
+    enabled: Boolean(id) && tab === "board",
+  });
+
+  const acceptedSubmissionId = submitResult?.status === "ACCEPTED" ? submitResult.id : null;
+  const { data: statsEnvelope } = useQuery({
+    queryKey: ["student-submission-stats", acceptedSubmissionId],
+    queryFn: () => submissionsApi.getStats(acceptedSubmissionId!),
+    enabled: Boolean(acceptedSubmissionId),
+  });
+
   // For metadata-driven (harness) problems, seed the editor with the harness-generated
   // starter (correct method name + typed params, no Main / stdin) once the detail loads,
   // unless the student already has saved work for this language.
@@ -410,6 +428,7 @@ export default function ProblemDetail() {
 
   const invalidateSubmissionViews = () => {
     queryClient.invalidateQueries({ queryKey: ["student-problem-submissions", id] });
+    queryClient.invalidateQueries({ queryKey: ["student-problem-leaderboard", id] });
     queryClient.invalidateQueries({ queryKey: ["student-profile"] });
     queryClient.invalidateQueries({ queryKey: ["student-dashboard"] });
     queryClient.invalidateQueries({ queryKey: ["student-leaderboard"] });
@@ -526,6 +545,7 @@ export default function ProblemDetail() {
         memoryKb: submitResult.memoryKb,
         passedCount: submitResult.passedCount,
         totalCount: submitResult.totalCount,
+        failedTest: submitResult.failedTest,
       }
     : runResult;
   const isSubmissionProcessing = pendingSubmissionStatus ? isSubmissionPending(pendingSubmissionStatus) : false;
@@ -651,6 +671,7 @@ export default function ProblemDetail() {
                     ))}
                   </div>
                 </div>
+                <ProblemHintsPanel problemId={id} />
               </section>
                 </Card>
               </div>
@@ -826,7 +847,7 @@ export default function ProblemDetail() {
                 >
                   <Card className="flex h-full flex-col overflow-hidden shadow-card">
                     <div className="flex shrink-0 items-stretch border-b border-border bg-secondary/50">
-                      {(["console", "subs"] as const).map((section) => (
+                      {(["console", "subs", "board"] as const).map((section) => (
                         <button
                           key={section}
                           onClick={() => {
@@ -840,7 +861,7 @@ export default function ProblemDetail() {
                             tab === section ? "border-b-2 border-accent bg-background text-accent" : "text-muted-foreground hover:text-foreground",
                           )}
                         >
-                          {section === "console" ? "Console" : "Submissions"}
+                          {section === "console" ? "Console" : section === "subs" ? "Submissions" : "Leaderboard"}
                         </button>
                       ))}
                       <button
@@ -882,6 +903,9 @@ export default function ProblemDetail() {
                           </div>
                         </div>
                       )}
+                      {tab === "console" && shouldShowFailedTest(activeResult?.failedTest) && (
+                        <FailedTestCasePanel failedTest={activeResult!.failedTest!} />
+                      )}
                       {tab === "console" && (
                         <pre className="whitespace-pre-wrap font-mono-code text-xs text-muted-foreground">
                           {runMutation.isPending
@@ -890,6 +914,106 @@ export default function ProblemDetail() {
                               ? `$ Submission ${pendingSubmissionId ?? ""} is ${pendingSubmissionStatus ? formatStatus(pendingSubmissionStatus) : "Processing"}...`
                               : activeConsoleOutput || (activeResult ? `Status: ${activeResultStatusLabel}` : "// stdout/stderr will appear here")}
                         </pre>
+                      )}
+                      {tab === "subs" && statsEnvelope && (
+                        <div className="space-y-2.5 rounded-md border border-border p-3">
+                          <div className="flex flex-wrap items-baseline justify-between gap-2">
+                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                              How your solution compares
+                            </span>
+                            {/* Never show a percentage without saying who it is a percentage of. */}
+                            <span className="text-[11px] text-muted-foreground">
+                              {statsEnvelope.stats.basis}
+                              {statsEnvelope.stats.confidence === "low" && " · indicative only"}
+                            </span>
+                          </div>
+                          <div className="grid gap-3 lg:grid-cols-2">
+                            <div>
+                              <div className="mb-1 text-xs">
+                                Runtime beats{" "}
+                                <span className="font-semibold text-success">
+                                  {statsEnvelope.stats.runtime.beatsPercent}%
+                                </span>{" "}
+                                <span className="text-muted-foreground">
+                                  ({statsEnvelope.stats.runtime.yourValue} ms)
+                                </span>
+                              </div>
+                              <div className="h-36">
+                                <SubmissionDistributionChart
+                                  distribution={statsEnvelope.stats.runtime}
+                                  unit="ms"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <div className="mb-1 text-xs">
+                                Memory beats{" "}
+                                <span className="font-semibold text-success">
+                                  {statsEnvelope.stats.memory.beatsPercent}%
+                                </span>{" "}
+                                <span className="text-muted-foreground">
+                                  ({(statsEnvelope.stats.memory.yourValue / 1024).toFixed(1)} MB)
+                                </span>
+                              </div>
+                              <div className="h-36">
+                                <SubmissionDistributionChart
+                                  distribution={statsEnvelope.stats.memory}
+                                  unit="MB"
+                                  scale={1024}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {tab === "board" && (
+                        <div className="space-y-2">
+                          {(problemLeaderboard?.items.length ?? 0) === 0 && (
+                            <div className="text-xs text-muted-foreground">
+                              No accepted submissions yet — solve it first to open the board.
+                            </div>
+                          )}
+                          {problemLeaderboard && problemLeaderboard.items.length > 0 && (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead className="text-muted-foreground">
+                                  <tr className="text-left">
+                                    <th className="py-1.5 pr-2 font-semibold">#</th>
+                                    <th className="py-1.5 pr-2 font-semibold">Student</th>
+                                    <th className="py-1.5 pr-2 font-semibold">Language</th>
+                                    <th className="py-1.5 pr-2 text-right font-semibold">Runtime</th>
+                                    <th className="py-1.5 pr-2 text-right font-semibold">Memory</th>
+                                    <th className="py-1.5 text-right font-semibold">Efficiency</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {problemLeaderboard.items.map((row) => (
+                                    <tr
+                                      key={row.submissionId}
+                                      className={cn(
+                                        "border-t border-border",
+                                        row.isCurrentUser && "bg-accent/20 ring-1 ring-inset ring-accent/60",
+                                      )}
+                                    >
+                                      <td className="py-1.5 pr-2 font-mono-code font-semibold">{row.rank}</td>
+                                      <td className="py-1.5 pr-2">{row.userName ?? row.userEmail}</td>
+                                      <td className="py-1.5 pr-2 text-muted-foreground">
+                                        {toLanguageLabel(row.language)}
+                                      </td>
+                                      <td className="py-1.5 pr-2 text-right font-mono-code">{row.runtimeMs} ms</td>
+                                      <td className="py-1.5 pr-2 text-right font-mono-code">
+                                        {(row.memoryKb / 1024).toFixed(1)} MB
+                                      </td>
+                                      <td className="py-1.5 text-right font-mono-code">
+                                        {Math.round(row.optimizationScore * 100)}%
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
                       )}
                       {tab === "subs" && (
                         <div className="space-y-2">

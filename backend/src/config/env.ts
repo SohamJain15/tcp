@@ -89,6 +89,13 @@ const envSchema = z.object({
   AI_ENABLED: z.unknown().transform((value) => parseBoolean(value, true)),
   AI_BASE_URL: z.string().min(1).default("http://localhost:11434"),
   AI_MODEL: z.string().min(1).default("qwen2.5:3b"),
+  /**
+   * Model used for problem hints, kept separate from `AI_MODEL`.
+   *
+   * Hints are free-form reasoning about an algorithm, which a 3B model does poorly; the report
+   * prompts are tuned around `AI_MODEL` and should not be repointed to chase hint quality.
+   */
+  AI_HINT_MODEL: z.string().min(1).default("llama3.1:latest"),
   AI_TIMEOUT_MS: z.coerce.number().int().positive().default(120000),
   // A GENERATING report older than this is treated as abandoned and can be reclaimed, so a crash
   // mid-generation cannot wedge a contest's report forever.

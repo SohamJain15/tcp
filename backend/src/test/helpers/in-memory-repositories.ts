@@ -33,6 +33,10 @@ import type {
 } from "../../modules/report/report.repository";
 import type { ProblemRecord } from "../../modules/problem/problem.model";
 import type { ProblemRepository } from "../../modules/problem/problem.repository";
+import type {
+  HintRevealRecord,
+  HintRevealRepository,
+} from "../../modules/problem/hint-reveal.repository";
 import type { SubmissionRecord } from "../../modules/submission/submission.model";
 import type {
   SubmissionAnalyticsRecord,
@@ -65,6 +69,8 @@ function cloneProblem(problem: ProblemRecord): ProblemRecord {
     tags: [...problem.tags],
     sampleTestCases: problem.sampleTestCases.map((testCase) => ({ ...testCase })),
     hiddenTestCases: problem.hiddenTestCases.map((testCase) => ({ ...testCase })),
+    hints: (problem.hints ?? []).map((hint) => ({ ...hint })),
+    hintsLockedAt: cloneDate(problem.hintsLockedAt),
     createdAt: new Date(problem.createdAt.getTime()),
     updatedAt: new Date(problem.updatedAt.getTime()),
   };
@@ -223,6 +229,23 @@ export class InMemoryProblemRepository implements ProblemRepository {
 
   async list(): Promise<ProblemRecord[]> {
     return Array.from(this.problems.values()).map(cloneProblem);
+  }
+}
+
+export class InMemoryHintRevealRepository implements HintRevealRepository {
+  private readonly reveals = new Map<string, HintRevealRecord>();
+
+  private key(userEmail: string, problemId: string): string {
+    return `${userEmail}::${problemId}`;
+  }
+
+  async get(userEmail: string, problemId: string): Promise<HintRevealRecord | null> {
+    return this.reveals.get(this.key(userEmail, problemId)) ?? null;
+  }
+
+  async save(record: HintRevealRecord): Promise<HintRevealRecord> {
+    this.reveals.set(this.key(record.userEmail, record.problemId), { ...record });
+    return { ...record };
   }
 }
 

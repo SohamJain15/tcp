@@ -28,6 +28,8 @@ function buildEntry(email: string, rating: number): LeaderboardEntry {
     acceptedSubmissionCount: 5,
     avgAcceptedRuntimeMs: 0,
     avgAcceptedMemoryKb: 0,
+
+    primaryLanguage: null,
     accuracy: 50,
     createdAt: SEED_TIME,
     updatedAt: SEED_TIME,

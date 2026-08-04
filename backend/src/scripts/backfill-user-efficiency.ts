@@ -5,12 +5,16 @@ import { syncUserAndLeaderboard } from "../modules/submission/submission.service
 import { FirestoreUserRepository } from "../modules/user/user.repository";
 
 /**
- * Backfills `avgAcceptedRuntimeMs` / `avgAcceptedMemoryKb` for every existing user.
+ * Backfills `avgAcceptedRuntimeMs`, `avgAcceptedMemoryKb` and `primaryLanguage` for every user.
  *
- * These feed the practice leaderboard's efficiency tie-break. They are normally maintained by
+ * These feed the practice leaderboard's optimization ranking. They are normally maintained by
  * the submission pipeline, so anyone who has not submitted since the feature shipped reads 0 and
  * sinks below every student who has — penalising exactly the dormant-but-strong accounts. Run
  * once at deploy.
+ *
+ * `primaryLanguage` matters as much as the two averages: without it every legacy account lands
+ * in the same "unknown" percentile bucket and is compared against students who wrote in a
+ * different language, which is the exact bias the language normalization exists to remove.
  *
  * It calls `syncUserAndLeaderboard`, the same function the live submission path uses. That
  * matters: the board reads a separate `leaderboard` collection, not `users`, so a script that

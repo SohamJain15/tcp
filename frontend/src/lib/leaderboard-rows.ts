@@ -27,6 +27,8 @@ export interface LeaderboardRow {
   violationCount: number | null;
   /** Both modes: how efficient this student's accepted code was, 0-1. Null when unmeasured. */
   optimizationScore: number | null;
+  /** Problem mode: the language bucket the efficiency score was measured against. */
+  primaryLanguage: string | null;
   /** Both modes: program runtime in ms — contest total, or practice average. */
   runtimeMs: number | null;
 }
@@ -46,6 +48,7 @@ export function toProblemLeaderboardRows(items: LeaderboardItem[]): LeaderboardR
     timeTakenMs: null,
     violationCount: null,
     optimizationScore: item.optimizationScore,
+    primaryLanguage: item.primaryLanguage,
     runtimeMs: item.avgAcceptedRuntimeMs,
   }));
 }
@@ -67,6 +70,8 @@ export function toContestLeaderboardRows(items: ContestStandingItem[]): Leaderbo
     timeTakenMs: item.timeTakenMs,
     violationCount: item.violationCount,
     optimizationScore: item.optimizationScore,
+    // Contest standings bucket by language internally but do not surface which one.
+    primaryLanguage: null,
     runtimeMs: item.totalRuntimeMs,
   }));
 }
