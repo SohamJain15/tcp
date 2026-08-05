@@ -64,7 +64,7 @@ export interface ProblemService {
   updateProblemState(user: AuthenticatedUser, problemId: string, lifecycleState: ProblemLifecycleState): Promise<ManageProblemDetailResponse>;
 }
 
-interface ProblemServiceDependencies {
+export interface ProblemServiceDependencies {
   problemRepository: ProblemRepository;
   submissionRepository: SubmissionRepository;
   userRepository: UserRepository;
@@ -168,7 +168,14 @@ async function ensureHintsGenerated(
   return generateAndStoreHints(dependencies, problem, { force: false });
 }
 
-async function generateAndStoreHints(
+/**
+ * Generates and stores a problem's hints.
+ *
+ * Exported so the warm-up script drives this exact path rather than a second copy of it — the
+ * locking, the all-or-nothing validation and the "release the lock on failure" behaviour all
+ * have to match what a student request would do.
+ */
+export async function generateAndStoreHints(
   dependencies: ProblemServiceDependencies,
   problem: ProblemRecord,
   options: { force: boolean },
