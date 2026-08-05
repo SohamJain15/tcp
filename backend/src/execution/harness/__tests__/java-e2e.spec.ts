@@ -6,6 +6,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { HARNESS_SCHEMA_VERSION, type HarnessSpec, type TypeRef } from "../contract";
 import { generateSubmissionProgram } from "../index";
 import { ensureHarnessRegistered } from "../register";
+import { E2E_SUITE_TIMEOUT_MS } from "./e2e-timeout";
 
 let javaOk = true;
 try {
@@ -25,7 +26,7 @@ function runJava(spec: HarnessSpec, userSource: string, input: string): string {
   return execFileSync("java", ["-cp", dir, "Main"], { input, encoding: "utf8" });
 }
 
-describe.skipIf(!javaOk)("Java harness end-to-end", () => {
+describe.skipIf(!javaOk)("Java harness end-to-end", { timeout: E2E_SUITE_TIMEOUT_MS }, () => {
   beforeAll(() => ensureHarnessRegistered());
 
   it("twoSum(int[] nums, int target) -> int[]", () => {

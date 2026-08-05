@@ -6,6 +6,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { HARNESS_SCHEMA_VERSION, type HarnessSpec } from "../contract";
 import { generateSubmissionProgram } from "../index";
 import { ensureHarnessRegistered } from "../register";
+import { E2E_SUITE_TIMEOUT_MS } from "./e2e-timeout";
 
 const PYTHON = process.env.PYTHON_BIN ?? "python3";
 
@@ -27,7 +28,7 @@ function run(spec: HarnessSpec, userSource: string, input: string): string {
 
 const t = (base: string, of?: HarnessSpec["returnType"]["of"]) => ({ base, of });
 
-describe.skipIf(!pythonAvailable)("Python harness end-to-end", () => {
+describe.skipIf(!pythonAvailable)("Python harness end-to-end", { timeout: E2E_SUITE_TIMEOUT_MS }, () => {
   beforeAll(() => ensureHarnessRegistered());
 
   it("twoSum(int[] nums, int target) -> int[]", () => {

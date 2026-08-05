@@ -6,6 +6,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { BATCH_CASE_SEPARATOR, HARNESS_SCHEMA_VERSION, type HarnessSpec, type TypeRef } from "../contract";
 import { generateSubmissionProgram } from "../index";
 import { ensureHarnessRegistered } from "../register";
+import { E2E_SUITE_TIMEOUT_MS } from "./e2e-timeout";
 
 let cOk = true;
 try {
@@ -26,7 +27,7 @@ function runC(spec: HarnessSpec, userSource: string, input: string): string {
   return execFileSync(exe, [], { input, encoding: "utf8" });
 }
 
-describe.skipIf(!cOk)("C harness end-to-end (free-function convention)", () => {
+describe.skipIf(!cOk)("C harness end-to-end (free-function convention)", { timeout: E2E_SUITE_TIMEOUT_MS }, () => {
   beforeAll(() => ensureHarnessRegistered());
 
   it("twoSum: int* twoSum(int* nums, int numsSize, int target, int* returnSize)", { timeout: 30000 }, () => {
@@ -141,7 +142,7 @@ const TWO_SUM_C = `int* twoSum(int* nums, int numsSize, int target, int* returnS
     *returnSize = 0; return NULL;
 }`;
 
-describe.skipIf(!cOk)("C harness batched execution", () => {
+describe.skipIf(!cOk)("C harness batched execution", { timeout: E2E_SUITE_TIMEOUT_MS }, () => {
   beforeAll(() => ensureHarnessRegistered());
 
   it("judges several cases from one compiled program", { timeout: 30000 }, () => {

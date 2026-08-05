@@ -6,6 +6,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { HARNESS_SCHEMA_VERSION, type HarnessSpec, type TypeRef } from "../contract";
 import { generateSubmissionProgram } from "../index";
 import { ensureHarnessRegistered } from "../register";
+import { E2E_SUITE_TIMEOUT_MS } from "./e2e-timeout";
 
 let cppOk = true;
 try {
@@ -26,7 +27,7 @@ function runCpp(spec: HarnessSpec, userSource: string, input: string): string {
   return execFileSync(exe, [], { input, encoding: "utf8" });
 }
 
-describe.skipIf(!cppOk)("C++ harness end-to-end", () => {
+describe.skipIf(!cppOk)("C++ harness end-to-end", { timeout: E2E_SUITE_TIMEOUT_MS }, () => {
   beforeAll(() => ensureHarnessRegistered());
 
   it("twoSum(int[] nums, int target) -> int[]", { timeout: 30000 }, () => {

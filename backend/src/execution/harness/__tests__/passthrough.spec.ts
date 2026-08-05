@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { HARNESS_SCHEMA_VERSION, type HarnessSpec } from "../contract";
 import { compareOutput, generateSubmissionProgram, submissionUsesOwnProgram } from "../index";
 import { ensureHarnessRegistered } from "../register";
+import { E2E_SUITE_TIMEOUT_MS } from "./e2e-timeout";
 
 ensureHarnessRegistered();
 
@@ -54,7 +55,7 @@ describe("lenient comparison lets correct logic pass regardless of formatting", 
   });
 });
 
-describe("end-to-end: full program reading JSON input passes via passthrough+lenient", () => {
+describe("end-to-end: full program reading JSON input passes via passthrough+lenient", { timeout: E2E_SUITE_TIMEOUT_MS }, () => {
   let py = true;
   try {
     execFileSync("python3", ["--version"], { stdio: "ignore" });

@@ -7,6 +7,7 @@ import type { ExecutableLanguage } from "../../../shared/types/domain";
 import { HARNESS_SCHEMA_VERSION, type HarnessSpec, type TypeRef } from "../contract";
 import { generateSubmissionProgram } from "../index";
 import { ensureHarnessRegistered } from "../register";
+import { E2E_SUITE_TIMEOUT_MS } from "./e2e-timeout";
 
 const PYTHON = process.env.PYTHON_BIN ?? "python3";
 let pythonOk = true;
@@ -165,7 +166,7 @@ const cases: Case[] = [
   },
 ];
 
-describe.skipIf(!pythonOk)("cross-language canonical output", () => {
+describe.skipIf(!pythonOk)("cross-language canonical output", { timeout: E2E_SUITE_TIMEOUT_MS }, () => {
   beforeAll(() => ensureHarnessRegistered());
 
   for (const c of cases) {
