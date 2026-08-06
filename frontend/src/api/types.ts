@@ -279,19 +279,28 @@ export interface DistributionBucket {
   isYours: boolean;
 }
 
-export interface MetricDistribution {
+export interface PercentileDistribution {
   buckets: DistributionBucket[];
+  /** Normalized efficiency score, 0-100. */
   yourValue: number;
-  /** Percentage of the compared field this submission beat, 0-100. */
-  beatsPercent: number;
+}
+
+export interface MetricPercentile {
+  rawValue: number;
+  percentile: number;
 }
 
 export interface SubmissionStats {
   submissionId: string;
   problemId: string;
   language: ExecutableLanguage;
-  runtime: MetricDistribution;
-  memory: MetricDistribution;
+  efficiency: {
+    score: number;
+    beatsPercent: number;
+    distribution: PercentileDistribution;
+  };
+  runtime: MetricPercentile;
+  memory: MetricPercentile;
   /** Who this was compared against — must be shown next to any percentage. */
   basis: string;
   sampleSize: number;

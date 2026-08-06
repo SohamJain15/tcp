@@ -1,141 +1,128 @@
 import type { ExecutableLanguage } from "../../shared/types/domain";
-import { MIN_LANGUAGE_SAMPLE } from "../../shared/utils/language-percentile";
-import { lowerIsBetterPercentile } from "../../shared/utils/percentile";
+import { buildLanguagePercentileScorer } from "../../shared/utils/language-percentile";
 import type { SubmissionAnalyticsRecord } from "./submission.repository";
 
-/** Enough buckets to show a shape without inventing precision the sample cannot support. */
-const BUCKET_COUNT = 10;
+export const PRACTICE_OPTIMIZATION_WEIGHTS = { runtime: 0.6, memory: 0.4 } as const;
+const PERCENTILE_BUCKET_COUNT = 10;
 
 export interface DistributionBucket {
-  /** Inclusive lower bound of the bucket, in the metric's own unit. */
   rangeStart: number;
-  /** Exclusive upper bound, except for the final bucket which includes its own maximum. */
   rangeEnd: number;
   count: number;
-  /** True for the bucket the requesting student's own submission falls into. */
   isYours: boolean;
 }
 
-export interface MetricDistribution {
+export interface PercentileDistribution {
   buckets: DistributionBucket[];
+  /** The selected solution's normalized efficiency score, 0-100. */
   yourValue: number;
-  /** Percentage of the compared field this submission beat, 0-100. */
-  beatsPercent: number;
+}
+
+export interface MetricPercentile {
+  /** Raw measurement retained so students can still see their exact result. */
+  rawValue: number;
+  /** Language-normalized percentile, 0-100. */
+  percentile: number;
 }
 
 export interface SubmissionStatsResponse {
   submissionId: string;
   problemId: string;
   language: ExecutableLanguage;
-  runtime: MetricDistribution;
-  memory: MetricDistribution;
-  /** Human-readable description of who this was compared against. */
+  efficiency: {
+    score: number;
+    beatsPercent: number;
+    distribution: PercentileDistribution;
+  };
+  runtime: MetricPercentile;
+  memory: MetricPercentile;
   basis: string;
   sampleSize: number;
   confidence: "high" | "low";
 }
 
-/**
- * One accepted submission per student — their fastest, then leanest.
- *
- * Without this a student who submits the same solution ten times would appear ten times in the
- * distribution and drag the whole curve toward their own result.
- */
-export function selectBestAcceptedPerUser(
-  submissions: readonly SubmissionAnalyticsRecord[],
-): SubmissionAnalyticsRecord[] {
-  const bestByUser = new Map<string, SubmissionAnalyticsRecord>();
-
-  for (const submission of submissions) {
-    const incumbent = bestByUser.get(submission.userEmail);
-    if (
-      !incumbent ||
-      submission.runtimeMs < incumbent.runtimeMs ||
-      (submission.runtimeMs === incumbent.runtimeMs && submission.memoryKb < incumbent.memoryKb)
-    ) {
-      bestByUser.set(submission.userEmail, submission);
-    }
-  }
-
-  return [...bestByUser.values()];
+function roundPercent(value: number): number {
+  return Math.max(0, Math.min(100, Number((value * 100).toFixed(1))));
 }
 
-function buildBuckets(values: readonly number[], yourValue: number): DistributionBucket[] {
-  if (values.length === 0) {
-    return [];
+/** Higher normalized scores are better. Ties split their shared position evenly. */
+function higherIsBetterPercentile(values: readonly number[], value: number): number {
+  if (values.length <= 1) return 1;
+
+  let beaten = 0;
+  let ties = 0;
+  for (const candidate of values) {
+    if (candidate < value) beaten += 1;
+    else if (candidate === value) ties += 1;
   }
 
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  return Math.max(0, Math.min(1, (beaten + 0.5 * Math.max(0, ties - 1)) / (values.length - 1)));
+}
 
-  // Everyone scored identically — one bucket is the honest picture, and it avoids dividing by a
-  // zero-width range below.
-  if (min === max) {
-    return [{ rangeStart: min, rangeEnd: min, count: values.length, isYours: true }];
-  }
-
-  const width = (max - min) / BUCKET_COUNT;
+function buildPercentileBuckets(values: readonly number[], yourValue: number): DistributionBucket[] {
+  const counts = new Array<number>(PERCENTILE_BUCKET_COUNT).fill(0);
   const indexOf = (value: number): number =>
-    Math.min(BUCKET_COUNT - 1, Math.floor((value - min) / width));
+    Math.min(PERCENTILE_BUCKET_COUNT - 1, Math.max(0, Math.floor(value / 10)));
 
-  const counts = new Array<number>(BUCKET_COUNT).fill(0);
-  for (const value of values) {
-    counts[indexOf(value)] += 1;
-  }
+  for (const value of values) counts[indexOf(value)] += 1;
 
   const yourIndex = indexOf(yourValue);
   return counts.map((count, index) => ({
-    rangeStart: Math.round(min + index * width),
-    rangeEnd: Math.round(min + (index + 1) * width),
+    rangeStart: index * 10,
+    rangeEnd: (index + 1) * 10,
     count,
     isYours: index === yourIndex,
   }));
 }
 
-function buildDistribution(values: readonly number[], yourValue: number): MetricDistribution {
-  return {
-    buckets: buildBuckets(values, yourValue),
-    yourValue,
-    // The same primitive the leaderboards rank on, so the percentage in the graph and the
-    // student's position on the board can never tell different stories.
-    beatsPercent: Number((lowerIsBetterPercentile(values, yourValue) * 100).toFixed(1)),
-  };
-}
-
 /**
- * Builds the "your solution beats X% of submissions" view for one accepted submission.
- *
- * Comparison prefers submissions in the same language. Below `MIN_LANGUAGE_SAMPLE` it widens to
- * every language and reports `confidence: "low"` — a percentile drawn from three people is a
- * number, not a fact, and the UI is expected to show `basis` alongside it so the student can see
- * what they were measured against.
+ * Builds a language-normalized practice comparison for one accepted solution.
+ * Every accepted submission participates, including resubmissions. Raw runtime and memory are
+ * scored inside their language buckets before weighted scores are compared across the whole field.
  */
 export function buildSubmissionStats(
   submission: SubmissionAnalyticsRecord,
   acceptedForProblem: readonly SubmissionAnalyticsRecord[],
 ): SubmissionStatsResponse {
-  const best = selectBestAcceptedPerUser(acceptedForProblem);
-  const sameLanguage = best.filter((entry) => entry.language === submission.language);
+  // The selected record can be fetched separately, so explicitly include it before ranking.
+  const field = acceptedForProblem.some((entry) => entry.id === submission.id)
+    ? [...acceptedForProblem]
+    : [...acceptedForProblem, submission];
+  const languageOf = (entry: SubmissionAnalyticsRecord): string => entry.language;
+  const runtimeScorer = buildLanguagePercentileScorer(field, {
+    languageOf,
+    valueOf: (entry) => entry.runtimeMs,
+  });
+  const memoryScorer = buildLanguagePercentileScorer(field, {
+    languageOf,
+    valueOf: (entry) => entry.memoryKb,
+  });
+  const scoreFor = (entry: SubmissionAnalyticsRecord): number =>
+    runtimeScorer.scoreFor(entry) * PRACTICE_OPTIMIZATION_WEIGHTS.runtime +
+    memoryScorer.scoreFor(entry) * PRACTICE_OPTIMIZATION_WEIGHTS.memory;
 
-  const languagePure = sameLanguage.length >= MIN_LANGUAGE_SAMPLE;
-  const pool = languagePure ? sameLanguage : best;
+  const efficiencyScores = field.map(scoreFor);
+  const selectedScore = scoreFor(submission);
+  const basis = runtimeScorer.basisFor(submission);
+  const normalizedScores = efficiencyScores.map(roundPercent);
+  const normalizedSelectedScore = roundPercent(selectedScore);
 
   return {
     submissionId: submission.id,
     problemId: submission.problemId,
     language: submission.language,
-    runtime: buildDistribution(
-      pool.map((entry) => entry.runtimeMs),
-      submission.runtimeMs,
-    ),
-    memory: buildDistribution(
-      pool.map((entry) => entry.memoryKb),
-      submission.memoryKb,
-    ),
-    basis: languagePure
-      ? `${submission.language} · ${pool.length} submissions`
-      : `all languages · ${pool.length} submissions (too few ${submission.language} submissions)`,
-    sampleSize: pool.length,
-    confidence: languagePure ? "high" : "low",
+    efficiency: {
+      score: normalizedSelectedScore,
+      beatsPercent: roundPercent(higherIsBetterPercentile(efficiencyScores, selectedScore)),
+      distribution: {
+        buckets: buildPercentileBuckets(normalizedScores, normalizedSelectedScore),
+        yourValue: normalizedSelectedScore,
+      },
+    },
+    runtime: { rawValue: submission.runtimeMs, percentile: roundPercent(runtimeScorer.scoreFor(submission)) },
+    memory: { rawValue: submission.memoryKb, percentile: roundPercent(memoryScorer.scoreFor(submission)) },
+    basis: basis.label,
+    sampleSize: basis.sampleSize,
+    confidence: basis.languagePure ? "high" : "low",
   };
 }

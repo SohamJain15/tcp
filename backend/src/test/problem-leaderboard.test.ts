@@ -155,12 +155,14 @@ describe("submission distribution stats", () => {
     ),
   ];
 
-  it("reports the share of the field a submission beat", () => {
+  it("reports language-normalized efficiency for the complete accepted field", () => {
     const mine = accepted({ email: "me@x.in", runtimeMs: 10, memoryKb: 1024 });
     const stats = buildSubmissionStats(mine, [...field, mine]);
 
-    expect(stats.runtime.beatsPercent).toBe(100);
-    expect(stats.runtime.yourValue).toBe(10);
+    expect(stats.efficiency.beatsPercent).toBe(100);
+    expect(stats.runtime.percentile).toBe(100);
+    expect(stats.memory.percentile).toBe(100);
+    expect(stats.runtime.rawValue).toBe(10);
     expect(stats.confidence).toBe("high");
     expect(stats.basis).toContain("cpp");
   });
@@ -174,26 +176,37 @@ describe("submission distribution stats", () => {
     expect(stats.basis).toContain("too few rust");
   });
 
-  it("marks exactly one bucket as the student's own", () => {
+  it("marks exactly one normalized efficiency bucket as the student's own", () => {
     const mine = accepted({ email: "me@x.in", runtimeMs: 100, memoryKb: 2048 });
     const stats = buildSubmissionStats(mine, [...field, mine]);
 
-    expect(stats.runtime.buckets.filter((bucket) => bucket.isYours)).toHaveLength(1);
-    expect(stats.runtime.buckets.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(
+    expect(stats.efficiency.distribution.buckets.filter((bucket) => bucket.isYours)).toHaveLength(1);
+    expect(stats.efficiency.distribution.buckets.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(
       stats.sampleSize,
     );
   });
 
-  it("collapses to a single bucket when everyone scored identically", () => {
+  it("gives equal normalized scores an even overall percentile", () => {
     const tied = Array.from({ length: 5 }, (_, index) =>
       accepted({ email: `tie${index}@x.in`, runtimeMs: 50, memoryKb: 2048 }),
     );
 
     const stats = buildSubmissionStats(tied[0], tied);
 
-    expect(stats.runtime.buckets).toHaveLength(1);
-    expect(stats.runtime.buckets[0].count).toBe(5);
-    // Nobody had an edge, so nobody beat anybody.
-    expect(stats.runtime.beatsPercent).toBe(50);
+    expect(stats.efficiency.distribution.buckets).toHaveLength(10);
+    expect(stats.efficiency.distribution.buckets.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(5);
+    expect(stats.efficiency.beatsPercent).toBe(50);
+  });
+
+  it("includes the selected accepted resubmission and never exceeds 100 percent", () => {
+    const earlierBest = accepted({ email: "me@x.in", runtimeMs: 10, memoryKb: 1024, id: "best" });
+    const peer = accepted({ email: "peer@x.in", runtimeMs: 40, memoryKb: 4096, id: "peer" });
+    const selectedLater = accepted({ email: "me@x.in", runtimeMs: 20, memoryKb: 2048, id: "later" });
+    const stats = buildSubmissionStats(selectedLater, [earlierBest, peer]);
+
+    expect(stats.sampleSize).toBe(3);
+    expect(stats.efficiency.beatsPercent).toBeGreaterThanOrEqual(0);
+    expect(stats.efficiency.beatsPercent).toBeLessThanOrEqual(100);
+    expect(stats.efficiency.distribution.buckets.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(3);
   });
 });
