@@ -588,6 +588,185 @@ describe("Class Test — feedback", () => {
   });
 });
 
+
+/** A pool of MCQs, all worth the same so every dealt paper totals identically. */
+function mcqPool(count: number, points = 5) {
+  return Array.from({ length: count }, (_, index) => ({
+    type: "MCQ",
+    points,
+    statement: `Pool question ${index}`,
+    options: [`A${index}`, `B${index}`, `C${index}`, `D${index}`],
+    correctAnswer: `A${index}`,
+  }));
+}
+
+describe("Class Test — shuffled question papers", () => {
+  it("deals each student a different subset of the pool, and only their own", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+    const created = await createLiveTest(app, {
+      questions: mcqPool(20),
+      questionPool: { perType: { MCQ: 5 } },
+    });
+
+    const papers: string[][] = [];
+    for (const roll of [11, 12, 13, 14]) {
+      const headers = studentHeaders(`cta${roll}@tcetmumbai.in`);
+      const response = await request(app)
+        .post(`/api/class-tests/mine/${created.id}/attempts`)
+        .set(headers);
+      expect(response.status).toBe(201);
+
+      const questions = response.body.classTest.questions as { id: string }[];
+      // Their own paper, not the 20-question pool.
+      expect(questions).toHaveLength(5);
+      papers.push(questions.map((question) => question.id));
+    }
+
+    // With 20 questions and 4 students taking 5 each, the draw has room to avoid all repeats.
+    const dealt = papers.flat();
+    expect(new Set(dealt).size).toBe(dealt.length);
+  });
+
+  it("returns the identical paper on refresh and resume", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+    const created = await createLiveTest(app, {
+      questions: mcqPool(20),
+      questionPool: { perType: { MCQ: 5 } },
+    });
+    const headers = studentHeaders("cta11@tcetmumbai.in");
+
+    const first = await request(app).post(`/api/class-tests/mine/${created.id}/attempts`).set(headers);
+    const paper = first.body.classTest.questions as { id: string; options: string[] }[];
+
+    // Re-entering (refresh) and re-fetching (resume) must both replay the same paper — same
+    // questions, same order, same options.
+    const again = await request(app).post(`/api/class-tests/mine/${created.id}/attempts`).set(headers);
+    const fetched = await request(app).get(`/api/class-tests/mine/${created.id}`).set(headers);
+
+    expect((again.body.classTest.questions as { id: string }[]).map((q) => q.id)).toEqual(
+      paper.map((q) => q.id),
+    );
+    expect((fetched.body.classTest.questions as { id: string }[]).map((q) => q.id)).toEqual(
+      paper.map((q) => q.id),
+    );
+    expect((fetched.body.classTest.questions as { options: string[] }[])[0].options).toEqual(
+      paper[0].options,
+    );
+  });
+
+  it("refuses an answer to a question the student was never dealt", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+    const created = await createLiveTest(app, {
+      questions: mcqPool(20),
+      questionPool: { perType: { MCQ: 5 } },
+    });
+    const headers = studentHeaders("cta11@tcetmumbai.in");
+
+    const started = await request(app).post(`/api/class-tests/mine/${created.id}/attempts`).set(headers);
+    const mine = new Set((started.body.classTest.questions as { id: string }[]).map((q) => q.id));
+    const notMine = (created.questions as { id: string }[]).find((q) => !mine.has(q.id));
+    expect(notMine).toBeDefined();
+
+    // The paper is the boundary, not the test — otherwise a crafted request could answer all 20.
+    const response = await request(app)
+      .post(`/api/class-tests/mine/${created.id}/answers`)
+      .set(headers)
+      .send({ questionId: notMine!.id, answer: "A0" });
+
+    expect(response.status).toBe(404);
+  });
+
+  it("gives every student a paper worth the same total", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+    const created = await createLiveTest(app, {
+      questions: mcqPool(20),
+      questionPool: { perType: { MCQ: 5 } },
+    });
+
+    for (const roll of [11, 12, 13]) {
+      const response = await request(app)
+        .post(`/api/class-tests/mine/${created.id}/attempts`)
+        .set(studentHeaders(`cta${roll}@tcetmumbai.in`));
+
+      // 5 questions x 5 marks — the same for everyone, which is what the equal-marks-per-type
+      // rule buys.
+      expect(response.body.classTest.totalPoints).toBe(25);
+      expect(response.body.classTest.questionCount).toBe(5);
+    }
+  });
+
+  it("shuffles the options, and still scores the right answer correctly", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+    const created = await createLiveTest(app, {
+      questions: mcqPool(20),
+      questionPool: { perType: { MCQ: 5 } },
+    });
+    const headers = studentHeaders("cta11@tcetmumbai.in");
+
+    const started = await request(app).post(`/api/class-tests/mine/${created.id}/attempts`).set(headers);
+    const question = (started.body.classTest.questions as { id: string; options: string[] }[])[0];
+
+    // Whatever order the student saw, the correct option is still identified by its text.
+    const correct = question.options.find((option) => option.startsWith("A"))!;
+    const saved = await request(app)
+      .post(`/api/class-tests/mine/${created.id}/answers`)
+      .set(headers)
+      .send({ questionId: question.id, answer: correct });
+
+    expect(saved.status).toBe(200);
+    const [attempt] = await repositories.classTestAttemptRepository.listByTest(created.id);
+    const state = attempt.questionStates.find((item) => item.questionId === question.id);
+    expect(state?.submittedAnswer).toBe(correct);
+    expect(state?.optionOrder).toHaveLength(4);
+  });
+
+  it("leaves a test without a pool completely unchanged", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+    const created = await createLiveTest(app, { questions: mcqPool(6) });
+    const headers = studentHeaders("cta11@tcetmumbai.in");
+
+    const started = await request(app).post(`/api/class-tests/mine/${created.id}/attempts`).set(headers);
+    const questions = started.body.classTest.questions as { id: string; options: string[] }[];
+
+    // Every question, in authoring order, with the authored option order.
+    expect(questions.map((q) => q.id)).toEqual((created.questions as { id: string }[]).map((q) => q.id));
+    expect(questions[0].options).toEqual(["A0", "B0", "C0", "D0"]);
+    expect(started.body.classTest.totalPoints).toBe(30);
+  });
+
+  it("refuses a pool asking for more questions of a type than exist", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+
+    const response = await request(app)
+      .post("/api/class-tests")
+      .set(facultyHeaders)
+      .send(testPayload({ questions: mcqPool(3), questionPool: { perType: { MCQ: 10 } } }));
+
+    expect(response.status).toBe(400);
+  });
+
+  it("refuses a pool whose questions of one type carry different marks", async () => {
+    const { app, repositories } = createTestApp();
+    await seedClass(repositories);
+
+    // Unequal marks would mean two students sit papers with different maximums.
+    const questions = [...mcqPool(4, 5), ...mcqPool(2, 9)];
+    const response = await request(app)
+      .post("/api/class-tests")
+      .set(facultyHeaders)
+      .send(testPayload({ questions, questionPool: { perType: { MCQ: 3 } } }));
+
+    expect(response.status).toBe(400);
+  });
+});
+
 /** An ended test: startAt well before the fixed clock, so grading is open. */
 async function createEndedTest(
   app: Parameters<typeof request>[0],

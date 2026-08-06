@@ -14,6 +14,8 @@ import {
   classTestTotalPoints,
   computeClassTestEndAt,
   computeClassTestStatus,
+  drawOptionOrder,
+  drawQuestionsForAttempt,
   isAssignedToClassTest,
   isLanguageAllowed,
   matchesAudienceFilter,
@@ -222,6 +224,8 @@ export interface FacultyAttemptSummary {
   autoScore: number | null;
   manualScore: number | null;
   finalScore: number | null;
+  /** This attempt's own maximum. With a question pool the test total is the pool, not the paper. */
+  totalPoints: number;
   timeTakenMs: number | null;
 }
 
@@ -391,6 +395,7 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
         assignedStudents,
         maxViolations: input.maxViolations,
         questions: normalizeQuestions(input.questions),
+        questionPool: input.questionPool,
         lifecycleState: input.lifecycleState,
         resultsPublished: false,
         createdAt: now,
@@ -441,6 +446,7 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
         assignedStudents,
         maxViolations: input.maxViolations ?? existing.maxViolations,
         questions: input.questions ? normalizeQuestions(input.questions) : existing.questions,
+        questionPool: input.questionPool ?? existing.questionPool,
         lifecycleState: input.lifecycleState ?? existing.lifecycleState,
         updatedAt: now,
       };
@@ -501,6 +507,21 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
         (student) => student.email.toLowerCase() === user.email.toLowerCase(),
       );
 
+      // A pooled test deals this student their own paper; without a pool everyone still gets
+      // the whole list, exactly as before. Usage counts come from the attempts already started,
+      // so questions spread evenly across the class rather than the same few repeating.
+      let paper = test.questions;
+      if (test.questionPool) {
+        const existingAttempts = await dependencies.classTestAttemptRepository.listByTest(classTestId);
+        const usageByQuestionId = new Map<string, number>();
+        for (const other of existingAttempts) {
+          for (const state of other.questionStates) {
+            usageByQuestionId.set(state.questionId, (usageByQuestionId.get(state.questionId) ?? 0) + 1);
+          }
+        }
+        paper = drawQuestionsForAttempt(test.questions, test.questionPool.perType, usageByQuestionId);
+      }
+
       const attempt: ClassTestAttemptRecord = {
         id: `ct_attempt_${randomUUID()}`,
         classTestId,
@@ -511,7 +532,7 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
         userDivision: assigned?.division ?? null,
         userDepartment: profile?.department ?? null,
         status: "ACTIVE",
-        questionStates: test.questions.map((question) => ({
+        questionStates: paper.map((question) => ({
           questionId: question.id,
           questionType: question.type,
           submittedAnswer: null,
@@ -527,6 +548,8 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
           gradedBy: null,
           gradedAt: null,
           graderNote: null,
+          // Frozen now so a refresh cannot reshuffle the options mid-question.
+          optionOrder: test.questionPool ? drawOptionOrder(question) : undefined,
         })),
         autoScore: 0,
         manualScore: 0,
@@ -553,7 +576,10 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
       const { test, attempt } = await loadForStudent(user, classTestId);
       const live = ensureWritableAttempt(test, attempt, now);
 
-      const question = test.questions.find((item) => item.id === questionId);
+      // Scoped to the attempt, not the test: with a question pool a crafted request must not be
+      // able to answer a question this student was never dealt.
+      const onThisPaper = live.questionStates.some((state) => state.questionId === questionId);
+      const question = onThisPaper ? test.questions.find((item) => item.id === questionId) : undefined;
       if (!question) {
         throw new AppError(404, "Question not found");
       }
@@ -640,7 +666,9 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
         title: test.title,
         subject: test.subject,
         finalScore: attempt.finalScore,
-        totalPoints: classTestTotalPoints(test.questions),
+        // This student's own paper — with a question pool the test total is the pool, not what
+        // they sat.
+        totalPoints: attempt.questionStates.reduce((total, state) => total + state.maxPoints, 0),
         questions: attempt.questionStates.map((state) => {
           const question = byId.get(state.questionId);
           return {
@@ -663,7 +691,7 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
       const now = dependencies.now();
       const { test, attempt } = await loadForStudent(user, classTestId);
       const live = ensureWritableAttempt(test, attempt, now);
-      const question = ensureCodingQuestion(test, input.questionId, input.language);
+      const question = ensureCodingQuestion(test, input.questionId, input.language, live);
 
       // Sample cases only: "Run" is for checking your own work, so hidden cases stay hidden.
       const program = generateSubmissionProgram(input.language, input.code, question.harness);
@@ -701,7 +729,7 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
       const now = dependencies.now();
       const { test, attempt } = await loadForStudent(user, classTestId);
       const live = ensureWritableAttempt(test, attempt, now);
-      const question = ensureCodingQuestion(test, input.questionId, input.language);
+      const question = ensureCodingQuestion(test, input.questionId, input.language, live);
 
       const profile = await dependencies.userRepository.getByEmail(user.email);
       const submissionId = `submission_${randomUUID()}`;
@@ -797,7 +825,7 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
       const now = dependencies.now();
       const { test, attempt } = await loadForStudent(user, classTestId);
       const live = ensureWritableAttempt(test, attempt, now);
-      ensureCodingQuestion(test, input.questionId, input.language);
+      ensureCodingQuestion(test, input.questionId, input.language, live);
       await saveDraftOnAttempt(live, input, now);
     },
 
@@ -1003,8 +1031,12 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
     test: ClassTestRecord,
     questionId: string,
     language: ExecutableLanguage,
+    /** The student's own paper. Scoping to it stops code being run against a question they
+     *  were never dealt when the test uses a question pool. */
+    attempt: ClassTestAttemptRecord,
   ): ClassTestCodingQuestion {
-    const question = test.questions.find((item) => item.id === questionId);
+    const onThisPaper = attempt.questionStates.some((state) => state.questionId === questionId);
+    const question = onThisPaper ? test.questions.find((item) => item.id === questionId) : undefined;
     if (!question) {
       throw new AppError(404, "Question not found");
     }
@@ -1040,7 +1072,15 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
     test: ClassTestRecord,
     attemptStatus: StudentClassTestSummary["attemptStatus"],
     now: Date,
+    /** Once dealt, the student's own paper decides these numbers, not the pool. */
+    attempt?: ClassTestAttemptRecord | null,
   ): StudentClassTestSummary {
+    // Before the paper is dealt, describe what they are *about* to get so the pre-start screen
+    // does not promise 100 questions and then hand over 10.
+    const pooledCount = test.questionPool
+      ? Object.values(test.questionPool.perType).reduce((total, count) => total + (count ?? 0), 0)
+      : test.questions.length;
+
     return {
       id: test.id,
       title: test.title,
@@ -1049,11 +1089,29 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
       endAt: computeClassTestEndAt(test).toISOString(),
       durationMinutes: test.durationMinutes,
       computedStatus: computeClassTestStatus(test, now),
-      questionCount: test.questions.length,
-      totalPoints: classTestTotalPoints(test.questions),
+      questionCount: attempt ? attempt.questionStates.length : pooledCount,
+      totalPoints: attempt
+        ? attempt.questionStates.reduce((total, state) => total + state.maxPoints, 0)
+        : expectedPaperPoints(test),
       attemptStatus,
       resultsPublished: test.resultsPublished,
     };
+  }
+
+  /**
+   * What one student's paper will be worth. Equal to the whole test without a pool; with one,
+   * the per-type counts times the marks each type carries (the validator guarantees every
+   * question of a type carries the same marks, so any one of them is representative).
+   */
+  function expectedPaperPoints(test: ClassTestRecord): number {
+    if (!test.questionPool) {
+      return classTestTotalPoints(test.questions);
+    }
+
+    return Object.entries(test.questionPool.perType).reduce((total, [type, count]) => {
+      const sample = test.questions.find((question) => question.type === type);
+      return total + (sample ? sample.points * (count ?? 0) : 0);
+    }, 0);
   }
 
   async function buildStudentDetail(
@@ -1068,11 +1126,22 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
       (student) => student.email.toLowerCase() === user.email.toLowerCase(),
     );
 
+    // Drive the paper off the attempt, never off the test. With a question pool this is the
+    // difference between a student seeing their own 10 questions and seeing all 100.
+    const questionsById = new Map(test.questions.map((question) => [question.id, question]));
+    const paper =
+      attempt?.questionStates
+        .map((state) => {
+          const question = questionsById.get(state.questionId);
+          return question ? toStudentQuestion(question, state.optionOrder) : null;
+        })
+        .filter((question): question is StudentClassTestQuestion => question !== null) ?? [];
+
     return {
-      ...toStudentSummary(test, attempt?.status ?? "NOT_STARTED", now),
+      ...toStudentSummary(test, attempt?.status ?? "NOT_STARTED", now, attempt),
       instructions: test.instructions,
       // The paper stays sealed until the test is live, even for an assigned student.
-      questions: status === "Live" && attempt ? test.questions.map(toStudentQuestion) : [],
+      questions: status === "Live" && attempt ? paper : [],
       identity: {
         name: profile?.name ?? assigned?.name ?? null,
         uid: profile?.uid ?? assigned?.uid ?? null,
@@ -1203,6 +1272,7 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
       autoScore: scoresVisible ? attempt.autoScore : null,
       manualScore: scoresVisible ? attempt.manualScore : null,
       finalScore: scoresVisible ? attempt.finalScore : null,
+      totalPoints: attempt.questionStates.reduce((total, state) => total + state.maxPoints, 0),
       timeTakenMs: attempt.timeTakenMs,
     };
   }

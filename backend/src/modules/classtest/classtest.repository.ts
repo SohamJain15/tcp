@@ -19,6 +19,8 @@ import type {
   ClassTestGradingStatus,
   ClassTestProctoringEventRecord,
   ClassTestQuestion,
+  ClassTestQuestionPool,
+  ClassTestQuestionType,
   ClassTestQuestionAttemptState,
   ClassTestRecord,
   ClassTestTestCase,
@@ -216,12 +218,34 @@ function mapClassTestRecord(id: string, data: Record<string, unknown>): ClassTes
     questions: Array.isArray(data.questions)
       ? data.questions.map(mapQuestion).filter((item): item is ClassTestQuestion => item !== null)
       : [],
+    questionPool: mapQuestionPool(data.questionPool),
     lifecycleState:
       data.lifecycleState === "Published" || data.lifecycleState === "Archived" ? data.lifecycleState : "Draft",
     resultsPublished: data.resultsPublished === true,
     createdAt: toDate(data.createdAt) ?? new Date(0),
     updatedAt: toDate(data.updatedAt) ?? new Date(0),
   };
+}
+
+/** Absent, malformed or all-zero means "no pool" — every student sits the whole paper. */
+function mapQuestionPool(value: unknown): ClassTestQuestionPool | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const perTypeSource = (value as Record<string, unknown>).perType;
+  if (!perTypeSource || typeof perTypeSource !== "object") {
+    return undefined;
+  }
+
+  const perType: Partial<Record<ClassTestQuestionType, number>> = {};
+  for (const type of ["MCQ", "MSQ", "ShortAnswer", "Coding"] as ClassTestQuestionType[]) {
+    const count = normalizeNumber((perTypeSource as Record<string, unknown>)[type], 0);
+    if (count > 0) {
+      perType[type] = count;
+    }
+  }
+
+  return Object.keys(perType).length > 0 ? { perType } : undefined;
 }
 
 function mapQuestionState(value: unknown): ClassTestQuestionAttemptState | null {
@@ -250,6 +274,11 @@ function mapQuestionState(value: unknown): ClassTestQuestionAttemptState | null 
     gradedBy: mapNullableString(record.gradedBy),
     gradedAt: toDate(record.gradedAt),
     graderNote: mapNullableString(record.graderNote),
+    // Absent on every attempt written before shuffled papers existed, which correctly means
+    // "show the options in the order the faculty authored them".
+    optionOrder: Array.isArray(record.optionOrder)
+      ? record.optionOrder.filter((option): option is string => typeof option === "string")
+      : undefined,
   };
 }
 

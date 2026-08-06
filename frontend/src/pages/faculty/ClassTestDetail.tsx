@@ -172,7 +172,9 @@ export default function ClassTestDetail() {
                       </TableCell>
                       {ended && (
                         <TableCell className="text-right font-mono-code">
-                          {row.finalScore ?? "—"}
+                          {/* Denominator matters once papers are shuffled — students can sit
+                              different question sets, so a bare score is ambiguous. */}
+                          {row.finalScore === null ? "—" : `${row.finalScore} / ${row.totalPoints}`}
                         </TableCell>
                       )}
                       {ended && <TableCell className="text-muted-foreground">{row.gradingStatus}</TableCell>}

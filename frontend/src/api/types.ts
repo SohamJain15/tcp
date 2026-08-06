@@ -1353,6 +1353,8 @@ export interface FacultyClassTestAttempt {
   autoScore: number | null;
   manualScore: number | null;
   finalScore: number | null;
+  /** This attempt's own maximum — with a question pool, students sit different papers. */
+  totalPoints: number;
   timeTakenMs: number | null;
 }
 
@@ -1377,7 +1379,13 @@ export interface ClassTestRecordEnvelope {
     assignedStudents: AssignedStudent[];
     maxViolations: number;
     questions: Array<Record<string, unknown>>;
+    questionPool?: ClassTestQuestionPool;
   };
+}
+
+/** Opt-in shuffled papers. Absent = every student sits the whole question list. */
+export interface ClassTestQuestionPool {
+  perType: Partial<Record<ClassTestQuestionType, number>>;
 }
 
 /**

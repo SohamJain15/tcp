@@ -211,6 +211,9 @@ export default function CreateClassTest() {
   });
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [questions, setQuestions] = useState<DraftQuestion[]>([blankQuestion("MCQ")]);
+  // Opt-in shuffled papers: `questions` becomes a pool and each student is dealt `perType`.
+  const [shuffleEnabled, setShuffleEnabled] = useState(false);
+  const [perType, setPerType] = useState<Partial<Record<ClassTestQuestionType, number>>>({});
   const [authoringTab, setAuthoringTab] = useState("form");
   const [jsonSource, setJsonSource] = useState("");
   const [jsonErrors, setJsonErrors] = useState<JsonImportFieldError[]>([]);
@@ -247,6 +250,10 @@ export default function CreateClassTest() {
     setMaxViolations(existing.maxViolations);
     setAudience(existing.audience);
     setQuestions(existing.questions.map(toDraftQuestion));
+    if (existing.questionPool) {
+      setShuffleEnabled(true);
+      setPerType(existing.questionPool.perType);
+    }
   }, [existingQuery.data]);
 
   const previewMutation = useMutation({
@@ -270,6 +277,7 @@ export default function CreateClassTest() {
           durationMinutes: Number(durationMinutes),
           maxViolations: Number(maxViolations),
           questions: questions.map(toPayloadQuestion),
+          questionPool: shuffleEnabled ? { perType } : undefined,
           lifecycleState: "Published",
           ...(startAt ? { startAt: new Date(startAt).toISOString() } : {}),
           ...(assignmentTouched
@@ -385,6 +393,29 @@ export default function CreateClassTest() {
   };
 
   const assignedCount = candidates.filter((student) => !excluded.has(student.email)).length;
+
+  const poolCountByType = (type: ClassTestQuestionType) =>
+    questions.filter((question) => question.type === type).length;
+
+  /**
+   * Marks are per type when shuffling — every MCQ worth the same as every other MCQ, and so on.
+   * Applying it to the whole type at once is what makes it impossible to author an unfair pool:
+   * same count of each type x same marks per type means every student's paper totals the same.
+   */
+  const marksForType = (type: ClassTestQuestionType) =>
+    questions.find((question) => question.type === type)?.points ?? 0;
+
+  const setMarksForType = (type: ClassTestQuestionType, points: number) =>
+    setQuestions((current) =>
+      current.map((question) => (question.type === type ? { ...question, points } : question)),
+    );
+
+  const perStudentCount = QUESTION_TYPES.reduce((total, type) => total + (perType[type] ?? 0), 0);
+  const perStudentMarks = QUESTION_TYPES.reduce(
+    (total, type) => total + (perType[type] ?? 0) * marksForType(type),
+    0,
+  );
+  const overDrawnTypes = QUESTION_TYPES.filter((type) => (perType[type] ?? 0) > poolCountByType(type));
 
   return (
     <AppLayout>
@@ -674,8 +705,90 @@ export default function CreateClassTest() {
             </TabsContent>
 
             <TabsContent value="form" className="mt-5 space-y-4">
+          <div className="space-y-3 border border-border p-4">
+            <label className="flex items-start gap-3">
+              <Checkbox
+                checked={shuffleEnabled}
+                onCheckedChange={(checked) => setShuffleEnabled(checked === true)}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="text-sm font-medium">Shuffle questions</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  Treat the questions below as a pool. Each student is dealt their own random
+                  selection, in their own order, with the options shuffled too. Questions spread
+                  evenly across the class — they only repeat once the pool runs out.
+                </span>
+              </span>
+            </label>
+
+            {shuffleEnabled && (
+              <div className="space-y-3 border-t border-border pt-3">
+                <div>
+                  <Label className="text-xs">How many per student</Label>
+                  <div className="mt-2 grid gap-3 sm:grid-cols-4">
+                    {QUESTION_TYPES.map((type) => (
+                      <div key={type}>
+                        <span className="text-xs text-muted-foreground">
+                          {questionTypeLabel(type)} ({poolCountByType(type)} in pool)
+                        </span>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={poolCountByType(type)}
+                          value={perType[type] ?? 0}
+                          onChange={(e) =>
+                            setPerType((current) => ({ ...current, [type]: Number(e.target.value) }))
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-xs">Marks per question</Label>
+                  <div className="mt-2 grid gap-3 sm:grid-cols-4">
+                    {QUESTION_TYPES.map((type) => (
+                      <div key={type}>
+                        <span className="text-xs text-muted-foreground">{questionTypeLabel(type)}</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={100}
+                          disabled={poolCountByType(type) === 0}
+                          value={marksForType(type)}
+                          onChange={(e) => setMarksForType(type, Number(e.target.value))}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Every question of a type carries the same marks, so every student&apos;s paper is
+                    worth the same. The types themselves can differ.
+                  </p>
+                </div>
+
+                {overDrawnTypes.length > 0 ? (
+                  <p className="border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                    Not enough questions in the pool for:{" "}
+                    {overDrawnTypes.map((type) => questionTypeLabel(type)).join(", ")}. Add more, or
+                    ask for fewer per student.
+                  </p>
+                ) : (
+                  <p className="border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+                    Each student gets <strong>{perStudentCount}</strong> of {questions.length}{" "}
+                    questions · <strong>{perStudentMarks}</strong> marks.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Questions</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              {shuffleEnabled ? "Question pool" : "Questions"}
+            </h2>
             <span className="text-xs text-muted-foreground">
               {questions.length} question{questions.length === 1 ? "" : "s"} ·{" "}
               {questions.reduce((total, q) => total + Number(q.points || 0), 0)} marks
@@ -710,17 +823,23 @@ export default function CreateClassTest() {
                   >
                     <ArrowDown className="h-4 w-4" />
                   </Button>
-                  <Label htmlFor={`pts-${question.key}`} className="text-xs">
-                    Marks
-                  </Label>
-                  <Input
-                    id={`pts-${question.key}`}
-                    type="number"
-                    min={0}
-                    className="w-20"
-                    value={question.points}
-                    onChange={(e) => updateQuestion(question.key, { points: Number(e.target.value) })}
-                  />
+                  {/* While shuffling, marks are set per type above — a per-question box here
+                      could drift out of step and make two students' papers unequal. */}
+                  {!shuffleEnabled && (
+                    <>
+                      <Label htmlFor={`pts-${question.key}`} className="text-xs">
+                        Marks
+                      </Label>
+                      <Input
+                        id={`pts-${question.key}`}
+                        type="number"
+                        min={0}
+                        className="w-20"
+                        value={question.points}
+                        onChange={(e) => updateQuestion(question.key, { points: Number(e.target.value) })}
+                      />
+                    </>
+                  )}
                   <Button
                     type="button"
                     size="icon"
@@ -1032,6 +1151,7 @@ export default function CreateClassTest() {
               !title ||
               !subject ||
               !startAt ||
+              (shuffleEnabled && (overDrawnTypes.length > 0 || perStudentCount === 0)) ||
               // When editing, an untouched student picker means "keep the existing class",
               // so an empty candidate list is not a reason to block saving.
               (!isEditing && assignedCount === 0)

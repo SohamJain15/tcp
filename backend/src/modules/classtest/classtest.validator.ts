@@ -116,7 +116,27 @@ const audienceSchema = z
     { message: "Roll range starts after it ends", path: ["rollTo"] },
   );
 
-export const createClassTestSchema = z.object({
+const QUESTION_TYPES = ["MCQ", "MSQ", "ShortAnswer", "Coding"] as const;
+
+/**
+ * Opt-in shuffled papers. Every count is optional; omitting the whole object keeps today's
+ * behaviour, where every student sits the entire question list.
+ */
+const questionPoolSchema = z.object({
+  perType: z
+    .object({
+      MCQ: z.coerce.number().int().min(0).max(200).optional(),
+      MSQ: z.coerce.number().int().min(0).max(200).optional(),
+      ShortAnswer: z.coerce.number().int().min(0).max(200).optional(),
+      Coding: z.coerce.number().int().min(0).max(200).optional(),
+    })
+    .refine(
+      (perType) => Object.values(perType).some((count) => (count ?? 0) > 0),
+      { message: "Ask for at least one question per student" },
+    ),
+});
+
+const classTestBodySchema = z.object({
   title: z.string().trim().min(3).max(150),
   /** Free text — CT is not limited to any fixed subject list. */
   subject: z.string().trim().min(1).max(100),
@@ -128,13 +148,54 @@ export const createClassTestSchema = z.object({
   assignedEmails: z.array(z.string().trim().toLowerCase().email()).default([]),
   maxViolations: z.coerce.number().int().min(1).max(20).default(1),
   questions: z.array(questionSchema).min(1, "Add at least one question"),
+  questionPool: questionPoolSchema.optional(),
   lifecycleState: z.enum(["Draft", "Published", "Archived"]).default("Draft"),
 });
 
-export const updateClassTestSchema = createClassTestSchema.partial().refine(
-  (value) => Object.keys(value).length > 0,
-  { message: "Nothing to update" },
-);
+/**
+ * Fairness rules for a pooled test. All of these are unrecoverable if discovered mid-test, so
+ * they are refused at authoring time.
+ */
+function refineQuestionPool(
+  value: { questions?: { type: string; points: number }[]; questionPool?: { perType: Record<string, number | undefined> } },
+  ctx: z.RefinementCtx,
+): void {
+  const { questions, questionPool } = value;
+  if (!questionPool || !questions) {
+    return;
+  }
+
+  for (const type of QUESTION_TYPES) {
+    const requested = questionPool.perType[type] ?? 0;
+    const available = questions.filter((question) => question.type === type);
+
+    if (requested > available.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["questionPool", "perType", type],
+        message: `Only ${available.length} ${type} question(s) in the pool — cannot give each student ${requested}`,
+      });
+    }
+
+    // Same count of each type per student × same marks within a type = every paper worth the
+    // same. Without this, two students sit papers with different maximums.
+    const distinctPoints = new Set(available.map((question) => question.points));
+    if (requested > 0 && distinctPoints.size > 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["questionPool", "perType", type],
+        message: `Every ${type} question must carry the same marks when shuffling — found ${[...distinctPoints].sort((a, b) => a - b).join(", ")}`,
+      });
+    }
+  }
+}
+
+export const createClassTestSchema = classTestBodySchema.superRefine(refineQuestionPool);
+
+export const updateClassTestSchema = classTestBodySchema
+  .partial()
+  .superRefine(refineQuestionPool)
+  .refine((value) => Object.keys(value).length > 0, { message: "Nothing to update" });
 
 export const audiencePreviewSchema = audienceSchema;
 

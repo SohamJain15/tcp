@@ -162,10 +162,24 @@ export interface ClassTestRecord {
   maxViolations: number;
 
   questions: ClassTestQuestion[];
+  /**
+   * Opt-in shuffled papers. Absent means every student sits the whole `questions` list, which is
+   * the original behaviour and stays the default.
+   *
+   * When present, `questions` becomes a *pool*: each student is dealt `perType` questions of
+   * each type when they start. Because every paper has the same shape, and the validator forces
+   * every question of a type to carry the same marks, every student's paper is worth the same.
+   */
+  questionPool?: ClassTestQuestionPool;
   lifecycleState: ProblemLifecycleState;
   resultsPublished: boolean;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface ClassTestQuestionPool {
+  /** How many questions of each type each student is dealt. Types set to 0 are omitted. */
+  perType: Partial<Record<ClassTestQuestionType, number>>;
 }
 
 export type ClassTestComputedStatus = "Scheduled" | "Live" | "Ended";
@@ -195,6 +209,15 @@ export interface ClassTestQuestionAttemptState {
   gradedBy: string | null;
   gradedAt: Date | null;
   graderNote: string | null;
+
+  /**
+   * MCQ/MSQ only: the option order this student was shown.
+   *
+   * Presentation only — `scoreObjectiveAnswer` compares answer *text*, never a position, so
+   * reordering cannot affect marks. It is persisted because a refresh mid-test must not reshuffle
+   * the options under the student's cursor.
+   */
+  optionOrder?: string[];
 }
 
 export interface ClassTestAttemptRecord {
@@ -261,6 +284,71 @@ export function computeClassTestStatus(
 /** Points available for a question, used for both the paper total and per-question caps. */
 export function questionMaxPoints(question: ClassTestQuestion): number {
   return Math.max(0, question.points);
+}
+
+/** Fisher-Yates. Takes the source of randomness so tests can make the draw deterministic. */
+function shuffled<T>(items: readonly T[], random: () => number): T[] {
+  const result = [...items];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(random() * (index + 1));
+    [result[index], result[swap]] = [result[swap], result[index]];
+  }
+  return result;
+}
+
+/**
+ * Deals one student's paper out of the pool.
+ *
+ * Within each type, questions are taken **least-used first**, ties broken randomly. That single
+ * sort is what makes the feature behave sensibly at both extremes:
+ *
+ *   - 100 questions, 5 students, 10 each → every question sits at usage 0 or 1, so papers
+ *     barely overlap.
+ *   - 20 questions, 30 students, 5 each → repetition is arithmetically unavoidable, but usage
+ *     climbs evenly, so each question is dealt 7 or 8 times instead of a handful being dealt
+ *     constantly while others are never seen.
+ *
+ * The drawn questions are then shuffled together, so even two students dealt the same questions
+ * do not meet them in the same order.
+ *
+ * If a type's pool is smaller than requested, the whole bucket is taken rather than throwing —
+ * the validator refuses that at authoring time, and a live attempt is the worst possible moment
+ * to discover it.
+ */
+export function drawQuestionsForAttempt(
+  questions: readonly ClassTestQuestion[],
+  perType: Partial<Record<ClassTestQuestionType, number>>,
+  usageByQuestionId: ReadonlyMap<string, number>,
+  random: () => number = Math.random,
+): ClassTestQuestion[] {
+  const drawn: ClassTestQuestion[] = [];
+
+  for (const [type, requested] of Object.entries(perType) as [ClassTestQuestionType, number][]) {
+    if (!requested || requested <= 0) {
+      continue;
+    }
+
+    const bucket = questions.filter((question) => question.type === type);
+    // Shuffle first so the sort's tie-break is random rather than authoring order — otherwise
+    // the first-authored question of each type would always win an equal-usage tie.
+    const ordered = shuffled(bucket, random).sort(
+      (left, right) => (usageByQuestionId.get(left.id) ?? 0) - (usageByQuestionId.get(right.id) ?? 0),
+    );
+
+    drawn.push(...ordered.slice(0, Math.min(requested, ordered.length)));
+  }
+
+  return shuffled(drawn, random);
+}
+
+/** The option order to show one student, or undefined for types that have no options. */
+export function drawOptionOrder(
+  question: ClassTestQuestion,
+  random: () => number = Math.random,
+): string[] | undefined {
+  return question.type === "MCQ" || question.type === "MSQ"
+    ? shuffled(question.options, random)
+    : undefined;
 }
 
 export function classTestTotalPoints(questions: readonly ClassTestQuestion[]): number {
@@ -360,7 +448,11 @@ export interface StudentClassTestQuestion {
   memoryLimitMb?: number;
 }
 
-export function toStudentQuestion(question: ClassTestQuestion): StudentClassTestQuestion {
+export function toStudentQuestion(
+  question: ClassTestQuestion,
+  /** This student's shuffled option order, when the paper was dealt from a pool. */
+  optionOrder?: string[],
+): StudentClassTestQuestion {
   switch (question.type) {
     case "MCQ":
     case "MSQ":
@@ -369,7 +461,13 @@ export function toStudentQuestion(question: ClassTestQuestion): StudentClassTest
         type: question.type,
         points: question.points,
         statement: question.statement,
-        options: question.options,
+        // Only honour a stored order that still matches the question — an edited option list
+        // would otherwise drop or invent choices.
+        options:
+          optionOrder && optionOrder.length === question.options.length &&
+          optionOrder.every((option) => question.options.includes(option))
+            ? optionOrder
+            : question.options,
       };
     case "ShortAnswer":
       return {

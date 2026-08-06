@@ -197,12 +197,15 @@ export function LeaderboardTable({
                           {getYearLabel(row.year)} Leader
                         </p>
                       )}
-                      <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                      {/* Four stats on the podium: efficiency now decides rank above accuracy,
+                          so the top three must show it too — the rows below already do. */}
+                      <div className="mt-4 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
                         <PodiumStat
                           label="Solved"
                           value={row.total !== null ? `${row.solved}/${row.total}` : String(row.solved)}
                         />
                         <PodiumStat label="Score" value={String(row.score)} />
+                        <PodiumStat label="Efficiency" value={formatEfficiency(row.optimizationScore)} />
                         {isContest ? (
                           <PodiumStat label="Time" value={formatLeaderboardDuration(row.timeTakenMs)} />
                         ) : (
