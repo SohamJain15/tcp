@@ -35,6 +35,13 @@ export interface ProblemLeaderboardItem {
   isCurrentUser: boolean;
 }
 
+export interface ProblemLeaderboardPodium {
+  /** The three strongest accepted solutions after language-normalized scoring. */
+  overall: ProblemLeaderboardItem[];
+  /** The highest-ranked accepted solution for every represented language. */
+  byLanguage: ProblemLeaderboardItem[];
+}
+
 export interface ProblemLeaderboardUserSnapshot {
   name: string | null;
   uid: string | null;
@@ -148,4 +155,22 @@ export function buildProblemLeaderboard(
         isCurrentUser: submission.userEmail.toLowerCase() === currentUserEmail,
       };
     });
+}
+
+/** Builds leaderboard highlights from the complete field, before pagination trims table rows. */
+export function buildProblemLeaderboardPodium(
+  ranked: readonly ProblemLeaderboardItem[],
+): ProblemLeaderboardPodium {
+  const seenLanguages = new Set<ExecutableLanguage>();
+
+  return {
+    overall: ranked.slice(0, 3),
+    byLanguage: ranked.filter((entry) => {
+      if (seenLanguages.has(entry.language)) {
+        return false;
+      }
+      seenLanguages.add(entry.language);
+      return true;
+    }),
+  };
 }

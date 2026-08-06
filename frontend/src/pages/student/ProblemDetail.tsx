@@ -48,6 +48,7 @@ import type {
   Submission,
   SubmissionResult,
   SubmissionStatus,
+  ProblemLeaderboardItem,
 } from "@/api/types";
 import { isSubmissionPending, pollSubmissionUntilComplete } from "./submissionPolling";
 
@@ -210,6 +211,22 @@ function formatRelativeTime(isoDate: string): string {
   return `${diffDays} d ago`;
 }
 
+function PodiumCard({ entry, label }: { entry: ProblemLeaderboardItem; label: string }) {
+  return (
+    <div className={cn("min-w-[150px] rounded-md border border-border bg-secondary/40 p-2.5", entry.isCurrentUser && "border-accent bg-accent/10")}>
+      <div className="flex items-center justify-between gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+        <span>{label}</span>
+        <span className="font-mono-code text-accent">{Math.round(entry.optimizationScore * 100)}%</span>
+      </div>
+      <div className="mt-1 truncate text-xs font-semibold">{entry.userName ?? entry.userEmail}</div>
+      <div className="mt-1 flex justify-between font-mono-code text-[11px] text-muted-foreground">
+        <span>{toLanguageLabel(entry.language)}</span>
+        <span>{entry.runtimeMs} ms</span>
+      </div>
+    </div>
+  );
+}
+
 export default function ProblemDetail() {
   const { id = "" } = useParams();
   const queryClient = useQueryClient();
@@ -219,6 +236,8 @@ export default function ProblemDetail() {
     cpp: getStarterCode("cpp"),
   });
   const [tab, setTab] = useState<"console" | "subs" | "board">("console");
+  const [leftTab, setLeftTab] = useState<"description" | "hints" | "submissions">("description");
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<SubmissionResult | null>(null);
   const [submitResult, setSubmitResult] = useState<Submission | null>(null);
   const [pendingSubmissionId, setPendingSubmissionId] = useState<string | null>(null);
@@ -258,6 +277,8 @@ export default function ProblemDetail() {
       cpp: getStarterCode("cpp"),
     });
     setTab("console");
+    setLeftTab("description");
+    setSelectedSubmissionId(null);
     setRunResult(null);
     setSubmitResult(null);
     setPendingSubmissionId(null);
@@ -387,10 +408,16 @@ export default function ProblemDetail() {
   const { data: problemLeaderboard } = useQuery({
     queryKey: ["student-problem-leaderboard", id],
     queryFn: () => problemsApi.getLeaderboard(id, { pageSize: 50 }),
-    enabled: Boolean(id) && tab === "board",
+    enabled: Boolean(id) && tab === "board" && (problemEnvelope?.problem.status === "solved" || submitResult?.status === "ACCEPTED"),
   });
 
-  const acceptedSubmissionId = submitResult?.status === "ACCEPTED" ? submitResult.id : null;
+  const submissions = useMemo(
+    () => [...(submissionsData?.items ?? [])].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)),
+    [submissionsData?.items],
+  );
+  const selectedSubmission =
+    submissions.find((submission) => submission.id === selectedSubmissionId) ?? submissions[0] ?? submitResult;
+  const acceptedSubmissionId = selectedSubmission?.status === "ACCEPTED" ? selectedSubmission.id : null;
   const { data: statsEnvelope } = useQuery({
     queryKey: ["student-submission-stats", acceptedSubmissionId],
     queryFn: () => submissionsApi.getStats(acceptedSubmissionId!),
@@ -421,12 +448,8 @@ export default function ProblemDetail() {
     });
   }, [problemEnvelope, id, language]);
 
-  const submissions = useMemo(
-    () => [...(submissionsData?.items ?? [])].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)),
-    [submissionsData?.items],
-  );
-
   const invalidateSubmissionViews = () => {
+    queryClient.invalidateQueries({ queryKey: ["student-problem-detail", id] });
     queryClient.invalidateQueries({ queryKey: ["student-problem-submissions", id] });
     queryClient.invalidateQueries({ queryKey: ["student-problem-leaderboard", id] });
     queryClient.invalidateQueries({ queryKey: ["student-profile"] });
@@ -462,7 +485,8 @@ export default function ProblemDetail() {
 
       setSubmitResult(finalSubmission);
       setRunResult(null);
-      setTab("subs");
+      setLeftTab("submissions");
+      setSelectedSubmissionId(finalSubmission.id);
       invalidateSubmissionViews();
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
@@ -499,7 +523,7 @@ export default function ProblemDetail() {
     onSuccess: (data) => {
       setSubmitResult(null);
       setRunResult(null);
-      setTab("subs");
+      setLeftTab("submissions");
       void beginSubmissionPolling(data.submission_id);
     },
     onError: (error) => {
@@ -538,23 +562,12 @@ export default function ProblemDetail() {
   // Prefer the harness-generated starter (correct signature) over the generic template.
   const resolveStarter = (lang: ExecutableLanguage): string => problem.starterCode?.[lang] ?? getStarterCode(lang);
   const currentStarterCode = resolveStarter(language);
-  const activeResult = submitResult
-    ? {
-        status: submitResult.status,
-        runtimeMs: submitResult.runtimeMs,
-        memoryKb: submitResult.memoryKb,
-        passedCount: submitResult.passedCount,
-        totalCount: submitResult.totalCount,
-        failedTest: submitResult.failedTest,
-      }
-    : runResult;
+  const activeResult = runResult;
   const isSubmissionProcessing = pendingSubmissionStatus ? isSubmissionPending(pendingSubmissionStatus) : false;
-  const showingRunResult = Boolean(runResult) && !submitResult;
+  const showingRunResult = Boolean(runResult);
   const activeConsoleOutput = runResult
     ? `${runResult.stdout || ""}${runResult.stderr ? `\n${runResult.stderr}` : ""}`.trim()
-    : submitResult
-      ? `${submitResult.stdout || ""}${submitResult.stderr ? `\n${submitResult.stderr}` : ""}`.trim()
-      : "";
+    : "";
   const lineCount = code.split("\n").length;
   const activeResultStatusLabel = activeResult
     ? formatExecutionStatus(activeResult.status, showingRunResult)
@@ -606,19 +619,39 @@ export default function ProblemDetail() {
             <div className="relative h-full w-full">
               <div className="absolute inset-0 overflow-y-auto p-3">
                 <Card className="p-4 shadow-card">
-              <div className="flex items-start justify-between gap-2">
-                <h1 className="font-display text-2xl font-bold">{problem.title}</h1>
-                <DifficultyBadge d={problem.difficulty} />
-              </div>
-              <div className="mt-3 flex flex-wrap gap-1">
-                {problem.tags.map((tag) => (
-                  <span key={tag} className="rounded bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
-                    {tag}
-                  </span>
-                ))}
-              </div>
+                  <div className="-mx-4 -mt-4 mb-4 flex border-b border-border bg-secondary/50">
+                    {(["description", "hints", "submissions"] as const).map((section) => (
+                      <button
+                        key={section}
+                        type="button"
+                        onClick={() => setLeftTab(section)}
+                        className={cn(
+                          "flex-1 px-2 py-2.5 text-xs font-semibold uppercase tracking-wider transition-colors",
+                          leftTab === section
+                            ? "border-b-2 border-accent bg-background text-accent"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {section === "description" ? "Description" : section === "hints" ? "Hints" : "Submissions"}
+                      </button>
+                    ))}
+                  </div>
 
-              <section className="mt-6 space-y-5 text-sm leading-relaxed">
+                  {leftTab === "description" && (
+                    <>
+                      <div className="flex items-start justify-between gap-2">
+                        <h1 className="font-display text-2xl font-bold">{problem.title}</h1>
+                        <DifficultyBadge d={problem.difficulty} />
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-1">
+                        {problem.tags.map((tag) => (
+                          <span key={tag} className="rounded bg-secondary px-2 py-0.5 text-xs text-secondary-foreground">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+
+                      <section className="mt-6 space-y-5 text-sm leading-relaxed">
                 <div>
                   <h3 className="mb-1 font-display text-base font-semibold">Description</h3>
                   <p className="text-muted-foreground">{problem.statement}</p>
@@ -671,8 +704,90 @@ export default function ProblemDetail() {
                     ))}
                   </div>
                 </div>
-                <ProblemHintsPanel problemId={id} />
-              </section>
+                      </section>
+                    </>
+                  )}
+
+                  {leftTab === "hints" && <ProblemHintsPanel problemId={id} />}
+
+                  {leftTab === "submissions" && (
+                    <section className="space-y-3">
+                      {isSubmissionProcessing && (
+                        <div className="flex items-center justify-between rounded-md border border-accent/30 bg-accent/10 p-2 text-xs">
+                          <StatusBadge status={formatStatus(pendingSubmissionStatus ?? "QUEUED")} />
+                          <span className="flex items-center gap-1 text-accent">
+                            <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> Judging
+                          </span>
+                        </div>
+                      )}
+                      {submissions.length === 0 && !isSubmissionProcessing && (
+                        <p className="text-sm text-muted-foreground">No submissions yet.</p>
+                      )}
+                      {submissions.length > 0 && (
+                        <div className="space-y-1.5">
+                          {submissions.map((submission) => (
+                            <button
+                              key={submission.id}
+                              type="button"
+                              onClick={() => setSelectedSubmissionId(submission.id)}
+                              className={cn(
+                                "flex w-full items-center justify-between gap-2 rounded-md border border-border p-2 text-left text-xs transition-colors hover:bg-secondary/70",
+                                selectedSubmission?.id === submission.id && "border-accent bg-accent/10",
+                              )}
+                            >
+                              <StatusBadge status={formatStatus(submission.status)} />
+                              <span className="font-mono-code text-muted-foreground">{submission.runtimeMs} ms</span>
+                              <span className="text-muted-foreground">{formatRelativeTime(submission.createdAt)}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {selectedSubmission && (
+                        <div className="space-y-3 rounded-md border border-border p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <StatusBadge status={formatStatus(selectedSubmission.status)} />
+                            <span className="font-mono-code text-xs text-muted-foreground">
+                              {selectedSubmission.passedCount}/{selectedSubmission.totalCount} passed
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 font-mono-code text-xs">
+                            <div className="rounded bg-secondary p-2"><div className="text-muted-foreground">Runtime</div>{selectedSubmission.runtimeMs} ms</div>
+                            <div className="rounded bg-secondary p-2"><div className="text-muted-foreground">Memory</div>{(selectedSubmission.memoryKb / 1024).toFixed(1)} MB</div>
+                          </div>
+                          {shouldShowFailedTest(selectedSubmission.failedTest) && (
+                            <FailedTestCasePanel failedTest={selectedSubmission.failedTest} />
+                          )}
+                          {(selectedSubmission.stdout || selectedSubmission.stderr) && (
+                            <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-secondary p-2 font-mono-code text-xs text-muted-foreground">
+                              {`${selectedSubmission.stdout ?? ""}${selectedSubmission.stderr ? `\n${selectedSubmission.stderr}` : ""}`.trim()}
+                            </pre>
+                          )}
+                        </div>
+                      )}
+
+                      {statsEnvelope && selectedSubmission?.status === "ACCEPTED" && (
+                        <div className="space-y-2.5 rounded-md border border-border p-3">
+                          <div className="flex flex-wrap items-baseline justify-between gap-2">
+                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">How your solution compares</span>
+                            <span className="text-[11px] text-muted-foreground">
+                              {statsEnvelope.stats.basis}{statsEnvelope.stats.confidence === "low" && " · indicative only"}
+                            </span>
+                          </div>
+                          <div className="grid gap-3 lg:grid-cols-2">
+                            <div>
+                              <div className="mb-1 text-xs">Runtime beats <span className="font-semibold text-success">{statsEnvelope.stats.runtime.beatsPercent}%</span> <span className="text-muted-foreground">({statsEnvelope.stats.runtime.yourValue} ms)</span></div>
+                              <div className="h-36"><SubmissionDistributionChart distribution={statsEnvelope.stats.runtime} unit="ms" /></div>
+                            </div>
+                            <div>
+                              <div className="mb-1 text-xs">Memory beats <span className="font-semibold text-success">{statsEnvelope.stats.memory.beatsPercent}%</span> <span className="text-muted-foreground">({(statsEnvelope.stats.memory.yourValue / 1024).toFixed(1)} MB)</span></div>
+                              <div className="h-36"><SubmissionDistributionChart distribution={statsEnvelope.stats.memory} unit="MB" scale={1024} /></div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </section>
+                  )}
                 </Card>
               </div>
             </div>
@@ -847,7 +962,7 @@ export default function ProblemDetail() {
                 >
                   <Card className="flex h-full flex-col overflow-hidden shadow-card">
                     <div className="flex shrink-0 items-stretch border-b border-border bg-secondary/50">
-                      {(["console", "subs", "board"] as const).map((section) => (
+                      {(["console", ...(problem.status === "solved" || submitResult?.status === "ACCEPTED" ? ["board"] : [])] as const).map((section) => (
                         <button
                           key={section}
                           onClick={() => {
@@ -861,7 +976,7 @@ export default function ProblemDetail() {
                             tab === section ? "border-b-2 border-accent bg-background text-accent" : "text-muted-foreground hover:text-foreground",
                           )}
                         >
-                          {section === "console" ? "Console" : section === "subs" ? "Submissions" : "Leaderboard"}
+                          {section === "console" ? "Console" : "Leaderboard"}
                         </button>
                       ))}
                       <button
@@ -902,9 +1017,6 @@ export default function ProblemDetail() {
                             </div>
                           </div>
                         </div>
-                      )}
-                      {tab === "console" && shouldShowFailedTest(activeResult?.failedTest) && (
-                        <FailedTestCasePanel failedTest={activeResult!.failedTest!} />
                       )}
                       {tab === "console" && (
                         <pre className="whitespace-pre-wrap font-mono-code text-xs text-muted-foreground">
@@ -974,8 +1086,25 @@ export default function ProblemDetail() {
                             </div>
                           )}
                           {problemLeaderboard && problemLeaderboard.items.length > 0 && (
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-xs">
+                            <>
+                              <div>
+                                <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Overall top solutions</div>
+                                <div className="flex gap-2 overflow-x-auto pb-1">
+                                  {problemLeaderboard.podium.overall.map((entry) => (
+                                    <PodiumCard key={`overall-${entry.submissionId}`} entry={entry} label={`#${entry.rank}`} />
+                                  ))}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Language leaders</div>
+                                <div className="flex gap-2 overflow-x-auto pb-1">
+                                  {problemLeaderboard.podium.byLanguage.map((entry) => (
+                                    <PodiumCard key={`language-${entry.language}`} entry={entry} label={toLanguageLabel(entry.language)} />
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs">
                                 <thead className="text-muted-foreground">
                                   <tr className="text-left">
                                     <th className="py-1.5 pr-2 font-semibold">#</th>
@@ -1010,8 +1139,9 @@ export default function ProblemDetail() {
                                     </tr>
                                   ))}
                                 </tbody>
-                              </table>
-                            </div>
+                                </table>
+                              </div>
+                            </>
                           )}
                         </div>
                       )}

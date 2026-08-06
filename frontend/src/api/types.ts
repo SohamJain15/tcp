@@ -266,6 +266,10 @@ export interface ProblemLeaderboardItem {
 
 export interface ProblemLeaderboardResponse extends PaginatedResponse<ProblemLeaderboardItem> {
   currentUserEntry: ProblemLeaderboardItem | null;
+  podium: {
+    overall: ProblemLeaderboardItem[];
+    byLanguage: ProblemLeaderboardItem[];
+  };
 }
 
 export interface DistributionBucket {

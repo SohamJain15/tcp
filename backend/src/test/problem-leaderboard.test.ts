@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { buildProblemLeaderboard } from "../modules/problem/problem-leaderboard.model";
+import {
+  buildProblemLeaderboard,
+  buildProblemLeaderboardPodium,
+} from "../modules/problem/problem-leaderboard.model";
 import { buildSubmissionStats } from "../modules/submission/submission-stats.model";
 import type { SubmissionAnalyticsRecord } from "../modules/submission/submission.repository";
 import type { ExecutableLanguage } from "../shared/types/domain";
@@ -125,6 +128,23 @@ describe("per-problem submission leaderboard", () => {
     });
 
     expect(rows[0]).not.toHaveProperty("code");
+  });
+
+  it("builds overall and per-language podiums from the ranked field", () => {
+    const rows = buildProblemLeaderboard(
+      [
+        accepted({ email: "cpp-fast@x.in", runtimeMs: 10, memoryKb: 1024, language: "cpp" }),
+        accepted({ email: "cpp-slow@x.in", runtimeMs: 50, memoryKb: 4096, language: "cpp" }),
+        accepted({ email: "py-fast@x.in", runtimeMs: 300, memoryKb: 4096, language: "python" }),
+        accepted({ email: "py-slow@x.in", runtimeMs: 900, memoryKb: 9000, language: "python" }),
+      ],
+      { currentUserEmail: "cpp-fast@x.in", userSnapshots: noSnapshots },
+    );
+
+    const podium = buildProblemLeaderboardPodium(rows);
+    expect(podium.overall).toEqual(rows.slice(0, 3));
+    expect(podium.byLanguage.map((row) => row.language)).toEqual(["cpp", "python"]);
+    expect(podium.byLanguage.map((row) => row.userEmail)).toEqual(["cpp-fast@x.in", "py-fast@x.in"]);
   });
 });
 

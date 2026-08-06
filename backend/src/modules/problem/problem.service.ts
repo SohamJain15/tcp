@@ -13,7 +13,11 @@ import type {
 import type { SubmissionRecord } from "../submission/submission.model";
 import type { SubmissionRepository } from "../submission/submission.repository";
 import type { UserRepository } from "../user/user.repository";
-import { buildProblemLeaderboard, type ProblemLeaderboardItem } from "./problem-leaderboard.model";
+import {
+  buildProblemLeaderboard,
+  buildProblemLeaderboardPodium,
+  type ProblemLeaderboardItem,
+} from "./problem-leaderboard.model";
 import {
   toManageProblemDetail,
   toManageProblemSummary,
@@ -350,6 +354,16 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
         throw new AppError(404, "Problem not found");
       }
 
+      const ownAccepted = await dependencies.submissionRepository.listForAnalytics({
+        problemId,
+        sourceType: "problem",
+        status: "ACCEPTED",
+        userEmail: user.email,
+      });
+      if (ownAccepted.length === 0) {
+        throw new AppError(403, "Solve this problem to view its leaderboard");
+      }
+
       // `listForAnalytics` projects code/stdout/stderr away in the database, so the "stats only,
       // no source code" guarantee is enforced by the query rather than by remembering to strip
       // fields on the way out.
@@ -375,6 +389,7 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
 
       return {
         ...paginateArray(ranked, query),
+        podium: buildProblemLeaderboardPodium(ranked),
         // Pinned separately so a student outside the visible page can still see where they sit.
         currentUserEntry: ranked.find((item) => item.isCurrentUser) ?? null,
       };
