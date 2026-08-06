@@ -774,14 +774,26 @@ export default function ProblemDetail() {
                               {statsEnvelope.stats.basis}{statsEnvelope.stats.confidence === "low" && " · indicative only"}
                             </span>
                           </div>
-                          <div className="grid gap-3 lg:grid-cols-2">
+                          <div className="text-sm">
+                            Your solution is more efficient than{" "}
+                            <span className="font-semibold text-success">{statsEnvelope.stats.efficiency.beatsPercent}%</span>
+                            {" "}of accepted solutions.
+                          </div>
+                          <div className="h-40">
+                            <SubmissionDistributionChart distribution={statsEnvelope.stats.efficiency.distribution} />
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2">
                             <div>
-                              <div className="mb-1 text-xs">Runtime beats <span className="font-semibold text-success">{statsEnvelope.stats.runtime.beatsPercent}%</span> <span className="text-muted-foreground">({statsEnvelope.stats.runtime.yourValue} ms)</span></div>
-                              <div className="h-36"><SubmissionDistributionChart distribution={statsEnvelope.stats.runtime} unit="ms" /></div>
+                              <div className="text-xs">
+                                Runtime percentile <span className="font-semibold text-success">{statsEnvelope.stats.runtime.percentile}%</span>{" "}
+                                <span className="text-muted-foreground">({statsEnvelope.stats.runtime.rawValue} ms)</span>
+                              </div>
                             </div>
                             <div>
-                              <div className="mb-1 text-xs">Memory beats <span className="font-semibold text-success">{statsEnvelope.stats.memory.beatsPercent}%</span> <span className="text-muted-foreground">({(statsEnvelope.stats.memory.yourValue / 1024).toFixed(1)} MB)</span></div>
-                              <div className="h-36"><SubmissionDistributionChart distribution={statsEnvelope.stats.memory} unit="MB" scale={1024} /></div>
+                              <div className="text-xs">
+                                Memory percentile <span className="font-semibold text-success">{statsEnvelope.stats.memory.percentile}%</span>{" "}
+                                <span className="text-muted-foreground">({(statsEnvelope.stats.memory.rawValue / 1024).toFixed(1)} MB)</span>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1044,16 +1056,15 @@ export default function ProblemDetail() {
                               <div className="mb-1 text-xs">
                                 Runtime beats{" "}
                                 <span className="font-semibold text-success">
-                                  {statsEnvelope.stats.runtime.beatsPercent}%
+                                  {statsEnvelope.stats.runtime.percentile}%
                                 </span>{" "}
                                 <span className="text-muted-foreground">
-                                  ({statsEnvelope.stats.runtime.yourValue} ms)
+                                  ({statsEnvelope.stats.runtime.rawValue} ms)
                                 </span>
                               </div>
                               <div className="h-36">
                                 <SubmissionDistributionChart
-                                  distribution={statsEnvelope.stats.runtime}
-                                  unit="ms"
+                                  distribution={statsEnvelope.stats.efficiency.distribution}
                                 />
                               </div>
                             </div>
@@ -1061,17 +1072,15 @@ export default function ProblemDetail() {
                               <div className="mb-1 text-xs">
                                 Memory beats{" "}
                                 <span className="font-semibold text-success">
-                                  {statsEnvelope.stats.memory.beatsPercent}%
+                                  {statsEnvelope.stats.memory.percentile}%
                                 </span>{" "}
                                 <span className="text-muted-foreground">
-                                  ({(statsEnvelope.stats.memory.yourValue / 1024).toFixed(1)} MB)
+                                  ({(statsEnvelope.stats.memory.rawValue / 1024).toFixed(1)} MB)
                                 </span>
                               </div>
                               <div className="h-36">
                                 <SubmissionDistributionChart
-                                  distribution={statsEnvelope.stats.memory}
-                                  unit="MB"
-                                  scale={1024}
+                                  distribution={statsEnvelope.stats.efficiency.distribution}
                                 />
                               </div>
                             </div>
