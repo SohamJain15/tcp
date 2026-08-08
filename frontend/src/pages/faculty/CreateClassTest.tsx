@@ -459,6 +459,43 @@ export default function CreateClassTest() {
   );
   const overDrawnTypes = QUESTION_TYPES.filter((type) => (perType[type] ?? 0) > poolCountByType(type));
 
+  // The first thing standing between the faculty and scheduling, with the element to jump to.
+  // With a hundred questions a disabled button is impossible to diagnose, so the button stays
+  // enabled and this points at exactly what is missing.
+  const firstScheduleIssue = (): { message: string; id: string } | null => {
+    if (!title.trim()) return { message: "Add a title for the test.", id: "ct-title" };
+    if (!subject.trim()) return { message: "Add a subject.", id: "ct-subject" };
+    if (!startAt) return { message: "Set a scheduled start time.", id: "ct-start" };
+    if (questions.length === 0) return { message: "Add at least one question.", id: "ct-questions" };
+    if (shuffleEnabled && perStudentCount === 0) {
+      return { message: "Shuffle is on — set how many questions each student gets.", id: "ct-shuffle" };
+    }
+    if (shuffleEnabled && overDrawnTypes.length > 0) {
+      return {
+        message: `Not enough ${overDrawnTypes.map(questionTypeLabel).join(", ")} question(s) in the pool for the per-student count.`,
+        id: "ct-shuffle",
+      };
+    }
+    if (!isEditing && assignedCount === 0) {
+      return { message: "Find the class and keep at least one student.", id: "ct-students" };
+    }
+    return null;
+  };
+
+  const handleSchedule = () => {
+    const issue = firstScheduleIssue();
+    if (!issue) {
+      createMutation.mutate();
+      return;
+    }
+    toast.error(issue.message);
+    const target = document.getElementById(issue.id);
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+      window.setTimeout(() => target.focus(), 350);
+    }
+  };
+
   return (
     <AppLayout>
       <div className="container max-w-4xl space-y-6 py-8">
@@ -539,7 +576,7 @@ export default function CreateClassTest() {
           </div>
         </Card>
 
-        <Card className="profile-card space-y-4 p-5">
+        <Card id="ct-students" className="profile-card space-y-4 p-5">
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
               Who takes this test
@@ -662,7 +699,7 @@ export default function CreateClassTest() {
           )}
         </Card>
 
-        <Card className="profile-card space-y-4 p-5">
+        <Card id="ct-questions" className="profile-card space-y-4 p-5">
           {testHasStarted && (
             <p className="border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
               The paper is locked because students have started. You can still grade and publish
@@ -751,7 +788,7 @@ export default function CreateClassTest() {
             </TabsContent>
 
             <TabsContent value="form" className="mt-5 space-y-4">
-          <div className="space-y-3 border border-border p-4">
+          <div id="ct-shuffle" className="space-y-3 border border-border p-4">
             <label className="flex items-start gap-3">
               <Checkbox
                 checked={shuffleEnabled}
@@ -1191,17 +1228,10 @@ export default function CreateClassTest() {
           </Button>
           <Button
             className="bg-accent text-accent-foreground hover:bg-accent/90"
-            onClick={() => createMutation.mutate()}
-            disabled={
-              createMutation.isPending ||
-              !title ||
-              !subject ||
-              !startAt ||
-              (shuffleEnabled && (overDrawnTypes.length > 0 || perStudentCount === 0)) ||
-              // When editing, an untouched student picker means "keep the existing class",
-              // so an empty candidate list is not a reason to block saving.
-              (!isEditing && assignedCount === 0)
-            }
+            // Kept enabled so a click can explain what is missing and scroll to it, rather than
+            // sitting greyed-out with no clue which of a hundred questions is the problem.
+            onClick={handleSchedule}
+            disabled={createMutation.isPending}
           >
             {createMutation.isPending
               ? isEditing
