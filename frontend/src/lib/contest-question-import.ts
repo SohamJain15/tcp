@@ -21,7 +21,9 @@ export interface ImportedCodingQuestion {
 }
 
 const testCaseSchema = z.object({
-  input: z.string().min(1, "Test case input is required"),
+  // Empty input is legitimate — many problems read no stdin (print a table, output a fixed
+  // answer), and MCQ/MSQ/short-answer questions authored through this format carry no input.
+  input: z.string(),
   output: z.string(),
 });
 
@@ -121,6 +123,202 @@ export function parseContestCodingQuestionsJson(source: string): ContestQuestion
         output: testCase.output,
       })),
     });
+  });
+
+  return { questions: errors.length > 0 ? [] : questions, errors };
+}
+
+// ---------------------------------------------------------------------------
+// Class-test import — all four question types, not just coding.
+//
+// Class tests mix MCQ, MSQ, short answer and coding, so their JSON import
+// discriminates on a `type` field. A coding entry with no `type` is still
+// accepted as Coding, so a file written for the contest importer keeps working.
+// ---------------------------------------------------------------------------
+
+export type ImportedClassTestQuestion =
+  | { type: "MCQ"; statement: string; options: string[]; correctAnswer: string; points: number }
+  | { type: "MSQ"; statement: string; options: string[]; correctAnswers: string[]; points: number }
+  | { type: "ShortAnswer"; statement: string; expectedSentences: number; modelAnswer: string; points: number }
+  | ({ type: "Coding" } & ImportedCodingQuestion);
+
+const optionsSchema = z.array(z.string().trim().min(1, "Option text is required")).min(2, "Give at least two options");
+
+const mcqImportSchema = z.object({
+  type: z.literal("MCQ"),
+  statement: z.string().trim().min(1, "Question text is required"),
+  options: optionsSchema,
+  correctAnswer: z.string().trim().min(1, "Provide the correct option"),
+  points: z.number().positive().optional(),
+});
+
+const msqImportSchema = z.object({
+  type: z.literal("MSQ"),
+  statement: z.string().trim().min(1, "Question text is required"),
+  options: optionsSchema,
+  correctAnswers: z.array(z.string().trim().min(1)).min(1, "Provide at least one correct option"),
+  points: z.number().positive().optional(),
+});
+
+const shortAnswerImportSchema = z.object({
+  type: z.literal("ShortAnswer"),
+  statement: z.string().trim().min(1, "Question text is required"),
+  expectedSentences: z.coerce.number().int().min(1).max(20).optional(),
+  modelAnswer: z.string().trim().optional(),
+  points: z.number().positive().optional(),
+});
+
+export const CLASS_TEST_EXAMPLE_JSON = `[
+  {
+    "type": "MCQ",
+    "statement": "What is the size of an int on a 32-bit system?",
+    "options": ["1 byte", "2 bytes", "4 bytes", "8 bytes"],
+    "correctAnswer": "4 bytes",
+    "points": 5
+  },
+  {
+    "type": "MSQ",
+    "statement": "Which of these are bitwise operators in C?",
+    "options": ["&", "|", "^", "&&"],
+    "correctAnswers": ["&", "|", "^"],
+    "points": 10
+  },
+  {
+    "type": "ShortAnswer",
+    "statement": "In one line, what is a pointer in C?",
+    "expectedSentences": 1,
+    "modelAnswer": "A variable that stores the memory address of another variable.",
+    "points": 10
+  },
+  {
+    "type": "Coding",
+    "problemTitle": "Add Two Numbers",
+    "difficulty": "Easy",
+    "problemStatement": "Read two integers and print their sum.",
+    "constraints": "-10^4 <= A, B <= 10^4",
+    "inputFormat": "Two space-separated integers.",
+    "outputFormat": "Their sum.",
+    "points": 100,
+    "sampleTestCases": [{ "input": "5 7", "output": "12" }],
+    "hiddenTestCases": [{ "input": "-5 15", "output": "10" }]
+  }
+]`;
+
+export interface ClassTestQuestionImportResult {
+  questions: ImportedClassTestQuestion[];
+  errors: JsonImportFieldError[];
+}
+
+/**
+ * Parses a class-test question file of mixed types. Like the coding parser it reports every
+ * problem it finds rather than stopping at the first, so a whole paste can be fixed in one pass.
+ * MCQ/MSQ correct answers are checked against the option list, because grading matches by the
+ * option's text — an answer that is not one of the options could never be marked correct.
+ */
+export function parseClassTestQuestionsJson(source: string): ClassTestQuestionImportResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch (error) {
+    return {
+      questions: [],
+      errors: [{ path: "json", message: error instanceof Error ? error.message : "Invalid JSON" }],
+    };
+  }
+
+  const entries = Array.isArray(parsed) ? parsed : [parsed];
+  if (entries.length === 0) {
+    return { questions: [], errors: [{ path: "json", message: "Provide at least one question" }] };
+  }
+
+  const questions: ImportedClassTestQuestion[] = [];
+  const errors: JsonImportFieldError[] = [];
+
+  entries.forEach((entry, index) => {
+    const prefix = `question[${index}]`;
+    // A missing type means the contest-style coding shape, so old files still import.
+    const type = (entry && typeof entry === "object" && "type" in entry ? (entry as { type?: unknown }).type : undefined) ?? "Coding";
+
+    if (type === "MCQ") {
+      const result = mcqImportSchema.safeParse(entry);
+      if (!result.success) {
+        errors.push(...toFieldErrors(result.error, prefix));
+        return;
+      }
+      if (!result.data.options.includes(result.data.correctAnswer)) {
+        errors.push({ path: `${prefix}.correctAnswer`, message: "correctAnswer must be one of the options (matched by text)" });
+        return;
+      }
+      questions.push({
+        type: "MCQ",
+        statement: result.data.statement,
+        options: result.data.options,
+        correctAnswer: result.data.correctAnswer,
+        points: result.data.points ?? 5,
+      });
+      return;
+    }
+
+    if (type === "MSQ") {
+      const result = msqImportSchema.safeParse(entry);
+      if (!result.success) {
+        errors.push(...toFieldErrors(result.error, prefix));
+        return;
+      }
+      const stray = result.data.correctAnswers.filter((answer) => !result.data.options.includes(answer));
+      if (stray.length > 0) {
+        errors.push({ path: `${prefix}.correctAnswers`, message: `every correct answer must be one of the options — not: ${stray.join(", ")}` });
+        return;
+      }
+      questions.push({
+        type: "MSQ",
+        statement: result.data.statement,
+        options: result.data.options,
+        correctAnswers: result.data.correctAnswers,
+        points: result.data.points ?? 5,
+      });
+      return;
+    }
+
+    if (type === "ShortAnswer") {
+      const result = shortAnswerImportSchema.safeParse(entry);
+      if (!result.success) {
+        errors.push(...toFieldErrors(result.error, prefix));
+        return;
+      }
+      questions.push({
+        type: "ShortAnswer",
+        statement: result.data.statement,
+        expectedSentences: result.data.expectedSentences ?? 3,
+        modelAnswer: result.data.modelAnswer ?? "",
+        points: result.data.points ?? 5,
+      });
+      return;
+    }
+
+    if (type === "Coding") {
+      const result = codingQuestionJsonSchema.safeParse(entry);
+      if (!result.success) {
+        errors.push(...toFieldErrors(result.error, prefix));
+        return;
+      }
+      const value = result.data;
+      questions.push({
+        type: "Coding",
+        problemTitle: value.problemTitle.trim(),
+        difficulty: value.difficulty,
+        problemStatement: value.problemStatement.trim(),
+        constraints: value.constraints.trim(),
+        inputFormat: value.inputFormat?.trim() || "Read input from standard input.",
+        outputFormat: value.outputFormat?.trim() || "Print output to standard output.",
+        points: value.points ?? 100,
+        sampleTestCases: value.sampleTestCases.map((testCase) => ({ input: testCase.input, output: testCase.output })),
+        hiddenTestCases: value.hiddenTestCases.map((testCase) => ({ input: testCase.input, output: testCase.output })),
+      });
+      return;
+    }
+
+    errors.push({ path: `${prefix}.type`, message: `Unknown type "${String(type)}" — use MCQ, MSQ, ShortAnswer or Coding` });
   });
 
   return { questions: errors.length > 0 ? [] : questions, errors };

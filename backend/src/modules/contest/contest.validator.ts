@@ -16,7 +16,10 @@ const departmentSchema = z.enum(DEPARTMENTS);
 const numberSchema = z.union([z.number(), z.string().min(1)]).transform((value) => normalizeNumber(value, 0));
 
 const testCaseSchema = z.object({
-  input: z.string().min(1, "Test case input is required"),
+  // Empty input is legitimate — a no-stdin problem, or an MCQ/short-answer authored in this
+  // shape. Matches the class-test validator, which already allows it, so the shared JSON import
+  // that feeds both cannot pass validation in one and fail in the other.
+  input: z.string(),
   output: z.string(),
   explanation: z.string().optional(),
 });

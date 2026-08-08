@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CONTEST_CODING_EXAMPLE_JSON, parseContestCodingQuestionsJson } from "@/lib/contest-question-import";
+import { CLASS_TEST_EXAMPLE_JSON, parseClassTestQuestionsJson } from "@/lib/contest-question-import";
 import type { JsonImportFieldError } from "@/lib/problem-import-schema";
 import { copyTextToClipboard } from "@/lib/clipboard";
 
@@ -346,7 +346,7 @@ export default function CreateClassTest() {
 
   const copyJsonStructure = async () => {
     try {
-      await copyTextToClipboard(CONTEST_CODING_EXAMPLE_JSON);
+      await copyTextToClipboard(CLASS_TEST_EXAMPLE_JSON);
       setJsonStructureCopied(true);
       toast.success("Ideal JSON structure copied");
       window.setTimeout(() => setJsonStructureCopied(false), 1600);
@@ -355,33 +355,62 @@ export default function CreateClassTest() {
     }
   };
 
-  // Same parser and same JSON shape contests use, so a question file written for one works in
-  // the other. Imported questions land in the list below for review before scheduling.
+  // Every question type imports from JSON — the parser discriminates on each entry's `type`, so
+  // one file can seed a whole mixed test. Imported questions land in the list below for review
+  // before scheduling.
   const importQuestionsFromJson = (source: string) => {
-    const { questions: imported, errors } = parseContestCodingQuestionsJson(source);
+    const { questions: imported, errors } = parseClassTestQuestionsJson(source);
     setJsonErrors(errors);
     if (errors.length > 0) return;
 
     setQuestions((current) => [
       ...current,
-      ...imported.map((question) => ({
-        ...blankQuestion("Coding"),
-        // The shared parser defaults an omitted `points` to 100 (contest scale) — the Marks
-        // field beside each question is where faculty bring that down to class-test marks.
-        points: question.points,
-        problemTitle: question.problemTitle,
-        difficulty: question.difficulty,
-        statement: question.problemStatement,
-        constraints: question.constraints,
-        inputFormat: question.inputFormat,
-        outputFormat: question.outputFormat,
-        sampleTestCases: question.sampleTestCases.map((tc) => ({ ...tc, explanation: "" })),
-        hiddenTestCases: question.hiddenTestCases.map((tc) => ({ ...tc, explanation: "" })),
-      })),
+      ...imported.map((question): DraftQuestion => {
+        const base = blankQuestion(question.type);
+        switch (question.type) {
+          case "MCQ":
+            return {
+              ...base,
+              points: question.points,
+              statement: question.statement,
+              options: question.options,
+              correctAnswer: question.correctAnswer,
+            };
+          case "MSQ":
+            return {
+              ...base,
+              points: question.points,
+              statement: question.statement,
+              options: question.options,
+              correctAnswers: question.correctAnswers,
+            };
+          case "ShortAnswer":
+            return {
+              ...base,
+              points: question.points,
+              statement: question.statement,
+              expectedSentences: question.expectedSentences,
+              modelAnswer: question.modelAnswer,
+            };
+          case "Coding":
+            return {
+              ...base,
+              points: question.points,
+              problemTitle: question.problemTitle,
+              difficulty: question.difficulty,
+              statement: question.problemStatement,
+              constraints: question.constraints,
+              inputFormat: question.inputFormat,
+              outputFormat: question.outputFormat,
+              sampleTestCases: question.sampleTestCases.map((tc) => ({ ...tc, explanation: "" })),
+              hiddenTestCases: question.hiddenTestCases.map((tc) => ({ ...tc, explanation: "" })),
+            };
+        }
+      }),
     ]);
     setJsonSource("");
     setAuthoringTab("form");
-    toast.success(`${imported.length} coding question${imported.length === 1 ? "" : "s"} added`);
+    toast.success(`${imported.length} question${imported.length === 1 ? "" : "s"} added`);
   };
 
   const importQuestionsFromFile = async (file: File) => {
@@ -639,11 +668,15 @@ export default function CreateClassTest() {
             <TabsContent value="json" className="mt-5 space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h3 className="font-display text-base font-bold">Import coding questions</h3>
+                  <h3 className="font-display text-base font-bold">Import questions</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Paste one coding question or an array of them, or upload a .json file. This is
-                    the same format contests use, so a question file works in both. MCQ, MSQ and
-                    short answer are written by hand.
+                    Paste one question or an array, or upload a .json file. Every type works — set
+                    each entry&apos;s <span className="font-mono-code text-xs">type</span> to{" "}
+                    <span className="font-mono-code text-xs">MCQ</span>,{" "}
+                    <span className="font-mono-code text-xs">MSQ</span>,{" "}
+                    <span className="font-mono-code text-xs">ShortAnswer</span> or{" "}
+                    <span className="font-mono-code text-xs">Coding</span>. Copy the structure for
+                    an example of each. A coding entry with no type still imports as coding.
                   </p>
                 </div>
                 <Button type="button" variant="outline" onClick={copyJsonStructure}>
