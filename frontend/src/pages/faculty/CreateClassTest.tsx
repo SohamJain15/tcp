@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, CheckCircle2, ClipboardCopy, FileJson, Trash2, Upload, Users } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -22,6 +22,19 @@ import { copyTextToClipboard } from "@/lib/clipboard";
 const PATHNAME = "/faculty/class-tests/create";
 const DIVISIONS = ["A", "B", "C", "D", "E"];
 const QUESTION_TYPES: ClassTestQuestionType[] = ["MCQ", "MSQ", "ShortAnswer", "Coding"];
+
+/**
+ * A `<input type="number">` keeps a typed leading zero ("010") on screen because the parsed
+ * value does not change, so React never rewrites the DOM. Strip it from the field directly and
+ * return the cleaned string for the state setter.
+ */
+function stripLeadingZero(event: ChangeEvent<HTMLInputElement>): string {
+  const cleaned = event.target.value.replace(/^0+(?=\d)/, "");
+  if (cleaned !== event.target.value) {
+    event.target.value = cleaned;
+  }
+  return cleaned;
+}
 
 const questionTypeLabel = (type: ClassTestQuestionType) =>
   type === "ShortAnswer" ? "Short answer" : type;
@@ -495,7 +508,7 @@ export default function CreateClassTest() {
                 // a rejection after the whole form is filled in.
                 max={240}
                 value={durationMinutes}
-                onChange={(e) => setDurationMinutes(Number(e.target.value))}
+                onChange={(e) => setDurationMinutes(Number(stripLeadingZero(e)))}
               />
               <p className="mt-1 text-xs text-muted-foreground">
                 Everyone finishes at the same moment — starting late does not add time.
@@ -508,7 +521,7 @@ export default function CreateClassTest() {
                 type="number"
                 min={1}
                 value={maxViolations}
-                onChange={(e) => setMaxViolations(Number(e.target.value))}
+                onChange={(e) => setMaxViolations(Number(stripLeadingZero(e)))}
               />
               <p className="mt-1 text-xs text-muted-foreground">
                 1 means the first tab-switch ends the test and flags it.
@@ -576,7 +589,7 @@ export default function CreateClassTest() {
                 type="number"
                 value={audience.rollFrom ?? ""}
                 onChange={(e) =>
-                  setAudience((a) => ({ ...a, rollFrom: e.target.value === "" ? null : Number(e.target.value) }))
+                  setAudience((a) => { const v = stripLeadingZero(e); return { ...a, rollFrom: v === "" ? null : Number(v) }; })
                 }
               />
             </div>
@@ -587,7 +600,7 @@ export default function CreateClassTest() {
                 type="number"
                 value={audience.rollTo ?? ""}
                 onChange={(e) =>
-                  setAudience((a) => ({ ...a, rollTo: e.target.value === "" ? null : Number(e.target.value) }))
+                  setAudience((a) => { const v = stripLeadingZero(e); return { ...a, rollTo: v === "" ? null : Number(v) }; })
                 }
               />
             </div>
@@ -771,7 +784,7 @@ export default function CreateClassTest() {
                           max={poolCountByType(type)}
                           value={perType[type] ?? 0}
                           onChange={(e) =>
-                            setPerType((current) => ({ ...current, [type]: Number(e.target.value) }))
+                            setPerType((current) => ({ ...current, [type]: Number(stripLeadingZero(e)) }))
                           }
                         />
                       </div>
@@ -791,7 +804,7 @@ export default function CreateClassTest() {
                           max={100}
                           disabled={poolCountByType(type) === 0}
                           value={marksForType(type)}
-                          onChange={(e) => setMarksForType(type, Number(e.target.value))}
+                          onChange={(e) => setMarksForType(type, Number(stripLeadingZero(e)))}
                         />
                       </div>
                     ))}
@@ -869,7 +882,7 @@ export default function CreateClassTest() {
                         min={0}
                         className="w-20"
                         value={question.points}
-                        onChange={(e) => updateQuestion(question.key, { points: Number(e.target.value) })}
+                        onChange={(e) => updateQuestion(question.key, { points: Number(stripLeadingZero(e)) })}
                       />
                     </>
                   )}
@@ -966,7 +979,7 @@ export default function CreateClassTest() {
                       type="number"
                       min={1}
                       value={question.expectedSentences}
-                      onChange={(e) => updateQuestion(question.key, { expectedSentences: Number(e.target.value) })}
+                      onChange={(e) => updateQuestion(question.key, { expectedSentences: Number(stripLeadingZero(e)) })}
                     />
                   </div>
                   <div>
@@ -1036,7 +1049,7 @@ export default function CreateClassTest() {
                         min={1}
                         max={10}
                         value={question.timeLimitSeconds}
-                        onChange={(e) => updateQuestion(question.key, { timeLimitSeconds: Number(e.target.value) })}
+                        onChange={(e) => updateQuestion(question.key, { timeLimitSeconds: Number(stripLeadingZero(e)) })}
                       />
                       <p className="mt-1 text-xs text-muted-foreground">
                         Longest the student's code may run per test case before it is marked
@@ -1051,7 +1064,7 @@ export default function CreateClassTest() {
                         min={16}
                         max={1024}
                         value={question.memoryLimitMb}
-                        onChange={(e) => updateQuestion(question.key, { memoryLimitMb: Number(e.target.value) })}
+                        onChange={(e) => updateQuestion(question.key, { memoryLimitMb: Number(stripLeadingZero(e)) })}
                       />
                     </div>
                   </div>
