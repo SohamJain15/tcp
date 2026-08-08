@@ -231,12 +231,14 @@ export default function FacultyContestDetail() {
         </Card>
 
         <Tabs value={activeTab} onValueChange={handleTabChange}>
-          <TabsList className="grid w-full grid-cols-3 lg:max-w-3xl lg:grid-cols-5">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="registrations">Registrations</TabsTrigger>
-            <TabsTrigger value="attempts">Attempts</TabsTrigger>
-            <TabsTrigger value="standings">Standings</TabsTrigger>
-            <TabsTrigger value="report">AI Report</TabsTrigger>
+          {/* Five tabs never fit a 3-column grid below lg — labels like "Registrations" clip.
+              A horizontally scrollable strip keeps every tab full-width and legible on a phone. */}
+          <TabsList className="flex w-full justify-start overflow-x-auto lg:grid lg:max-w-3xl lg:grid-cols-5">
+            <TabsTrigger value="overview" className="shrink-0">Overview</TabsTrigger>
+            <TabsTrigger value="registrations" className="shrink-0">Registrations</TabsTrigger>
+            <TabsTrigger value="attempts" className="shrink-0">Attempts</TabsTrigger>
+            <TabsTrigger value="standings" className="shrink-0">Standings</TabsTrigger>
+            <TabsTrigger value="report" className="shrink-0">AI Report</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="mt-5">

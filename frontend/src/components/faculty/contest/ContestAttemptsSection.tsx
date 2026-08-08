@@ -22,7 +22,8 @@ export function ContestAttemptsSection({
   return (
     <Card className="border border-border bg-background p-5 shadow-none">
       <h2 className="mb-4 font-display text-xl font-semibold">Attempts &amp; Proctoring</h2>
-      <Table>
+      <div className="overflow-x-auto">
+        <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Student</TableHead>
@@ -68,7 +69,8 @@ export function ContestAttemptsSection({
             </TableRow>
           )}
         </TableBody>
-      </Table>
+        </Table>
+      </div>
     </Card>
   );
 }

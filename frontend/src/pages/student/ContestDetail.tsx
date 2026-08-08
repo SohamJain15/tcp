@@ -301,15 +301,6 @@ export default function ContestDetail() {
     return <Navigate to="/student/contests" replace />;
   }
 
-  // Gate the whole contest, not just the Start button — a student should learn this on opening
-  // the contest rather than after filling in the pre-flight. Placing it here also makes
-  // `startAttemptMutation` unreachable on a phone, so `requestFullscreen()` can never fire.
-  if (isHandheld) {
-    return (
-      <DesktopOnlyNotice feature="contests" backTo="/student/contests" backLabel="Back to contests" />
-    );
-  }
-
   if (isLoading) {
     return (
       <AppLayout>
@@ -346,8 +337,10 @@ export default function ContestDetail() {
   const submittedWhileLive = canAttempt && attemptIsLocked;
 
   // An active attempt is taken one question per page — this page only handles pre-flight, the
-  // registration/upcoming states, and the post-contest report.
-  if (attemptIsActive && firstQuestionId) {
+  // registration/upcoming states, and the post-contest report. Not on a handheld, though: a
+  // phone must not be bounced into the proctored question page. It falls through and gets the
+  // "resume on desktop" notice below instead.
+  if (attemptIsActive && firstQuestionId && !isHandheld) {
     return <Navigate to={`/student/contests/${id}/questions/${firstQuestionId}`} replace />;
   }
 
@@ -403,7 +396,17 @@ export default function ContestDetail() {
               </li>
             </ul>
 
-            {contest.isRegistered ? (
+            {contest.isRegistered && isHandheld ? (
+              // Registered, but on a phone — the contest itself is desktop-only. Registration is
+              // already done, so this only replaces the Start button, not the page.
+              <div className="mx-auto mt-8 max-w-md text-left">
+                <DesktopOnlyNotice
+                  inline
+                  feature="Contests"
+                  message="You are registered. Contests run in a locked full-screen proctored window that a phone cannot hold, so open this contest on a laptop or desktop when it is time to start."
+                />
+              </div>
+            ) : contest.isRegistered ? (
               <Button
                 size="lg"
                 className="mt-8 h-12 w-full max-w-xs bg-accent px-10 text-base font-semibold text-accent-foreground hover:bg-accent/90"
@@ -473,13 +476,23 @@ export default function ContestDetail() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              {!attempt && canAttempt && contest.isRegistered && (
+              {!attempt && canAttempt && contest.isRegistered && !isHandheld && (
                 <Button className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => startAttemptMutation.mutate()} disabled={startAttemptMutation.isPending}>
                   {startAttemptMutation.isPending ? "Starting..." : "Start Test"}
                 </Button>
               )}
             </div>
           </div>
+        )}
+
+        {/* An attempt is already open, but the student is on a phone — it cannot be resumed here.
+            Without this they would see a bare page after the auto-resume redirect was suppressed. */}
+        {attemptIsActive && isHandheld && (
+          <DesktopOnlyNotice
+            inline
+            feature="Contests"
+            message="Your contest attempt is in progress. Open this contest on a laptop or desktop to continue it — the clock keeps running, so switch devices as soon as you can."
+          />
         )}
 
         {!showReport && submittedWhileLive && !contestEnded && (

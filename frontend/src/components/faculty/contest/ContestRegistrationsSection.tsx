@@ -42,7 +42,8 @@ export function ContestRegistrationsSection({
           {isExporting ? "Exporting..." : "Download CSV"}
         </Button>
       </div>
-      <Table>
+      <div className="overflow-x-auto">
+        <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Student</TableHead>
@@ -79,7 +80,8 @@ export function ContestRegistrationsSection({
             </TableRow>
           )}
         </TableBody>
-      </Table>
+        </Table>
+      </div>
     </Card>
   );
 }

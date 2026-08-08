@@ -18,7 +18,8 @@ export function ContestStandingsSection({ standings, resultsPublished }: Contest
       <p className="mb-4 mt-1 text-sm text-muted-foreground">
         Ranked by score, then by how efficient the code was, then time taken, then runtime.
       </p>
-      <Table>
+      <div className="overflow-x-auto">
+        <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Rank</TableHead>
@@ -63,7 +64,8 @@ export function ContestStandingsSection({ standings, resultsPublished }: Contest
             </TableRow>
           )}
         </TableBody>
-      </Table>
+        </Table>
+      </div>
     </Card>
   );
 }

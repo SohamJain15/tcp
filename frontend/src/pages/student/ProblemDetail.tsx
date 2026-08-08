@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
+import { useIsNarrow } from "@/hooks/use-mobile";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Editor from "@monaco-editor/react";
 import type * as MonacoEditor from "monaco-editor";
@@ -227,9 +228,76 @@ function PodiumCard({ entry, label }: { entry: ProblemLeaderboardItem; label: st
   );
 }
 
+/**
+ * The workspace is a desktop IDE — a horizontal resizable split that is unusable below ~1024px
+ * (a ~150px statement column beside a ~225px editor, neither collapsible). On a narrow screen
+ * these three wrappers collapse that split into a single stacked, scrollable column. Children
+ * pass through untouched, so this stays a thin layout switch rather than a second copy of the
+ * page, and the inner editor/console split (which owns a panel ref) is left completely alone.
+ */
+function WorkspaceGroup({
+  stack,
+  className,
+  autoSaveId,
+  children,
+}: {
+  stack: boolean;
+  className?: string;
+  autoSaveId?: string;
+  children: ReactNode;
+}) {
+  if (stack) {
+    return <div className="flex w-full flex-col gap-3 p-2">{children}</div>;
+  }
+  return (
+    <ResizablePanelGroup
+      direction="horizontal"
+      className={className}
+      autoSaveId={autoSaveId}
+      storage={typeof window === "undefined" ? undefined : window.sessionStorage}
+    >
+      {children}
+    </ResizablePanelGroup>
+  );
+}
+
+function WorkspacePane({
+  stack,
+  stackClassName,
+  defaultSize,
+  minSize,
+  className,
+  children,
+}: {
+  stack: boolean;
+  stackClassName?: string;
+  defaultSize?: number;
+  minSize?: number;
+  className?: string;
+  children: ReactNode;
+}) {
+  if (stack) {
+    return <div className={stackClassName}>{children}</div>;
+  }
+  return (
+    <ResizablePanel defaultSize={defaultSize} minSize={minSize} className={className}>
+      {children}
+    </ResizablePanel>
+  );
+}
+
+function WorkspaceHandle({ stack }: { stack: boolean }) {
+  if (stack) {
+    return null;
+  }
+  return <ResizableHandle withHandle className="bg-border" />;
+}
+
 export default function ProblemDetail() {
   const { id = "" } = useParams();
   const queryClient = useQueryClient();
+  // Below lg the resizable split panes cannot fit; the layout stacks into one scrollable column.
+  const isNarrow = useIsNarrow();
 
   const [language, setLanguage] = useState<ExecutableLanguage>("cpp");
   const [draftsByLanguage, setDraftsByLanguage] = useState<Partial<Record<ExecutableLanguage, string>>>({
@@ -574,7 +642,14 @@ export default function ProblemDetail() {
     : null;
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background">
+    <div
+      className={cn(
+        "flex flex-col bg-background",
+        // On a phone the page scrolls normally; the fixed-viewport, non-scrolling desktop root
+        // would clip its own bottom once the mobile browser's URL bar collapses.
+        isNarrow ? "min-h-screen" : "h-screen overflow-hidden",
+      )}
+    >
       {!isFullscreen && (
         <div className="flex h-11 shrink-0 items-center justify-between border-b border-border bg-card px-3">
           <Link to="/student/problems" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-accent">
@@ -584,15 +659,19 @@ export default function ProblemDetail() {
             <div className="hidden text-xs text-muted-foreground md:block">
               Time limit: {problem.timeLimitSeconds}s {"\u2022"} Memory: {problem.memoryLimitMb} MB
             </div>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7"
-              onClick={toggleFullscreen}
-              aria-label="Enter fullscreen coding"
-            >
-              <Maximize2 className="h-4 w-4" />
-            </Button>
+            {/* Fullscreen relies on requestFullscreen, which iOS Safari does not support for web
+                pages \u2014 hide the control on handhelds rather than leave a dead button. */}
+            {!isNarrow && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                onClick={toggleFullscreen}
+                aria-label="Enter fullscreen coding"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -608,16 +687,11 @@ export default function ProblemDetail() {
         </Button>
       )}
 
-      <div className="min-h-0 w-full flex-1 overflow-hidden">
-        <ResizablePanelGroup
-          direction="horizontal"
-          className="h-full overflow-hidden"
-          autoSaveId="problem-workspace-h"
-          storage={typeof window === "undefined" ? undefined : window.sessionStorage}
-        >
-          <ResizablePanel defaultSize={40} minSize={25} className="h-full">
-            <div className="relative h-full w-full">
-              <div className="absolute inset-0 overflow-y-auto p-3">
+      <div className={cn("w-full", isNarrow ? "" : "min-h-0 flex-1 overflow-hidden")}>
+        <WorkspaceGroup stack={isNarrow} className="h-full overflow-hidden" autoSaveId="problem-workspace-h">
+          <WorkspacePane stack={isNarrow} defaultSize={40} minSize={25} className="h-full">
+            <div className="relative w-full lg:h-full">
+              <div className="p-3 lg:absolute lg:inset-0 lg:overflow-y-auto">
                 <Card className="p-4 shadow-card">
                   <div className="-mx-4 -mt-4 mb-4 flex border-b border-border bg-secondary/50">
                     {(["description", "hints", "submissions"] as const).map((section) => (
@@ -803,11 +877,19 @@ export default function ProblemDetail() {
                 </Card>
               </div>
             </div>
-          </ResizablePanel>
+          </WorkspacePane>
 
-          <ResizableHandle withHandle className="bg-border" />
+          <WorkspaceHandle stack={isNarrow} />
 
-          <ResizablePanel defaultSize={60} minSize={30} className="h-full flex flex-col overflow-hidden">
+          {/* On mobile the workspace gets a fixed viewport height so its inner editor/console
+              split — left untouched — has a height to lay out within. */}
+          <WorkspacePane
+            stack={isNarrow}
+            stackClassName="h-[78vh] w-full"
+            defaultSize={60}
+            minSize={30}
+            className="h-full flex flex-col overflow-hidden"
+          >
             <div className="h-full min-h-0 pl-1">
               <ResizablePanelGroup
                 direction="vertical"
@@ -919,7 +1001,9 @@ export default function ProblemDetail() {
                             scrollBeyondLastLine: false,
                             smoothScrolling: true,
                             tabSize: 4,
-                            wordWrap: "off",
+                            // Wrap on a phone — horizontally scrolling code in a ~340px column is
+                            // unusable. Desktop keeps long lines on one row as before.
+                            wordWrap: isNarrow ? "on" : "off",
                           }}
                         />
                       </div>
@@ -1118,9 +1202,9 @@ export default function ProblemDetail() {
                                   <tr className="text-left">
                                     <th className="py-1.5 pr-2 font-semibold">#</th>
                                     <th className="py-1.5 pr-2 font-semibold">Student</th>
-                                    <th className="py-1.5 pr-2 font-semibold">Language</th>
+                                    <th className="hidden py-1.5 pr-2 font-semibold sm:table-cell">Language</th>
                                     <th className="py-1.5 pr-2 text-right font-semibold">Runtime</th>
-                                    <th className="py-1.5 pr-2 text-right font-semibold">Memory</th>
+                                    <th className="hidden py-1.5 pr-2 text-right font-semibold sm:table-cell">Memory</th>
                                     <th className="py-1.5 text-right font-semibold">Efficiency</th>
                                   </tr>
                                 </thead>
@@ -1135,11 +1219,11 @@ export default function ProblemDetail() {
                                     >
                                       <td className="py-1.5 pr-2 font-mono-code font-semibold">{row.rank}</td>
                                       <td className="py-1.5 pr-2">{row.userName ?? row.userEmail}</td>
-                                      <td className="py-1.5 pr-2 text-muted-foreground">
+                                      <td className="hidden py-1.5 pr-2 text-muted-foreground sm:table-cell">
                                         {toLanguageLabel(row.language)}
                                       </td>
                                       <td className="py-1.5 pr-2 text-right font-mono-code">{row.runtimeMs} ms</td>
-                                      <td className="py-1.5 pr-2 text-right font-mono-code">
+                                      <td className="hidden py-1.5 pr-2 text-right font-mono-code sm:table-cell">
                                         {(row.memoryKb / 1024).toFixed(1)} MB
                                       </td>
                                       <td className="py-1.5 text-right font-mono-code">
@@ -1181,8 +1265,8 @@ export default function ProblemDetail() {
                 </ResizablePanel>
               </ResizablePanelGroup>
             </div>
-          </ResizablePanel>
-        </ResizablePanelGroup>
+          </WorkspacePane>
+        </WorkspaceGroup>
       </div>
     </div>
   );

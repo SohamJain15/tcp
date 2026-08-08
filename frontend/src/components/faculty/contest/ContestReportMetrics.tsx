@@ -143,7 +143,7 @@ function OptimalSubmissionCard({
       </div>
 
       {showBreakdown ? (
-        <div className="mt-3">
+        <div className="mt-3 overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>

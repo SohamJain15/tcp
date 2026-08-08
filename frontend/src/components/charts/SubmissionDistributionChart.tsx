@@ -30,9 +30,24 @@ export const SubmissionDistributionChart = memo(function SubmissionDistributionC
     isYours: bucket.isYours,
   }));
 
+  // The bucket the student's own solution falls in — the one fact that used to live only in the
+  // hover tooltip, which never fires on touch. Surfaced as a caption so it is always readable.
+  const yourBucket = distribution.buckets.find((bucket) => bucket.isYours);
+
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+    <div className="flex h-full w-full flex-col">
+      {yourBucket && (
+        <p className="mb-1 shrink-0 text-[11px] text-muted-foreground">
+          Your solution sits in the{" "}
+          <span className="font-semibold text-success">
+            {yourBucket.rangeStart}%–{yourBucket.rangeEnd}%
+          </span>{" "}
+          band.
+        </p>
+      )}
+      <div className="min-h-0 flex-1">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
         <XAxis dataKey="label" tickLine={false} axisLine={false} tick={chartAxisTick} interval="preserveStartEnd" />
         <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={chartAxisTick} />
         <Tooltip
@@ -52,6 +67,8 @@ export const SubmissionDistributionChart = memo(function SubmissionDistributionC
           ))}
         </Bar>
       </BarChart>
-    </ResponsiveContainer>
+        </ResponsiveContainer>
+      </div>
+    </div>
   );
 });

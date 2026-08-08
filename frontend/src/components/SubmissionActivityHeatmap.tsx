@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 import {
   eachDayOfInterval,
   endOfMonth,
@@ -141,6 +141,9 @@ function SubmissionActivityHeatmapImpl({ submissions = [], activity }: Submissio
     return { weeks, monthLabels, totalSubmissions, activeDays, maxStreak };
   }, [activity, submissions]);
 
+  // On a phone `title` never fires (no hover), so a tapped day's count is shown in this caption.
+  const [selectedDay, setSelectedDay] = useState<{ date: Date; count: number } | null>(null);
+
   return (
     <div className="w-max min-w-[860px] space-y-4">
       <div className="flex flex-wrap items-center gap-6 text-sm">
@@ -187,9 +190,12 @@ function SubmissionActivityHeatmapImpl({ submissions = [], activity }: Submissio
                 {week.map((day) => {
                   const title = `${format(day.date, "dd MMM yyyy")} • ${day.count} submission${day.count === 1 ? "" : "s"}`;
                   return (
-                    <div
+                    <button
                       key={toDayKey(day.date)}
+                      type="button"
                       title={title}
+                      onClick={() => day.inRange && setSelectedDay({ date: day.date, count: day.count })}
+                      aria-label={title}
                       className={`h-3 w-3 rounded-[3px] border border-border/40 ${getIntensityClass(day.count, day.inRange)}`}
                     />
                   );
@@ -199,13 +205,19 @@ function SubmissionActivityHeatmapImpl({ submissions = [], activity }: Submissio
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 text-[10px] text-muted-foreground">
-          <span>Less</span>
-          <div className="h-3 w-3 rounded-[3px] border border-border/40 bg-secondary" />
-          <div className="h-3 w-3 rounded-[3px] border border-border/40 bg-primary/35" />
-          <div className="h-3 w-3 rounded-[3px] border border-border/40 bg-primary/60" />
-          <div className="h-3 w-3 rounded-[3px] border border-border/40 bg-primary" />
-          <span>More</span>
+        <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+          <span className="min-h-[1rem]">
+            {selectedDay &&
+              `${format(selectedDay.date, "dd MMM yyyy")} • ${selectedDay.count} submission${selectedDay.count === 1 ? "" : "s"}`}
+          </span>
+          <div className="flex items-center gap-2">
+            <span>Less</span>
+            <div className="h-3 w-3 rounded-[3px] border border-border/40 bg-secondary" />
+            <div className="h-3 w-3 rounded-[3px] border border-border/40 bg-primary/35" />
+            <div className="h-3 w-3 rounded-[3px] border border-border/40 bg-primary/60" />
+            <div className="h-3 w-3 rounded-[3px] border border-border/40 bg-primary" />
+            <span>More</span>
+          </div>
         </div>
       </div>
     </div>
