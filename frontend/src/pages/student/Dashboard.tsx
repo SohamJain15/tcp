@@ -267,7 +267,7 @@ export default function StudentDashboard() {
         ))}
 
         <Card className="overflow-hidden border-0 shadow-elevated">
-          <div className="relative bg-gradient-hero p-8 text-primary-foreground">
+          <div className="relative bg-gradient-hero p-6 text-primary-foreground md:p-8">
             <div className="absolute inset-0 opacity-10 [background-image:radial-gradient(circle_at_1px_1px,white_1px,transparent_0)] [background-size:24px_24px]" />
             <div className="relative flex flex-col justify-between gap-6 md:flex-row md:items-center">
               <div>
@@ -275,17 +275,19 @@ export default function StudentDashboard() {
                 <h1 className="mt-1 font-display text-3xl font-bold md:text-4xl">Ready to climb the ranks today?</h1>
                 <p className="mt-2 font-deva text-accent">॥ शास्त्रं कोडः तीर्थं चेतः ॥</p>
               </div>
-              <div className="flex gap-3">
-                <Link to="/student/problems">
-                  <Button size="lg" className="bg-accent font-semibold text-accent-foreground hover:bg-accent/90">
+              {/* Stack full-width on a phone — side by side the two large buttons overflow the
+                  card. They return to a row from sm up. */}
+              <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+                <Link to="/student/problems" className="w-full sm:w-auto">
+                  <Button size="lg" className="w-full bg-accent font-semibold text-accent-foreground hover:bg-accent/90 sm:w-auto">
                     Start Solving <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>
-                <Link to="/student/leaderboard">
+                <Link to="/student/leaderboard" className="w-full sm:w-auto">
                   <Button
                     size="lg"
                     variant="outline"
-                    className="border-white/30 bg-transparent text-primary-foreground hover:bg-white/10"
+                    className="w-full border-white/30 bg-transparent text-primary-foreground hover:bg-white/10 sm:w-auto"
                   >
                     Leaderboard
                   </Button>

@@ -116,8 +116,10 @@ const ProblemRow = memo(function ProblemRow({
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2 pl-7 sm:pl-0">
-            <div className="text-right">
+          {/* Full width on a phone (acceptance left, bookmark pushed to the right edge) instead
+              of clustered in the bottom-left; a compact inline group from sm up. */}
+          <div className="flex items-center justify-between gap-2 pl-7 sm:shrink-0 sm:justify-start sm:pl-0">
+            <div className="text-left sm:text-right">
               <div className="font-mono-code text-sm font-semibold">{problem.acceptanceRate}%</div>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Acceptance</div>
             </div>
