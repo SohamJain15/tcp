@@ -11,7 +11,6 @@ import { ContestLockOverlay } from "@/components/ContestLockOverlay";
 import { ContestScreenGuard } from "@/components/ContestScreenGuard";
 import { ContestTimer } from "@/components/ContestTimer";
 import { ContestWatermark } from "@/components/ContestWatermark";
-import { DesktopOnlyNotice } from "@/components/DesktopOnlyNotice";
 import { useAttemptProctoring } from "@/hooks/useAttemptProctoring";
 import { useIsHandheld } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
@@ -65,9 +64,11 @@ export default function ClassTestAttempt() {
     mutationFn: () => classTestApi.startAttempt(id, pathname),
     onSuccess: (data) => {
       setConfirmed(true);
-      // Must ride the same user gesture as the click; browsers refuse programmatic fullscreen
-      // outside one. Failure is not fatal — the lock overlay picks it up on the next interaction.
-      void document.documentElement.requestFullscreen?.().catch(() => undefined);
+      // Fullscreen only where it is enforced — on a phone iOS has none, so skip it rather than
+      // throw. Must ride the same user gesture as the click; browsers refuse it otherwise.
+      if (!isHandheld) {
+        void document.documentElement.requestFullscreen?.().catch(() => undefined);
+      }
       setAnswers(
         Object.fromEntries(
           data.classTest.answers
@@ -116,11 +117,15 @@ export default function ClassTestAttempt() {
 
   const { isLocked, isObscured, violationCount, requestFullscreen } = useAttemptProctoring({
     isAttemptActive: active,
-    enabled: !isHandheld,
     maxViolations: test?.maxViolations,
     violationCount: test?.violationCount ?? 0,
     recordEvent: recordProctorEvent,
     surfaceLabel: "class test",
+    // A phone cannot hold fullscreen (iOS has none) and fires blur for the soft keyboard, so on
+    // a handheld we drop those two and rely on visibilitychange — leaving the app still counts
+    // and still auto-submits.
+    requireFullscreen: !isHandheld,
+    scoreBlur: !isHandheld,
   });
 
   // Covers every way an attempt can end that is not our own submit click: the violation
@@ -136,16 +141,6 @@ export default function ClassTestAttempt() {
     setAnswers((current) => ({ ...current, [questionId]: answer }));
     saveMutation.mutate({ questionId, answer });
   };
-
-  if (isHandheld) {
-    return (
-      <DesktopOnlyNotice
-        feature="class tests"
-        backTo="/student/class-tests"
-        backLabel="Back to class tests"
-      />
-    );
-  }
 
   if (testQuery.isLoading || !test) {
     return (
@@ -411,9 +406,10 @@ function QuestionCard({
 
       {question.type === "Coding" && (
         // The same workspace contests use — editor, console, run and submit — pointed at the
-        // class-test endpoints. The server also enforces the allowed languages, so the
-        // restriction holds even if this UI is bypassed.
-        <div className="h-[70vh] border border-border">
+        // class-test endpoints. The server also enforces the allowed languages. Fixed height on
+        // desktop for the split panes; on a phone the body stacks and flows in the page's own
+        // scroll, so it sizes to content instead.
+        <div className="border border-border lg:h-[70vh]">
           <ContestCodingBody
             key={question.id}
             contestId={classTestId}

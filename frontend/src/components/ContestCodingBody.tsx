@@ -20,6 +20,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { ResizableStackGroup, ResizableStackHandle, ResizableStackPane } from "@/components/ResizableStack";
+import { useIsNarrow } from "@/hooks/use-mobile";
 import { useContestCodeDrafts } from "@/hooks/useContestCodeDrafts";
 import { cn } from "@/lib/utils";
 import {
@@ -126,6 +128,8 @@ export function ContestCodingBody({
   onAfterSubmit,
   codingApi,
 }: ContestCodingBodyProps) {
+  // Below lg the split panes cannot fit, so the workspace stacks into one scrollable column.
+  const isNarrow = useIsNarrow();
   const editorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(null);
   const editorLockRef = useRef<(() => void) | null>(null);
   const consolePanelRef = useRef<ImperativePanelHandle | null>(null);
@@ -253,10 +257,10 @@ export function ContestCodingBody({
   const output = runResult ?? verdict;
 
   return (
-    <ResizablePanelGroup direction="horizontal" className="h-full min-w-0 overflow-hidden">
-      <ResizablePanel defaultSize={40} minSize={28} className="h-full">
-        <div className="relative h-full w-full">
-          <div className="absolute inset-0 overflow-y-auto p-6">
+    <ResizableStackGroup stack={isNarrow} className="h-full min-w-0 overflow-hidden">
+      <ResizableStackPane stack={isNarrow} defaultSize={40} minSize={28} className="h-full">
+        <div className="relative w-full lg:h-full">
+          <div className="p-4 lg:absolute lg:inset-0 lg:overflow-y-auto lg:p-6">
             <Card className="p-6 shadow-card">
               <h1 className="font-display text-2xl font-bold">{question.title}</h1>
               <pre className="mt-4 whitespace-pre-wrap break-words text-sm text-muted-foreground">
@@ -304,11 +308,19 @@ export function ContestCodingBody({
             </Card>
           </div>
         </div>
-      </ResizablePanel>
+      </ResizableStackPane>
 
-      <ResizableHandle withHandle className="bg-border" />
+      <ResizableStackHandle stack={isNarrow} className="bg-border" />
 
-      <ResizablePanel defaultSize={60} minSize={30} className="flex h-full flex-col overflow-hidden">
+      {/* On mobile the workspace gets a fixed viewport height so its inner editor/console split —
+          left untouched — has a height to lay out within. */}
+      <ResizableStackPane
+        stack={isNarrow}
+        stackClassName="h-[80vh] w-full"
+        defaultSize={60}
+        minSize={30}
+        className="flex h-full flex-col overflow-hidden"
+      >
         {/* Vertical split so a huge error log can be dragged smaller or collapsed instead of
             burying the editor. Mirrors the problem workspace. */}
         <ResizablePanelGroup direction="vertical" className="h-full min-h-0 p-3">
@@ -458,7 +470,7 @@ export function ContestCodingBody({
             </Card>
           </ResizablePanel>
         </ResizablePanelGroup>
-      </ResizablePanel>
-    </ResizablePanelGroup>
+      </ResizableStackPane>
+    </ResizableStackGroup>
   );
 }

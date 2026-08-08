@@ -24,6 +24,18 @@ interface UseAttemptProctoringOptions {
   recordEvent: (payload: ContestProctoringPayload) => Promise<ProctoringEventResult>;
   /** Wording differs per surface ("contest" / "class test"). */
   surfaceLabel?: string;
+  /**
+   * Whether the surface is locked into fullscreen. False on a phone, where iOS Safari has no
+   * fullscreen for web pages — leaving it on would lock the student out permanently. Leaving the
+   * app is still caught by `visibilitychange`, so the attempt stays proctored.
+   */
+  requireFullscreen?: boolean;
+  /**
+   * Whether a window `blur` counts as leaving. False on touch devices, where opening the soft
+   * keyboard fires `blur` — scoring it would auto-submit an honest student the moment they type.
+   * Real app-switching still registers through `visibilitychange`.
+   */
+  scoreBlur?: boolean;
 }
 
 interface UseAttemptProctoringResult {
@@ -90,6 +102,8 @@ export function useAttemptProctoring({
   violationCount,
   recordEvent,
   surfaceLabel = "contest",
+  requireFullscreen = true,
+  scoreBlur = true,
 }: UseAttemptProctoringOptions): UseAttemptProctoringResult {
   const cooldownsRef = useRef<Record<string, number>>({});
   const isRestoringRef = useRef(false);
@@ -279,12 +293,16 @@ export function useAttemptProctoring({
     };
 
     // The attempt may have been started on another page (e.g. navigating into the coding
-    // workspace), so reflect the current fullscreen state rather than assuming it.
-    setIsLocked(!document.fullscreenElement);
-
-    document.addEventListener("fullscreenchange", onFullscreenChange);
+    // workspace), so reflect the current fullscreen state rather than assuming it. On surfaces
+    // that do not require fullscreen (a phone) there is nothing to lock.
+    if (requireFullscreen) {
+      setIsLocked(!document.fullscreenElement);
+      document.addEventListener("fullscreenchange", onFullscreenChange);
+    }
     document.addEventListener("visibilitychange", onVisibilityChange);
-    window.addEventListener("blur", onBlur);
+    if (scoreBlur) {
+      window.addEventListener("blur", onBlur);
+    }
     window.addEventListener("focus", onFocus);
     window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("keyup", onScreenshotKey, true);
@@ -311,7 +329,7 @@ export function useAttemptProctoring({
       document.removeEventListener("dragstart", blockSelection);
       window.removeEventListener("beforeunload", onBeforeUnload);
     };
-  }, [isActive, maxViolations, recordEvent, requestFullscreen, surfaceLabel]);
+  }, [isActive, maxViolations, recordEvent, requestFullscreen, requireFullscreen, scoreBlur, surfaceLabel]);
 
   // While locked out of fullscreen, the very next interaction anywhere on the page counts as the
   // gesture the Fullscreen API demands — so the student never has to find a button.
