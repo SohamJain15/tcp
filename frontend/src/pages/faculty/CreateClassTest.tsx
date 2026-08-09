@@ -36,6 +36,33 @@ function stripLeadingZero(event: ChangeEvent<HTMLInputElement>): string {
   return cleaned;
 }
 
+/**
+ * The server's error middleware returns `{ message: "Validation failed", details: { fieldIssues:
+ * [{ path, message }] } }`, but the top-level message alone is useless. This pulls out the first
+ * specific issue and, when it belongs to a question (`questions.3.correctAnswer`), turns it into
+ * "Question 4: …" and reports which question to scroll to.
+ */
+function firstServerFieldIssue(error: Error): { message: string; questionIndex: number | null } | null {
+  const body = (error as { details?: unknown }).details;
+  const inner = body && typeof body === "object" ? (body as { details?: unknown }).details : undefined;
+  const issues =
+    inner && typeof inner === "object" ? (inner as { fieldIssues?: unknown }).fieldIssues : undefined;
+  if (!Array.isArray(issues) || issues.length === 0) {
+    return null;
+  }
+
+  const first = issues[0] as { path?: unknown; message?: unknown };
+  const path = typeof first.path === "string" ? first.path : "";
+  const detail = typeof first.message === "string" ? first.message : "Something is invalid";
+  const match = path.match(/questions\.(\d+)/);
+  const questionIndex = match ? Number(match[1]) : null;
+
+  return {
+    message: questionIndex !== null ? `Question ${questionIndex + 1}: ${detail}` : detail,
+    questionIndex,
+  };
+}
+
 const questionTypeLabel = (type: ClassTestQuestionType) =>
   type === "ShortAnswer" ? "Short answer" : type;
 const CODING_LANGUAGES = ["c", "cpp", "java", "python", "javascript", "typescript", "go", "kotlin"];
@@ -312,8 +339,26 @@ export default function CreateClassTest() {
       toast.success(isEditing ? "Class test updated" : "Class test scheduled");
       navigate(`/faculty/class-tests/${data.classTest.id}`);
     },
-    onError: (error: Error) =>
-      toast.error(error.message || `Could not ${isEditing ? "update" : "create"} the class test`),
+    onError: (error: Error) => {
+      // The server reports the exact field that failed in `details.fieldIssues`, but the top-level
+      // message is just "Validation failed". Surface the first specific issue — with the question
+      // number and a scroll to it — so the faculty is not left guessing which of a hundred
+      // questions is wrong.
+      const issue = firstServerFieldIssue(error);
+      if (issue) {
+        toast.error(issue.message);
+        if (issue.questionIndex !== null) {
+          setAuthoringTab("form");
+          window.setTimeout(() => {
+            document
+              .getElementById(`ct-question-${issue.questionIndex}`)
+              ?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }, 50);
+        }
+        return;
+      }
+      toast.error(error.message || `Could not ${isEditing ? "update" : "create"} the class test`);
+    },
   });
 
   const updateQuestion = (key: string, patch: Partial<DraftQuestion>) => {
@@ -879,7 +924,7 @@ export default function CreateClassTest() {
           </div>
 
           {questions.map((question, index) => (
-            <div key={question.key}>
+            <div key={question.key} id={`ct-question-${index}`}>
             <div className="space-y-3 border border-border p-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold">
