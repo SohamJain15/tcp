@@ -24,6 +24,9 @@ import type {
   ClassTestQuestionAttemptState,
   ClassTestRecord,
   ClassTestTestCase,
+  CrosswordEntry,
+  CrosswordLayout,
+  CrosswordSlot,
 } from "./classtest.model";
 
 export interface ClassTestRepository {
@@ -165,9 +168,69 @@ function mapQuestion(value: unknown): ClassTestQuestion | null {
         harness: (record.harness as HarnessSpec | undefined) ?? undefined,
       };
     }
+    case "Crossword":
+      return {
+        id,
+        type: "Crossword",
+        points,
+        setLabel,
+        statement: typeof record.statement === "string" ? record.statement : "",
+        entries: mapCrosswordEntries(record.entries),
+      };
     default:
       return null;
   }
+}
+
+function mapCrosswordEntries(value: unknown): CrosswordEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item): CrosswordEntry | null => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const record = item as Record<string, unknown>;
+      const answer = typeof record.answer === "string" ? record.answer : "";
+      const clue = typeof record.clue === "string" ? record.clue : "";
+      return answer ? { answer, clue } : null;
+    })
+    .filter((item): item is CrosswordEntry => item !== null);
+}
+
+/** Reads a stored per-attempt grid, dropping anything malformed rather than corrupting scoring. */
+function mapCrosswordLayout(value: unknown): CrosswordLayout | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  if (!Array.isArray(record.slots)) {
+    return undefined;
+  }
+  const slots = record.slots
+    .map((item): CrosswordSlot | null => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const slot = item as Record<string, unknown>;
+      const direction = slot.direction === "down" ? "down" : "across";
+      return {
+        number: normalizeNumber(slot.number, 0),
+        direction,
+        row: normalizeNumber(slot.row, 0),
+        col: normalizeNumber(slot.col, 0),
+        length: normalizeNumber(slot.length, 0),
+        entryIndex: normalizeNumber(slot.entryIndex, 0),
+      };
+    })
+    .filter((item): item is CrosswordSlot => item !== null);
+
+  return {
+    rows: normalizeNumber(record.rows, 0),
+    cols: normalizeNumber(record.cols, 0),
+    slots,
+  };
 }
 
 function mapAssignedStudent(value: unknown): AssignedStudent | null {
@@ -238,7 +301,7 @@ function mapQuestionPool(value: unknown): ClassTestQuestionPool | undefined {
   }
 
   const perType: Partial<Record<ClassTestQuestionType, number>> = {};
-  for (const type of ["MCQ", "MSQ", "ShortAnswer", "Coding"] as ClassTestQuestionType[]) {
+  for (const type of ["MCQ", "MSQ", "ShortAnswer", "Coding", "Crossword"] as ClassTestQuestionType[]) {
     const count = normalizeNumber((perTypeSource as Record<string, unknown>)[type], 0);
     if (count > 0) {
       perType[type] = count;
@@ -279,6 +342,8 @@ function mapQuestionState(value: unknown): ClassTestQuestionAttemptState | null 
     optionOrder: Array.isArray(record.optionOrder)
       ? record.optionOrder.filter((option): option is string => typeof option === "string")
       : undefined,
+    // Absent on non-crossword states and on any attempt written before crosswords existed.
+    crosswordLayout: mapCrosswordLayout(record.crosswordLayout),
   };
 }
 

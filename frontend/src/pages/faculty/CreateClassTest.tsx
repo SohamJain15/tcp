@@ -5,8 +5,14 @@ import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { classTestApi } from "@/api/services";
-import { DEPARTMENTS, type ClassTestAudienceFilter, type ClassTestQuestionType } from "@/api/types";
+import {
+  DEPARTMENTS,
+  type ClassTestAudienceFilter,
+  type ClassTestQuestionType,
+  type StudentCrossword,
+} from "@/api/types";
 import { AppLayout } from "@/components/AppLayout";
+import { CrosswordGrid } from "@/components/CrosswordGrid";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -21,7 +27,7 @@ import { copyTextToClipboard } from "@/lib/clipboard";
 
 const PATHNAME = "/faculty/class-tests/create";
 const DIVISIONS = ["A", "B", "C", "D", "E"];
-const QUESTION_TYPES: ClassTestQuestionType[] = ["MCQ", "MSQ", "ShortAnswer", "Coding"];
+const QUESTION_TYPES: ClassTestQuestionType[] = ["MCQ", "MSQ", "ShortAnswer", "Coding", "Crossword"];
 
 /**
  * A `<input type="number">` keeps a typed leading zero ("010") on screen because the parsed
@@ -87,6 +93,7 @@ interface DraftQuestion {
   memoryLimitMb: number;
   sampleTestCases: TestCaseDraft[];
   hiddenTestCases: TestCaseDraft[];
+  entries: CrosswordEntryDraft[];
 }
 
 interface TestCaseDraft {
@@ -95,14 +102,20 @@ interface TestCaseDraft {
   explanation: string;
 }
 
+interface CrosswordEntryDraft {
+  answer: string;
+  clue: string;
+}
+
 const emptyTestCase = (): TestCaseDraft => ({ input: "", output: "", explanation: "" });
+const emptyCrosswordEntry = (): CrosswordEntryDraft => ({ answer: "", clue: "" });
 
 function blankQuestion(type: ClassTestQuestionType): DraftQuestion {
   return {
     key: `draft_${Math.random().toString(36).slice(2)}`,
     type,
-    points: type === "Coding" ? 10 : 5,
-    statement: "",
+    points: type === "Coding" || type === "Crossword" ? 10 : 5,
+    statement: type === "Crossword" ? "Solve the crossword." : "",
     options: ["", ""],
     correctAnswer: "",
     correctAnswers: [],
@@ -121,6 +134,8 @@ function blankQuestion(type: ClassTestQuestionType): DraftQuestion {
     sampleTestCases: [emptyTestCase()],
     // A coding question is refused without one — marks are proportional to hidden cases passed.
     hiddenTestCases: [emptyTestCase()],
+    // A crossword needs at least two words; seed two blank rows.
+    entries: type === "Crossword" ? [emptyCrosswordEntry(), emptyCrosswordEntry()] : [],
   };
 }
 
@@ -161,6 +176,12 @@ function toDraftQuestion(raw: Record<string, unknown>): DraftQuestion {
     memoryLimitMb: Number(raw.memoryLimitMb ?? base.memoryLimitMb),
     sampleTestCases: testCases(raw.sampleTestCases),
     hiddenTestCases: testCases(raw.hiddenTestCases),
+    entries: Array.isArray(raw.entries)
+      ? raw.entries.map((entry) => {
+          const record = entry as Record<string, unknown>;
+          return { answer: String(record.answer ?? ""), clue: String(record.clue ?? "") };
+        })
+      : base.entries,
   };
 }
 
@@ -224,6 +245,16 @@ function toPayloadQuestion(question: DraftQuestion) {
           .filter((testCase) => testCase.input.trim() !== "" || testCase.output.trim() !== "")
           .map((testCase) => ({ input: testCase.input, output: testCase.output })),
         supportedLanguages: question.supportedLanguages,
+      };
+    case "Crossword":
+      return {
+        ...base,
+        type: "Crossword",
+        statement: question.statement,
+        // Drop blank scaffolding rows; the server uppercases and validates the rest.
+        entries: question.entries
+          .filter((entry) => entry.answer.trim() !== "" || entry.clue.trim() !== "")
+          .map((entry) => ({ answer: entry.answer.trim(), clue: entry.clue.trim() })),
       };
   }
 }
@@ -449,6 +480,13 @@ export default function CreateClassTest() {
               statement: question.statement,
               expectedSentences: question.expectedSentences,
               modelAnswer: question.modelAnswer,
+            };
+          case "Crossword":
+            return {
+              ...base,
+              points: question.points,
+              statement: question.statement,
+              entries: question.entries.map((entry) => ({ answer: entry.answer, clue: entry.clue })),
             };
           case "Coding":
             return {
@@ -1075,6 +1113,13 @@ export default function CreateClassTest() {
                 </div>
               )}
 
+              {question.type === "Crossword" && (
+                <CrosswordAuthoring
+                  entries={question.entries}
+                  onChange={(entries) => updateQuestion(question.key, { entries })}
+                />
+              )}
+
               {question.type === "Coding" && (
                 <div>
                   <Label className="text-xs">Languages students may use</Label>
@@ -1289,5 +1334,145 @@ export default function CreateClassTest() {
         </div>
       </div>
     </AppLayout>
+  );
+}
+
+/**
+ * Crossword authoring: word + clue rows, an "AI clue" button that reuses the local model, and a
+ * live preview that lays out a sample grid. The preview is deliberately just an example — every
+ * student gets a freshly generated grid, so this is only here to confirm the words interlock and
+ * the clues read well.
+ */
+function CrosswordAuthoring({
+  entries,
+  onChange,
+}: {
+  entries: CrosswordEntryDraft[];
+  onChange: (entries: CrosswordEntryDraft[]) => void;
+}) {
+  const [preview, setPreview] = useState<StudentCrossword | null>(null);
+
+  const filledEntries = entries.filter((entry) => entry.answer.trim() !== "");
+
+  const cluesMutation = useMutation({
+    mutationFn: () =>
+      classTestApi.generateCrosswordClues(
+        filledEntries.map((entry) => entry.answer.trim()),
+        undefined,
+        PATHNAME,
+      ),
+    onSuccess: (result) => {
+      if (!result.available) {
+        toast.error(result.reason ?? "The clue model is unavailable. Type clues manually.");
+        return;
+      }
+      const byWord = new Map(result.clues.map((clue) => [clue.word.toUpperCase(), clue.clue]));
+      const next = entries.map((entry) => {
+        const generated = byWord.get(entry.answer.trim().toUpperCase());
+        // Never overwrite a clue the faculty already wrote.
+        return generated && entry.clue.trim() === "" ? { ...entry, clue: generated } : entry;
+      });
+      onChange(next);
+      toast.success("Clues drafted — edit any you want to change.");
+    },
+    onError: () => toast.error("Could not reach the clue model. Type clues manually."),
+  });
+
+  const previewMutation = useMutation({
+    mutationFn: () =>
+      classTestApi.previewCrossword(
+        filledEntries.map((entry) => ({ answer: entry.answer.trim(), clue: entry.clue.trim() })),
+        PATHNAME,
+      ),
+    onSuccess: ({ layout }) => {
+      // Join the layout geometry to the local clues so the shared grid can render it.
+      setPreview({
+        rows: layout.rows,
+        cols: layout.cols,
+        slots: layout.slots.map((slot) => ({
+          number: slot.number,
+          direction: slot.direction,
+          row: slot.row,
+          col: slot.col,
+          length: slot.length,
+          clue: filledEntries[slot.entryIndex]?.clue ?? "",
+        })),
+      });
+    },
+    onError: () => toast.error("Could not lay out the grid — check the words are letters only."),
+  });
+
+  const updateEntry = (index: number, patch: Partial<CrosswordEntryDraft>) => {
+    onChange(entries.map((entry, entryIndex) => (entryIndex === index ? { ...entry, ...patch } : entry)));
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        {entries.map((entry, index) => (
+          <div key={index} className="flex items-center gap-2">
+            <Input
+              className="w-40 uppercase"
+              placeholder={`Word ${index + 1}`}
+              value={entry.answer}
+              onChange={(event) => updateEntry(index, { answer: event.target.value.toUpperCase() })}
+            />
+            <Input
+              placeholder="Clue"
+              value={entry.clue}
+              onChange={(event) => updateEntry(index, { clue: event.target.value })}
+            />
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label="Remove word"
+              disabled={entries.length <= 2}
+              onClick={() => onChange(entries.filter((_, entryIndex) => entryIndex !== index))}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => onChange([...entries, emptyCrosswordEntry()])}
+        >
+          + Word
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={filledEntries.length === 0 || cluesMutation.isPending}
+          onClick={() => cluesMutation.mutate()}
+        >
+          {cluesMutation.isPending ? "Generating…" : "Generate clues with AI"}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={filledEntries.length < 2 || previewMutation.isPending}
+          onClick={() => previewMutation.mutate()}
+        >
+          {preview ? "Regenerate grid" : "Preview grid"}
+        </Button>
+      </div>
+
+      {preview && (
+        <div className="rounded border border-border p-3">
+          <p className="mb-2 text-xs text-muted-foreground">
+            Sample layout — each student is dealt a different grid of the same words.
+          </p>
+          <CrosswordGrid crossword={preview} readOnly />
+        </div>
+      )}
+    </div>
   );
 }

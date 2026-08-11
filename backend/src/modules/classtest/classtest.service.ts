@@ -16,9 +16,11 @@ import {
   computeClassTestStatus,
   drawOptionOrder,
   drawQuestionsForAttempt,
+  generateCrosswordLayout,
   isAssignedToClassTest,
   isLanguageAllowed,
   matchesAudienceFilter,
+  scoreCrosswordAnswer,
   scoreObjectiveAnswer,
   toAssignedStudent,
   toStudentQuestion,
@@ -26,9 +28,11 @@ import {
   type ClassTestAttemptRecord,
   type ClassTestAudienceFilter,
   type ClassTestCodingQuestion,
+  type ClassTestCrosswordQuestion,
   type ClassTestFeedbackRecord,
   type ClassTestQuestion,
   type ClassTestRecord,
+  type CrosswordLayout,
   type StudentClassTestQuestion,
 } from "./classtest.model";
 import type {
@@ -44,6 +48,7 @@ import type {
   UpdateClassTestInput,
 } from "./classtest.validator";
 import type { classTestFeedbackSchema } from "./classtest.validator";
+import type { CrosswordClue, CrosswordClueGenerator } from "./ai/crossword-clue-generator";
 
 /**
  * Evasions the browser cannot hard-block, so they count against the student. Clipboard and
@@ -135,6 +140,17 @@ export interface ClassTestService {
     classTestId: string,
     input: UpdateClassTestInput,
   ): Promise<ClassTestRecord>;
+  /** Authoring aid: draft a crossword clue per word with the local model, or report it is offline. */
+  generateCrosswordClues(
+    user: AuthenticatedUser,
+    words: string[],
+    topic?: string,
+  ): Promise<{ clues: CrosswordClue[]; available: boolean; reason: string | null }>;
+  /** Authoring aid: lay out a sample grid so faculty can preview and "Regenerate" it. */
+  previewCrossword(
+    user: AuthenticatedUser,
+    entries: { answer: string; clue: string }[],
+  ): Promise<CrosswordLayout>;
 
   // --- student ---
   listAssigned(user: AuthenticatedUser): Promise<StudentClassTestSummary[]>;
@@ -239,6 +255,14 @@ export interface FacultyAttemptDetail extends FacultyAttemptSummary {
     submittedAnswer: string | string[] | null;
     /** Faculty-only reference while marking. */
     modelAnswer?: string;
+    /** Crossword only: each slot resolved to its clue, correct answer and what the student filled. */
+    crossword?: {
+      number: number;
+      direction: "across" | "down";
+      clue: string;
+      answer: string;
+      filled: string;
+    }[];
     graderNote: string | null;
     requiresManualGrading: boolean;
   }[];
@@ -258,6 +282,8 @@ interface ClassTestServiceDependencies {
   executionProvider: ExecutionProvider;
   /** Full judging happens in the background, exactly as it does for problems and contests. */
   submissionQueue: SubmissionQueue;
+  /** Drafts crossword clues at authoring time; offline-safe, returns null when unavailable. */
+  crosswordClueGenerator: CrosswordClueGenerator;
   now: () => Date;
 }
 
@@ -455,6 +481,32 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
       return updated;
     },
 
+    async generateCrosswordClues(_user, words, topic) {
+      // Deduplicate and normalize so the model is asked once per distinct word.
+      const normalized = [...new Set(words.map((word) => word.trim().toUpperCase()).filter(Boolean))];
+      if (normalized.length === 0) {
+        return { clues: [], available: true, reason: null };
+      }
+
+      const clues = await dependencies.crosswordClueGenerator.generate(normalized, topic);
+      if (clues) {
+        return { clues, available: true, reason: null };
+      }
+
+      // Null means the model was unreachable, disabled, or returned unusable output — surface why
+      // so the UI can tell the faculty to type clues rather than silently doing nothing.
+      const status = await dependencies.crosswordClueGenerator.getStatus();
+      return {
+        clues: [],
+        available: false,
+        reason: status.reason ?? "The clue model returned no usable clues. Please type them.",
+      };
+    },
+
+    async previewCrossword(_user, entries) {
+      return generateCrosswordLayout(entries);
+    },
+
     // --- student ------------------------------------------------------------
 
     async listAssigned(user) {
@@ -550,6 +602,10 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
           graderNote: null,
           // Frozen now so a refresh cannot reshuffle the options mid-question.
           optionOrder: test.questionPool ? drawOptionOrder(question) : undefined,
+          // Always generated for a crossword (not gated on the pool): a fresh grid per student is
+          // the whole point, and freezing it now stops a refresh reshuffling the grid mid-test.
+          crosswordLayout:
+            question.type === "Crossword" ? generateCrosswordLayout(question.entries) : undefined,
         })),
         autoScore: 0,
         manualScore: 0,
@@ -1133,7 +1189,7 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
       attempt?.questionStates
         .map((state) => {
           const question = questionsById.get(state.questionId);
-          return question ? toStudentQuestion(question, state.optionOrder) : null;
+          return question ? toStudentQuestion(question, state.optionOrder, state.crosswordLayout) : null;
         })
         .filter((question): question is StudentClassTestQuestion => question !== null) ?? [];
 
@@ -1186,6 +1242,13 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
 
         if (question.type === "MCQ" || question.type === "MSQ") {
           return { ...state, awardedPoints: scoreObjectiveAnswer(question, state.submittedAnswer) };
+        }
+
+        if (question.type === "Crossword") {
+          return {
+            ...state,
+            awardedPoints: scoreCrosswordAnswer(question, state.crosswordLayout, state.submittedAnswer),
+          };
         }
 
         if (question.type === "Coding") {
@@ -1297,10 +1360,51 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
           awardedPoints: state.awardedPoints,
           submittedAnswer: state.submittedAnswer,
           ...(isShortAnswer && question.modelAnswer ? { modelAnswer: question.modelAnswer } : {}),
+          ...(question?.type === "Crossword"
+            ? { crossword: resolveCrosswordAnswer(question, state.crosswordLayout, state.submittedAnswer) }
+            : {}),
           graderNote: state.graderNote,
           requiresManualGrading: isShortAnswer,
         };
       }),
     };
   }
+}
+
+/**
+ * Resolves a crossword attempt into a per-slot clue / correct-answer / filled-in list so the
+ * faculty paper dialog can show what each student wrote against what was expected. The student's
+ * answer is the JSON string the grid serialized to, keyed by `<number>-<direction>`.
+ */
+function resolveCrosswordAnswer(
+  question: ClassTestCrosswordQuestion,
+  layout: CrosswordLayout | undefined,
+  submittedAnswer: string | string[] | null,
+): { number: number; direction: "across" | "down"; clue: string; answer: string; filled: string }[] {
+  if (!layout) {
+    return [];
+  }
+  let filled: Record<string, unknown> = {};
+  if (typeof submittedAnswer === "string") {
+    try {
+      const parsed = JSON.parse(submittedAnswer) as unknown;
+      if (parsed && typeof parsed === "object") {
+        filled = parsed as Record<string, unknown>;
+      }
+    } catch {
+      filled = {};
+    }
+  }
+
+  return layout.slots.map((slot) => {
+    const entry = question.entries[slot.entryIndex];
+    const given = filled[`${slot.number}-${slot.direction}`];
+    return {
+      number: slot.number,
+      direction: slot.direction,
+      clue: entry?.clue ?? "",
+      answer: entry?.answer ?? "",
+      filled: typeof given === "string" ? given.toUpperCase() : "",
+    };
+  });
 }

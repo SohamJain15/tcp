@@ -65,6 +65,17 @@ export function createClassTestRouter(dependencies: ApplicationDependencies): Ro
   router.get("/", requireRole("FACULTY"), asyncHandler(controller.listClassTests));
   router.post("/", requireRole("FACULTY"), asyncHandler(controller.createClassTest));
   router.post("/audience-preview", requireRole("FACULTY"), asyncHandler(controller.previewAudience));
+  // Static crossword-authoring aids — declared before "/:classTestId" so they are not captured by it.
+  router.post(
+    "/crossword/clues",
+    requireRole("FACULTY"),
+    asyncHandler(controller.generateCrosswordClues),
+  );
+  router.post(
+    "/crossword/preview",
+    requireRole("FACULTY"),
+    asyncHandler(controller.previewCrossword),
+  );
   router.get("/:classTestId", requireRole("FACULTY"), asyncHandler(controller.getClassTest));
   router.patch("/:classTestId", requireRole("FACULTY"), asyncHandler(controller.updateClassTest));
   router.get("/:classTestId/attempts", requireRole("FACULTY"), asyncHandler(controller.listAttempts));

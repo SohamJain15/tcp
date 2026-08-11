@@ -67,6 +67,40 @@ const codingSchema = z.object({
     .min(1, "Choose at least one language students may answer in"),
 });
 
+const crosswordEntrySchema = z.object({
+  // Letters only, uppercased — a grid can only cross on single letters, and mixed case would
+  // fail an exact match at scoring time.
+  answer: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{2,15}$/, "Each word must be 2–15 letters, letters only"),
+  clue: z.string().trim().min(1, "Every word needs a clue"),
+});
+
+// Kept a plain object (no .superRefine here): z.discriminatedUnion only accepts ZodObjects, so
+// the duplicate-word check lives in questionSchema's refine below, next to the coding rule.
+const crosswordSchema = z.object({
+  ...questionBase,
+  type: z.literal("Crossword"),
+  statement: z.string().trim().min(1, "Question text is required"),
+  entries: z.array(crosswordEntrySchema).min(2, "Add at least two words").max(30, "At most 30 words"),
+});
+
+/** Words a faculty asks the model to draft clues for. */
+export const crosswordCluesSchema = z.object({
+  words: z
+    .array(z.string().trim().toUpperCase().regex(/^[A-Z]{2,15}$/))
+    .min(1, "Add at least one word")
+    .max(30),
+  topic: z.string().trim().max(100).optional(),
+});
+
+/** Entries to lay out for a faculty preview grid. */
+export const crosswordPreviewSchema = z.object({
+  entries: z.array(crosswordEntrySchema).min(1).max(30),
+});
+
 /**
  * The class-test feedback questionnaire is deliberately identical to the contest one
  * (`contest.validator.ts`), so the CoE can compare the two without reconciling shapes.
@@ -90,7 +124,7 @@ export const classTestFeedbackSchema = z.object({
 });
 
 const questionSchema = z
-  .discriminatedUnion("type", [mcqSchema, msqSchema, shortAnswerSchema, codingSchema])
+  .discriminatedUnion("type", [mcqSchema, msqSchema, shortAnswerSchema, codingSchema, crosswordSchema])
   .superRefine((value, ctx) => {
     // Marks are proportional to test cases passed, so a coding question with only visible
     // samples scores every student on work they could already see. Contests refuse this too.
@@ -99,6 +133,21 @@ const questionSchema = z
         code: z.ZodIssueCode.custom,
         message: "Add at least one hidden test case",
         path: ["hiddenTestCases"],
+      });
+    }
+
+    // A crossword cannot carry the same word twice — a duplicate silently loses a clue and a slot.
+    if (value.type === "Crossword") {
+      const seen = new Set<string>();
+      value.entries.forEach((entry, index) => {
+        if (seen.has(entry.answer)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Duplicate word "${entry.answer}"`,
+            path: ["entries", index, "answer"],
+          });
+        }
+        seen.add(entry.answer);
       });
     }
   });
@@ -116,7 +165,7 @@ const audienceSchema = z
     { message: "Roll range starts after it ends", path: ["rollTo"] },
   );
 
-const QUESTION_TYPES = ["MCQ", "MSQ", "ShortAnswer", "Coding"] as const;
+const QUESTION_TYPES = ["MCQ", "MSQ", "ShortAnswer", "Coding", "Crossword"] as const;
 
 /**
  * Opt-in shuffled papers. Every count is optional; omitting the whole object keeps today's
@@ -129,6 +178,7 @@ const questionPoolSchema = z.object({
       MSQ: z.coerce.number().int().min(0).max(200).optional(),
       ShortAnswer: z.coerce.number().int().min(0).max(200).optional(),
       Coding: z.coerce.number().int().min(0).max(200).optional(),
+      Crossword: z.coerce.number().int().min(0).max(200).optional(),
     })
     .refine(
       (perType) => Object.values(perType).some((count) => (count ?? 0) > 0),

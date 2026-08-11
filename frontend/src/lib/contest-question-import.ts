@@ -140,6 +140,7 @@ export type ImportedClassTestQuestion =
   | { type: "MCQ"; statement: string; options: string[]; correctAnswer: string; points: number }
   | { type: "MSQ"; statement: string; options: string[]; correctAnswers: string[]; points: number }
   | { type: "ShortAnswer"; statement: string; expectedSentences: number; modelAnswer: string; points: number }
+  | { type: "Crossword"; statement: string; entries: { answer: string; clue: string }[]; points: number }
   | ({ type: "Coding" } & ImportedCodingQuestion);
 
 const optionsSchema = z.array(z.string().trim().min(1, "Option text is required")).min(2, "Give at least two options");
@@ -168,6 +169,21 @@ const shortAnswerImportSchema = z.object({
   points: z.number().positive().optional(),
 });
 
+const crosswordImportSchema = z.object({
+  type: z.literal("Crossword"),
+  statement: z.string().trim().min(1, "Question text is required").optional(),
+  entries: z
+    .array(
+      z.object({
+        answer: z.string().trim().regex(/^[A-Za-z]{2,15}$/, "Each word must be 2–15 letters"),
+        clue: z.string().trim().min(1, "Every word needs a clue"),
+      }),
+    )
+    .min(2, "Add at least two words")
+    .max(30, "At most 30 words"),
+  points: z.number().positive().optional(),
+});
+
 export const CLASS_TEST_EXAMPLE_JSON = `[
   {
     "type": "MCQ",
@@ -189,6 +205,16 @@ export const CLASS_TEST_EXAMPLE_JSON = `[
     "expectedSentences": 1,
     "modelAnswer": "A variable that stores the memory address of another variable.",
     "points": 10
+  },
+  {
+    "type": "Crossword",
+    "statement": "Solve the crossword.",
+    "points": 10,
+    "entries": [
+      { "answer": "PYTHON", "clue": "A popular scripting language" },
+      { "answer": "LOOP", "clue": "A construct that repeats" },
+      { "answer": "ARRAY", "clue": "An indexed list of values" }
+    ]
   },
   {
     "type": "Coding",
@@ -296,6 +322,27 @@ export function parseClassTestQuestionsJson(source: string): ClassTestQuestionIm
       return;
     }
 
+    if (type === "Crossword") {
+      const result = crosswordImportSchema.safeParse(entry);
+      if (!result.success) {
+        errors.push(...toFieldErrors(result.error, prefix));
+        return;
+      }
+      const answers = result.data.entries.map((item) => item.answer.toUpperCase());
+      const duplicate = answers.find((answer, position) => answers.indexOf(answer) !== position);
+      if (duplicate) {
+        errors.push({ path: `${prefix}.entries`, message: `Duplicate word "${duplicate}"` });
+        return;
+      }
+      questions.push({
+        type: "Crossword",
+        statement: result.data.statement ?? "Solve the crossword.",
+        entries: result.data.entries.map((item) => ({ answer: item.answer.toUpperCase(), clue: item.clue })),
+        points: result.data.points ?? 10,
+      });
+      return;
+    }
+
     if (type === "Coding") {
       const result = codingQuestionJsonSchema.safeParse(entry);
       if (!result.success) {
@@ -318,7 +365,7 @@ export function parseClassTestQuestionsJson(source: string): ClassTestQuestionIm
       return;
     }
 
-    errors.push({ path: `${prefix}.type`, message: `Unknown type "${String(type)}" — use MCQ, MSQ, ShortAnswer or Coding` });
+    errors.push({ path: `${prefix}.type`, message: `Unknown type "${String(type)}" — use MCQ, MSQ, ShortAnswer, Coding or Crossword` });
   });
 
   return { questions: errors.length > 0 ? [] : questions, errors };

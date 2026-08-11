@@ -90,4 +90,36 @@ describe("parseClassTestQuestionsJson", () => {
     );
     expect(questions[0].points).toBe(5);
   });
+
+  it("imports a crossword and uppercases the answers", () => {
+    const { questions, errors } = parseClassTestQuestionsJson(
+      JSON.stringify([
+        {
+          type: "Crossword",
+          entries: [
+            { answer: "python", clue: "A language" },
+            { answer: "loop", clue: "Repeat" },
+          ],
+        },
+      ]),
+    );
+    expect(errors).toHaveLength(0);
+    expect(questions[0].type).toBe("Crossword");
+    if (questions[0].type === "Crossword") {
+      expect(questions[0].entries.map((entry) => entry.answer)).toEqual(["PYTHON", "LOOP"]);
+      expect(questions[0].points).toBe(10);
+    }
+  });
+
+  it("rejects a crossword with a duplicate or non-letter word", () => {
+    const duplicate = parseClassTestQuestionsJson(
+      JSON.stringify([{ type: "Crossword", entries: [{ answer: "cat", clue: "a" }, { answer: "CAT", clue: "b" }] }]),
+    );
+    expect(duplicate.errors.length).toBeGreaterThan(0);
+
+    const nonLetter = parseClassTestQuestionsJson(
+      JSON.stringify([{ type: "Crossword", entries: [{ answer: "A1", clue: "a" }, { answer: "GOOD", clue: "b" }] }]),
+    );
+    expect(nonLetter.errors.length).toBeGreaterThan(0);
+  });
 });

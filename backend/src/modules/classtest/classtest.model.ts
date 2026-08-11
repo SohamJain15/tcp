@@ -13,7 +13,7 @@ import type { UserRecord } from "../user/user.model";
  * after faculty publish it. Anything that would order students by score does not belong here.
  */
 
-export type ClassTestQuestionType = "MCQ" | "MSQ" | "Coding" | "ShortAnswer";
+export type ClassTestQuestionType = "MCQ" | "MSQ" | "Coding" | "ShortAnswer" | "Crossword";
 
 /** Marks come from the judge for the first three; a human awards them for ShortAnswer. */
 export type ClassTestScoringMode = "AUTO" | "MANUAL";
@@ -79,11 +79,49 @@ export interface ClassTestShortAnswerQuestion extends ClassTestQuestionBase {
   modelAnswer?: string;
 }
 
+/** One word and the clue that defines it — the only thing faculty author for a crossword. */
+export interface CrosswordEntry {
+  answer: string;
+  clue: string;
+}
+
+export interface ClassTestCrosswordQuestion extends ClassTestQuestionBase {
+  type: "Crossword";
+  /** Instructions shown above the grid, e.g. "Solve the crossword." */
+  statement: string;
+  /**
+   * The words and their clues. Never a grid — the grid is generated fresh for each student when
+   * they start the attempt (see {@link generateCrosswordLayout}), so no layout is stored here.
+   */
+  entries: CrosswordEntry[];
+}
+
 export type ClassTestQuestion =
   | ClassTestMcqQuestion
   | ClassTestMsqQuestion
   | ClassTestCodingQuestion
-  | ClassTestShortAnswerQuestion;
+  | ClassTestShortAnswerQuestion
+  | ClassTestCrosswordQuestion;
+
+/**
+ * One placed word in a generated grid. `entryIndex` points back into the question's `entries`,
+ * so a slot knows both its geometry and which answer/clue it carries.
+ */
+export interface CrosswordSlot {
+  number: number;
+  direction: "across" | "down";
+  row: number;
+  col: number;
+  length: number;
+  entryIndex: number;
+}
+
+/** A generated crossword grid: a tight bounding box plus the placed words. */
+export interface CrosswordLayout {
+  rows: number;
+  cols: number;
+  slots: CrosswordSlot[];
+}
 
 /** A student frozen onto the test at assignment time. */
 export interface AssignedStudent {
@@ -218,6 +256,16 @@ export interface ClassTestQuestionAttemptState {
    * the options under the student's cursor.
    */
   optionOrder?: string[];
+
+  /**
+   * Crossword only: the grid this student was dealt.
+   *
+   * Generated once when the attempt starts and frozen — like {@link optionOrder}, a refresh
+   * mid-test must not reshuffle the grid under the student's cursor. Because it is per-attempt,
+   * two students sitting the same question get different grids of the same words. Scoring reads
+   * the answer *text* against `entries`, never a cell position, so the layout never affects marks.
+   */
+  crosswordLayout?: CrosswordLayout;
 }
 
 export interface ClassTestAttemptRecord {
@@ -351,6 +399,185 @@ export function drawOptionOrder(
     : undefined;
 }
 
+/**
+ * Builds a fresh crossword grid from a word list.
+ *
+ * Greedy interlock: the words are shuffled (so the anchor and the placement order — and therefore
+ * the whole grid — vary with the random source, giving each student a different grid of the same
+ * words), then each word is crossed over an already-placed letter wherever it legally can, taking
+ * the most-interlocked placement. A word that shares no letter with the grid so far is dropped on
+ * its own line below everything, so generation *always* succeeds for any word set.
+ *
+ * The result is normalized to a tight bounding box and numbered Times-of-India style: scanning
+ * row by row, each cell that begins a word takes the next number, and an across and a down word
+ * that begin on the same cell share it.
+ *
+ * Scoring never reads this layout — it compares answer text against `entries` — so the grid a
+ * student is dealt cannot change their marks.
+ */
+export function generateCrosswordLayout(
+  entries: readonly CrosswordEntry[],
+  random: () => number = Math.random,
+): CrosswordLayout {
+  interface Placement {
+    row: number;
+    col: number;
+    direction: "across" | "down";
+    length: number;
+    entryIndex: number;
+  }
+
+  const cells = new Map<string, string>();
+  const placements: Placement[] = [];
+  const key = (row: number, col: number): string => `${row},${col}`;
+
+  const order = shuffled(
+    entries.map((entry, entryIndex) => ({ entryIndex, word: entry.answer.toUpperCase() })),
+    random,
+  ).filter((item) => item.word.length > 0);
+
+  const step = (direction: "across" | "down"): [number, number] =>
+    direction === "down" ? [1, 0] : [0, 1];
+
+  /** How many existing letters a placement would cross, or null if it is illegal. */
+  const crossingsFor = (
+    word: string,
+    row: number,
+    col: number,
+    direction: "across" | "down",
+  ): number | null => {
+    const [dr, dc] = step(direction);
+
+    // The cells flanking each end must be empty, so we never silently extend an existing word.
+    if (cells.has(key(row - dr, col - dc)) || cells.has(key(row + dr * word.length, col + dc * word.length))) {
+      return null;
+    }
+
+    let crossings = 0;
+    for (let i = 0; i < word.length; i += 1) {
+      const r = row + dr * i;
+      const c = col + dc * i;
+      const existing = cells.get(key(r, c));
+      if (existing !== undefined) {
+        if (existing !== word[i]) {
+          return null;
+        }
+        crossings += 1;
+        continue;
+      }
+      // A brand-new cell must not touch a parallel word on either perpendicular side, or the two
+      // would merge into an unintended extra word.
+      const sideA = direction === "across" ? key(r - 1, c) : key(r, c - 1);
+      const sideB = direction === "across" ? key(r + 1, c) : key(r, c + 1);
+      if (cells.has(sideA) || cells.has(sideB)) {
+        return null;
+      }
+    }
+    return crossings;
+  };
+
+  const place = (
+    word: string,
+    entryIndex: number,
+    row: number,
+    col: number,
+    direction: "across" | "down",
+  ): void => {
+    const [dr, dc] = step(direction);
+    for (let i = 0; i < word.length; i += 1) {
+      cells.set(key(row + dr * i, col + dc * i), word[i]);
+    }
+    placements.push({ row, col, direction, length: word.length, entryIndex });
+  };
+
+  order.forEach((item, index) => {
+    if (index === 0) {
+      place(item.word, item.entryIndex, 0, 0, "across");
+      return;
+    }
+
+    const candidates: { row: number; col: number; direction: "across" | "down"; crossings: number }[] = [];
+    for (const [cellKey, letter] of cells) {
+      const [r, c] = cellKey.split(",").map(Number);
+      for (let i = 0; i < item.word.length; i += 1) {
+        if (item.word[i] !== letter) {
+          continue;
+        }
+        for (const direction of ["across", "down"] as const) {
+          const [dr, dc] = step(direction);
+          const row = r - dr * i;
+          const col = c - dc * i;
+          const crossings = crossingsFor(item.word, row, col, direction);
+          if (crossings !== null && crossings >= 1) {
+            candidates.push({ row, col, direction, crossings });
+          }
+        }
+      }
+    }
+
+    if (candidates.length > 0) {
+      // Most-interlocked wins; ties break randomly so the grid varies between students.
+      const best = shuffled(candidates, random).sort((left, right) => right.crossings - left.crossings)[0];
+      place(item.word, item.entryIndex, best.row, best.col, best.direction);
+      return;
+    }
+
+    // Shares no letter with the grid — give it its own line, two rows clear of everything.
+    let maxRow = 0;
+    for (const cellKey of cells.keys()) {
+      maxRow = Math.max(maxRow, Number(cellKey.split(",")[0]));
+    }
+    place(item.word, item.entryIndex, maxRow + 2, 0, "across");
+  });
+
+  let minRow = Infinity;
+  let minCol = Infinity;
+  let maxRow = -Infinity;
+  let maxCol = -Infinity;
+  for (const cellKey of cells.keys()) {
+    const [r, c] = cellKey.split(",").map(Number);
+    minRow = Math.min(minRow, r);
+    maxRow = Math.max(maxRow, r);
+    minCol = Math.min(minCol, c);
+    maxCol = Math.max(maxCol, c);
+  }
+  if (!Number.isFinite(minRow)) {
+    return { rows: 0, cols: 0, slots: [] };
+  }
+
+  const normalized = placements.map((placement) => ({
+    ...placement,
+    row: placement.row - minRow,
+    col: placement.col - minCol,
+  }));
+  const rows = maxRow - minRow + 1;
+  const cols = maxCol - minCol + 1;
+
+  // Number the start cells in scan order; a shared start cell (across + down) keeps one number.
+  const startCells = new Set(normalized.map((placement) => key(placement.row, placement.col)));
+  const numberByCell = new Map<string, number>();
+  let nextNumber = 1;
+  for (let r = 0; r < rows; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
+      if (startCells.has(key(r, c))) {
+        numberByCell.set(key(r, c), nextNumber);
+        nextNumber += 1;
+      }
+    }
+  }
+
+  const slots: CrosswordSlot[] = normalized.map((placement) => ({
+    number: numberByCell.get(key(placement.row, placement.col)) ?? 0,
+    direction: placement.direction,
+    row: placement.row,
+    col: placement.col,
+    length: placement.length,
+    entryIndex: placement.entryIndex,
+  }));
+
+  return { rows, cols, slots };
+}
+
 export function classTestTotalPoints(questions: readonly ClassTestQuestion[]): number {
   return questions.reduce((total, question) => total + questionMaxPoints(question), 0);
 }
@@ -429,6 +656,22 @@ export function isLanguageAllowed(question: ClassTestCodingQuestion, language: s
  * answer or a hidden test case, so none of them can reach a student by someone spreading a
  * record. Adding one would be an obvious, reviewable change to this file.
  */
+export interface StudentCrosswordSlot {
+  number: number;
+  direction: "across" | "down";
+  row: number;
+  col: number;
+  length: number;
+  /** The clue the student solves — the answer letters are deliberately absent. */
+  clue: string;
+}
+
+export interface StudentCrossword {
+  rows: number;
+  cols: number;
+  slots: StudentCrosswordSlot[];
+}
+
 export interface StudentClassTestQuestion {
   id: string;
   type: ClassTestQuestionType;
@@ -446,12 +689,16 @@ export interface StudentClassTestQuestion {
   supportedLanguages?: ExecutableLanguage[];
   timeLimitSeconds?: number;
   memoryLimitMb?: number;
+  /** Crossword only: this student's grid geometry and clues, never the answer letters. */
+  crossword?: StudentCrossword;
 }
 
 export function toStudentQuestion(
   question: ClassTestQuestion,
   /** This student's shuffled option order, when the paper was dealt from a pool. */
   optionOrder?: string[],
+  /** Crossword only: this student's generated grid, frozen at attempt start. */
+  crosswordLayout?: CrosswordLayout,
 ): StudentClassTestQuestion {
   switch (question.type) {
     case "MCQ":
@@ -494,6 +741,28 @@ export function toStudentQuestion(
         timeLimitSeconds: question.timeLimitSeconds,
         memoryLimitMb: question.memoryLimitMb,
       };
+    case "Crossword": {
+      const layout = crosswordLayout ?? { rows: 0, cols: 0, slots: [] };
+      return {
+        id: question.id,
+        type: question.type,
+        points: question.points,
+        statement: question.statement,
+        crossword: {
+          rows: layout.rows,
+          cols: layout.cols,
+          // Clue + geometry only. The answer letters are never sent to a student.
+          slots: layout.slots.map((slot) => ({
+            number: slot.number,
+            direction: slot.direction,
+            row: slot.row,
+            col: slot.col,
+            length: slot.length,
+            clue: question.entries[slot.entryIndex]?.clue ?? "",
+          })),
+        },
+      };
+    }
   }
 }
 
@@ -517,4 +786,48 @@ export function scoreObjectiveAnswer(
   const exact =
     chosen.size === expected.size && [...expected].every((option) => chosen.has(option));
   return exact ? question.points : 0;
+}
+
+/**
+ * Grades a crossword. Per-word partial credit: each word filled correctly earns its share of the
+ * question's points, so a half-solved grid is worth half — matching how coding scores by test
+ * cases passed.
+ *
+ * The student's answer is the JSON string the grid serializes to, `{ "<number>-<direction>":
+ * "WORD" }`; the layout is the one this student was dealt (from their attempt state), and it is
+ * only used to know which slots exist and which `entries` answer each maps to.
+ */
+export function scoreCrosswordAnswer(
+  question: ClassTestCrosswordQuestion,
+  layout: CrosswordLayout | undefined,
+  submittedAnswer: string | string[] | null,
+): number {
+  if (!layout || layout.slots.length === 0 || typeof submittedAnswer !== "string") {
+    return 0;
+  }
+
+  let filled: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(submittedAnswer) as unknown;
+    if (!parsed || typeof parsed !== "object") {
+      return 0;
+    }
+    filled = parsed as Record<string, unknown>;
+  } catch {
+    return 0;
+  }
+
+  let correct = 0;
+  for (const slot of layout.slots) {
+    const entry = question.entries[slot.entryIndex];
+    if (!entry) {
+      continue;
+    }
+    const given = filled[`${slot.number}-${slot.direction}`];
+    if (typeof given === "string" && given.trim().toUpperCase() === entry.answer.toUpperCase()) {
+      correct += 1;
+    }
+  }
+
+  return Math.max(0, Math.round((question.points * correct) / layout.slots.length));
 }

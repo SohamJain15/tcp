@@ -1243,7 +1243,37 @@ export interface ApiErrorPayload {
 
 // --- Class Tests -------------------------------------------------------------
 
-export type ClassTestQuestionType = "MCQ" | "MSQ" | "Coding" | "ShortAnswer";
+export type ClassTestQuestionType = "MCQ" | "MSQ" | "Coding" | "ShortAnswer" | "Crossword";
+
+/** One clue + its geometry as a student sees it — never the answer letters. */
+export interface StudentCrosswordSlot {
+  number: number;
+  direction: "across" | "down";
+  row: number;
+  col: number;
+  length: number;
+  clue: string;
+}
+
+export interface StudentCrossword {
+  rows: number;
+  cols: number;
+  slots: StudentCrosswordSlot[];
+}
+
+/** A faculty preview / authoring grid — same geometry, keyed back to the authored entries. */
+export interface CrosswordLayout {
+  rows: number;
+  cols: number;
+  slots: {
+    number: number;
+    direction: "across" | "down";
+    row: number;
+    col: number;
+    length: number;
+    entryIndex: number;
+  }[];
+}
 
 export interface ClassTestAudienceFilter {
   department: Department;
@@ -1298,6 +1328,8 @@ export interface StudentClassTestQuestion {
   supportedLanguages?: string[];
   timeLimitSeconds?: number;
   memoryLimitMb?: number;
+  /** Crossword only: this student's grid geometry and clues. */
+  crossword?: StudentCrossword;
 }
 
 export interface StudentClassTestSummary {
@@ -1376,6 +1408,14 @@ export interface FacultyClassTestAttemptDetail extends FacultyClassTestAttempt {
     awardedPoints: number;
     submittedAnswer: string | string[] | null;
     modelAnswer?: string;
+    /** Crossword only: each slot resolved to clue / correct answer / what the student filled. */
+    crossword?: {
+      number: number;
+      direction: "across" | "down";
+      clue: string;
+      answer: string;
+      filled: string;
+    }[];
     graderNote: string | null;
     requiresManualGrading: boolean;
   }[];

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { classTestApi } from "@/api/services";
 import type { ExecutableLanguage, StudentClassTestQuestion } from "@/api/types";
 import { ContestCodingBody } from "@/components/ContestCodingBody";
+import { CrosswordGrid } from "@/components/CrosswordGrid";
 import { AppLayout } from "@/components/AppLayout";
 import { ContestLockOverlay } from "@/components/ContestLockOverlay";
 import { ContestScreenGuard } from "@/components/ContestScreenGuard";
@@ -23,6 +24,22 @@ import { Textarea } from "@/components/ui/textarea";
  * Auto-submit (violation limit or the deadline sweeper) ends the attempt without any click of
  * ours, so this is also called from an effect watching the attempt status.
  */
+/** Renders a crossword's serialized answer (`{"1-across":"CAT"}`) as a readable "1 across: CAT" list. */
+function formatCrosswordAnswer(value: string | string[] | null): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    return "—";
+  }
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    const parts = Object.entries(parsed)
+      .filter(([, word]) => typeof word === "string" && word.trim() !== "")
+      .map(([key, word]) => `${key.replace("-", " ")}: ${String(word).toUpperCase()}`);
+    return parts.length > 0 ? parts.join(", ") : "—";
+  } catch {
+    return "—";
+  }
+}
+
 async function leaveFullscreen(): Promise<void> {
   if (!document.fullscreenElement || !document.exitFullscreen) {
     return;
@@ -174,7 +191,11 @@ export default function ClassTestAttempt() {
               <div className="bg-muted/40 p-3 text-sm">
                 <span className="text-xs uppercase tracking-wide text-muted-foreground">Your answer</span>
                 <div className="mt-1 whitespace-pre-wrap">
-                  {Array.isArray(q.submittedAnswer) ? q.submittedAnswer.join(", ") : q.submittedAnswer || "—"}
+                  {q.type === "Crossword"
+                    ? formatCrosswordAnswer(q.submittedAnswer)
+                    : Array.isArray(q.submittedAnswer)
+                      ? q.submittedAnswer.join(", ")
+                      : q.submittedAnswer || "—"}
                 </div>
               </div>
               {q.graderNote && (
@@ -402,6 +423,14 @@ function QuestionCard({
           />
           <p className="mt-1 text-xs text-muted-foreground">Your faculty marks this answer by hand.</p>
         </div>
+      )}
+
+      {question.type === "Crossword" && question.crossword && (
+        <CrosswordGrid
+          crossword={question.crossword}
+          value={typeof value === "string" ? value : undefined}
+          onChange={(serialized) => onChange(serialized)}
+        />
       )}
 
       {question.type === "Coding" && (

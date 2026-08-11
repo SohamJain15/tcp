@@ -4,6 +4,7 @@ import type {
   ClassTestAudienceFilter,
   ClassTestCodingPayload,
   ClassTestRecordEnvelope,
+  CrosswordLayout,
   ClassTestSummary,
   CompleteProfilePayload,
   ContestAnswerPayload,
@@ -458,6 +459,17 @@ export const classTestApi = {
     }),
   create: (payload: Record<string, unknown>, pathname?: string) =>
     apiRequest<ClassTestRecordEnvelope>("/api/class-tests", { method: "POST", body: payload, pathname }),
+  generateCrosswordClues: (words: string[], topic?: string, pathname?: string) =>
+    apiRequest<{ clues: { word: string; clue: string }[]; available: boolean; reason: string | null }>(
+      "/api/class-tests/crossword/clues",
+      { method: "POST", body: { words, topic }, pathname },
+    ),
+  previewCrossword: (entries: { answer: string; clue: string }[], pathname?: string) =>
+    apiRequest<{ layout: CrosswordLayout }>("/api/class-tests/crossword/preview", {
+      method: "POST",
+      body: { entries },
+      pathname,
+    }),
   update: (classTestId: string, payload: Record<string, unknown>, pathname?: string) =>
     apiRequest<ClassTestRecordEnvelope>(`/api/class-tests/${encodeURIComponent(classTestId)}`, {
       method: "PATCH",

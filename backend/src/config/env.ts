@@ -96,6 +96,13 @@ const envSchema = z.object({
    * prompts are tuned around `AI_MODEL` and should not be repointed to chase hint quality.
    */
   AI_HINT_MODEL: z.string().min(1).default("llama3.1:latest"),
+  /**
+   * Model used to draft crossword clues at authoring time, kept separate from the others.
+   *
+   * Clue writing is short natural-language reasoning about a single word — the same larger model
+   * that serves hints handles it well, so it shares that default but can be repointed on its own.
+   */
+  AI_CROSSWORD_MODEL: z.string().min(1).default("llama3.1:latest"),
   AI_TIMEOUT_MS: z.coerce.number().int().positive().default(120000),
   // A GENERATING report older than this is treated as abandoned and can be reclaimed, so a crash
   // mid-generation cannot wedge a contest's report forever.

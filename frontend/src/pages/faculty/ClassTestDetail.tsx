@@ -213,14 +213,37 @@ export default function ClassTestDetail() {
                     </span>
                   </div>
 
-                  <div className="bg-muted/40 p-3 text-sm">
-                    <span className="text-xs uppercase tracking-wide text-muted-foreground">Answer</span>
-                    <div className="mt-1 whitespace-pre-wrap">
-                      {Array.isArray(answer.submittedAnswer)
-                        ? answer.submittedAnswer.join(", ")
-                        : answer.submittedAnswer || <em className="text-muted-foreground">Not answered</em>}
+                  {answer.crossword ? (
+                    <div className="bg-muted/40 p-3 text-sm">
+                      <span className="text-xs uppercase tracking-wide text-muted-foreground">Answer</span>
+                      <ul className="mt-1 space-y-1">
+                        {answer.crossword.map((slot) => {
+                          const correct = slot.filled === slot.answer;
+                          return (
+                            <li key={`${slot.number}-${slot.direction}`} className="flex flex-wrap gap-x-2">
+                              <span className="font-semibold tabular-nums">
+                                {slot.number} {slot.direction}
+                              </span>
+                              <span className="text-muted-foreground">{slot.clue}</span>
+                              <span className={correct ? "text-emerald-600" : "text-destructive"}>
+                                {slot.filled || "—"}
+                              </span>
+                              {!correct && <span className="text-muted-foreground">(answer: {slot.answer})</span>}
+                            </li>
+                          );
+                        })}
+                      </ul>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="bg-muted/40 p-3 text-sm">
+                      <span className="text-xs uppercase tracking-wide text-muted-foreground">Answer</span>
+                      <div className="mt-1 whitespace-pre-wrap">
+                        {Array.isArray(answer.submittedAnswer)
+                          ? answer.submittedAnswer.join(", ")
+                          : answer.submittedAnswer || <em className="text-muted-foreground">Not answered</em>}
+                      </div>
+                    </div>
+                  )}
 
                   {answer.modelAnswer && (
                     <div className="border-l-2 border-accent bg-accent/5 p-3 text-sm">

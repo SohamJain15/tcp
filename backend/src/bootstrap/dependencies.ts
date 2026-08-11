@@ -40,6 +40,10 @@ import {
   type HintRevealRepository,
 } from "../modules/problem/hint-reveal.repository";
 import { NoopHintGenerator, OllamaHintGenerator } from "../modules/problem/ai/hint-generator";
+import {
+  NoopCrosswordClueGenerator,
+  OllamaCrosswordClueGenerator,
+} from "../modules/classtest/ai/crossword-clue-generator";
 import { createProblemService, type ProblemService } from "../modules/problem/problem.service";
 import {
   FirestoreSubmissionRepository,
@@ -230,6 +234,9 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     submissionRepository: repositories.submissionRepository,
     executionProvider,
     submissionQueue,
+    crosswordClueGenerator: env.AI_ENABLED
+      ? new OllamaCrosswordClueGenerator()
+      : new NoopCrosswordClueGenerator(),
     now,
   });
 

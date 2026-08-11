@@ -9,6 +9,8 @@ import {
   classTestProctorEventSchema,
   classTestResultsSchema,
   createClassTestSchema,
+  crosswordCluesSchema,
+  crosswordPreviewSchema,
   gradeShortAnswerSchema,
   updateClassTestSchema,
   classTestFeedbackSchema,
@@ -66,6 +68,18 @@ export function createClassTestController(classTestService: ClassTestService) {
       const payload = updateClassTestSchema.parse(req.body);
       const test = await classTestService.updateClassTest(req.user!, classTestId, payload);
       res.json({ classTest: test });
+    },
+
+    async generateCrosswordClues(req: Request, res: Response): Promise<void> {
+      const payload = crosswordCluesSchema.parse(req.body);
+      const result = await classTestService.generateCrosswordClues(req.user!, payload.words, payload.topic);
+      res.json(result);
+    },
+
+    async previewCrossword(req: Request, res: Response): Promise<void> {
+      const payload = crosswordPreviewSchema.parse(req.body);
+      const layout = await classTestService.previewCrossword(req.user!, payload.entries);
+      res.json({ layout });
     },
 
     // --- student ------------------------------------------------------------

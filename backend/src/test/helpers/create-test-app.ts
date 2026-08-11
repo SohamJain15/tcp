@@ -4,6 +4,7 @@ import { env } from "../../config/env";
 import { createRequireCompleteProfile } from "../../middleware/require-complete-profile";
 import { createRequireHod } from "../../middleware/require-hod";
 import { createClassTestService } from "../../modules/classtest/classtest.service";
+import { NoopCrosswordClueGenerator } from "../../modules/classtest/ai/crossword-clue-generator";
 import { createDepartmentService } from "../../modules/department/department.service";
 import { createReportService } from "../../modules/report/report.service";
 import {
@@ -335,6 +336,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       submissionRepository,
       executionProvider: new StubExecutionProvider(),
       submissionQueue,
+      crosswordClueGenerator: new NoopCrosswordClueGenerator(),
       now,
     }),
     reportService: createReportService({
