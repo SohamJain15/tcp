@@ -1351,6 +1351,8 @@ function CrosswordAuthoring({
   onChange: (entries: CrosswordEntryDraft[]) => void;
 }) {
   const [preview, setPreview] = useState<StudentCrossword | null>(null);
+  // Authoring-only: gives the model context so clues fit the subject. Not stored on the question.
+  const [topic, setTopic] = useState("");
 
   const filledEntries = entries.filter((entry) => entry.answer.trim() !== "");
 
@@ -1358,7 +1360,7 @@ function CrosswordAuthoring({
     mutationFn: () =>
       classTestApi.generateCrosswordClues(
         filledEntries.map((entry) => entry.answer.trim()),
-        undefined,
+        topic.trim() || undefined,
         PATHNAME,
       ),
     onSuccess: (result) => {
@@ -1436,7 +1438,7 @@ function CrosswordAuthoring({
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
           size="sm"
@@ -1445,6 +1447,12 @@ function CrosswordAuthoring({
         >
           + Word
         </Button>
+        <Input
+          className="w-44"
+          placeholder="Topic (optional)"
+          value={topic}
+          onChange={(event) => setTopic(event.target.value)}
+        />
         <Button
           type="button"
           size="sm"
