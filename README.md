@@ -204,7 +204,7 @@ Set `EXECUTION_PROVIDER=judge0` and `JUDGE0_BASE_URL=http://127.0.0.1:2358` once
 | Submission throughput | `SUBMISSION_WORKER_CONCURRENCY`, `SUBMISSION_CHUNK_SIZE`, `SUBMISSION_BATCH_SIZE`, `SUBMISSION_BATCH_TEST_CASES`, `SUBMISSION_RECOVERY_STALE_MS` |
 | Attempt lifecycle | `ATTEMPT_FINALIZER_INTERVAL_MS`, `EMBED_SUBMISSION_WORKER` |
 | Platform scoring | `DEFAULT_PROBLEM_TIME_LIMIT_SECONDS`, `DEFAULT_PROBLEM_MEMORY_LIMIT_MB`, `RATING_POINTS_EASY`, `RATING_POINTS_MEDIUM`, `RATING_POINTS_HARD` |
-| Local AI reports | `AI_ENABLED`, `AI_BASE_URL`, `AI_MODEL`, `AI_TIMEOUT_MS`, `AI_STALE_LOCK_MS` |
+| Local AI (reports, hints, crossword clues) | `AI_ENABLED`, `AI_BASE_URL`, `AI_MODEL`, `AI_HINT_MODEL`, `AI_CROSSWORD_MODEL`, `AI_TIMEOUT_MS`, `AI_STALE_LOCK_MS` |
 
 Production deployments must keep the backend private behind the trusted authentication path. Do not make the API directly reachable from the public internet.
 
