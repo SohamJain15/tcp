@@ -459,10 +459,10 @@ export const classTestApi = {
     }),
   create: (payload: Record<string, unknown>, pathname?: string) =>
     apiRequest<ClassTestRecordEnvelope>("/api/class-tests", { method: "POST", body: payload, pathname }),
-  generateCrosswordClues: (words: string[], topic?: string, pathname?: string) =>
+  generateCrosswordClues: (words: string[], topic?: string, description?: string, pathname?: string) =>
     apiRequest<{ clues: { word: string; clue: string }[]; available: boolean; reason: string | null }>(
       "/api/class-tests/crossword/clues",
-      { method: "POST", body: { words, topic }, pathname },
+      { method: "POST", body: { words, topic, description }, pathname },
     ),
   previewCrossword: (entries: { answer: string; clue: string }[], pathname?: string) =>
     apiRequest<{ layout: CrosswordLayout }>("/api/class-tests/crossword/preview", {

@@ -5,11 +5,12 @@ export const CROSSWORD_CLUE_PROMPT_VERSION = "1.0.0";
 export const MAX_CLUE_CHARS = 120;
 
 export const CROSSWORD_CLUE_SYSTEM_PROMPT = [
-  "You write crossword clues, in the concise style of a newspaper crossword (Times of India).",
+  "You write accurate, concise crossword clues for computer-science and technology vocabulary.",
+  "Use the supplied question description and topic as context. Infer the intended technical meaning of each word from that context and the complete word list.",
   "",
   "For every word you are given, write exactly one clue:",
-  "  - A short definition or cryptic-lite hint that leads to the word.",
-  "  - Never include the word itself, any part of it, or its length.",
+  "  - A short, unambiguous technical definition or hint that leads to the word.",
+  "  - Never include the answer word itself, its spelling, or its length.",
   "  - One line, plain language, no surrounding quotes.",
   "  - Do not mention these rules or that you are an AI.",
   "",
@@ -19,10 +20,10 @@ export const CROSSWORD_CLUE_SYSTEM_PROMPT = [
 
 export function buildCrosswordCluePrompt(
   words: readonly string[],
-  topic?: string,
+  context?: string,
 ): { system: string; user: string } {
   const user = [
-    topic ? `Topic: ${topic}` : null,
+    context ? `Question context: ${context}` : "Question context: Computer science and technology.",
     "Words:",
     ...words.map((word, index) => `${index + 1}. ${word}`),
   ]

@@ -94,6 +94,7 @@ export const crosswordCluesSchema = z.object({
     .min(1, "Add at least one word")
     .max(30),
   topic: z.string().trim().max(100).optional(),
+  description: z.string().trim().max(1000).optional(),
 });
 
 /** Entries to lay out for a faculty preview grid. */

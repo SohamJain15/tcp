@@ -1116,6 +1116,7 @@ export default function CreateClassTest() {
               {question.type === "Crossword" && (
                 <CrosswordAuthoring
                   entries={question.entries}
+                  questionDescription={question.statement}
                   onChange={(entries) => updateQuestion(question.key, { entries })}
                 />
               )}
@@ -1345,9 +1346,11 @@ export default function CreateClassTest() {
  */
 function CrosswordAuthoring({
   entries,
+  questionDescription,
   onChange,
 }: {
   entries: CrosswordEntryDraft[];
+  questionDescription: string;
   onChange: (entries: CrosswordEntryDraft[]) => void;
 }) {
   const [preview, setPreview] = useState<StudentCrossword | null>(null);
@@ -1361,6 +1364,7 @@ function CrosswordAuthoring({
       classTestApi.generateCrosswordClues(
         filledEntries.map((entry) => entry.answer.trim()),
         topic.trim() || undefined,
+        questionDescription.trim() || undefined,
         PATHNAME,
       ),
     onSuccess: (result) => {

@@ -72,7 +72,8 @@ export function createClassTestController(classTestService: ClassTestService) {
 
     async generateCrosswordClues(req: Request, res: Response): Promise<void> {
       const payload = crosswordCluesSchema.parse(req.body);
-      const result = await classTestService.generateCrosswordClues(req.user!, payload.words, payload.topic);
+      const context = [payload.description, payload.topic].filter(Boolean).join("\n");
+      const result = await classTestService.generateCrosswordClues(req.user!, payload.words, context || undefined);
       res.json(result);
     },
 
