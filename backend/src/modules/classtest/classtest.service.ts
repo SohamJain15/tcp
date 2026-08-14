@@ -81,6 +81,9 @@ export interface ClassTestSummary {
   attemptedCount?: number;
 }
 
+/** Full faculty record enriched with server-authoritative time-derived fields. */
+export type FacultyClassTestDetail = Omit<ClassTestRecord, keyof ClassTestSummary> & ClassTestSummary;
+
 export interface AudiencePreviewItem extends AssignedStudent {
   semester: number | null;
 }
@@ -132,7 +135,7 @@ export interface StudentClassTestResult {
 
 export interface ClassTestService {
   listForFaculty(user: AuthenticatedUser): Promise<ClassTestSummary[]>;
-  getForFaculty(user: AuthenticatedUser, classTestId: string): Promise<ClassTestRecord>;
+  getForFaculty(user: AuthenticatedUser, classTestId: string): Promise<FacultyClassTestDetail>;
   previewAudience(user: AuthenticatedUser, filter: AudiencePreviewInput): Promise<AudiencePreviewItem[]>;
   createClassTest(user: AuthenticatedUser, input: CreateClassTestInput): Promise<ClassTestRecord>;
   updateClassTest(
@@ -395,7 +398,11 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
     },
 
     async getForFaculty(user, classTestId) {
-      return ensureFacultyCanManage(user, await dependencies.classTestRepository.getById(classTestId));
+      const test = ensureFacultyCanManage(user, await dependencies.classTestRepository.getById(classTestId));
+      const attempts = await dependencies.classTestAttemptRepository.listByTest(classTestId);
+      // The detail screen uses computedStatus to decide whether to show Edit, marks, and Publish.
+      // Returning only the stored record made that property undefined and permanently hid Publish.
+      return { ...test, ...toSummary(test, dependencies.now(), attempts.length) };
     },
 
     async previewAudience(_user, filter) {
