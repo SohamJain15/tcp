@@ -330,7 +330,7 @@ export interface ProblemHintsResponse {
   hints: StudentHint[];
 }
 
-export type SubmissionSourceType = "problem" | "contest_coding";
+export type SubmissionSourceType = "problem" | "contest_coding" | "classtest_coding";
 
 export interface Submission {
   id: string;

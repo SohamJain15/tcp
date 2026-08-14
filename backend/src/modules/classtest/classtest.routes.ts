@@ -89,6 +89,13 @@ export function createClassTestRouter(dependencies: ApplicationDependencies): Ro
     requireRole("FACULTY"),
     asyncHandler(controller.gradeShortAnswer),
   );
+  // Explicit action endpoint for faculty consoles. Keep PATCH /results below for clients that
+  // still use the original state-update contract.
+  router.post(
+    "/:classTestId/results/publish",
+    requireRole("FACULTY"),
+    asyncHandler(controller.publishResults),
+  );
   router.patch("/:classTestId/results", requireRole("FACULTY"), asyncHandler(controller.publishResults));
 
   return router;

@@ -57,6 +57,7 @@ export default function ClassTestAttempt() {
   const queryClient = useQueryClient();
   const [confirmed, setConfirmed] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
+  const isHandheld = useIsHandheld();
 
   const testQuery = useQuery({
     queryKey: ["my-class-test", id],
@@ -83,9 +84,6 @@ export default function ClassTestAttempt() {
       setConfirmed(true);
       // Fullscreen only where it is enforced — on a phone iOS has none, so skip it rather than
       // throw. Must ride the same user gesture as the click; browsers refuse it otherwise.
-      if (!isHandheld) {
-        void document.documentElement.requestFullscreen?.().catch(() => undefined);
-      }
       setAnswers(
         Object.fromEntries(
           data.classTest.answers
@@ -95,7 +93,10 @@ export default function ClassTestAttempt() {
       );
       queryClient.setQueryData(["my-class-test", id], data);
     },
-    onError: (error: Error) => toast.error(error.message || "Could not start the test"),
+    onError: async (error: Error) => {
+      await leaveFullscreen();
+      toast.error(error.message || "Could not start the test");
+    },
   });
 
   const saveMutation = useMutation({
@@ -115,7 +116,6 @@ export default function ClassTestAttempt() {
 
   const test = testQuery.data?.classTest;
   const active = test?.attemptStatus === "ACTIVE" && confirmed;
-  const isHandheld = useIsHandheld();
   const watermarkPrimary = test?.identity.uid ?? test?.identity.rollNumber ?? "";
 
   // The same proctoring contests use: fullscreen enforcement, lock overlay, screen guard,
@@ -157,6 +157,17 @@ export default function ClassTestAttempt() {
   const setAnswer = (questionId: string, answer: string | string[]) => {
     setAnswers((current) => ({ ...current, [questionId]: answer }));
     saveMutation.mutate({ questionId, answer });
+  };
+
+  const handleStart = () => {
+    // The Fullscreen API only accepts a request made during this tap; an async mutation success
+    // callback is too late on Chromium-based mobile browsers.
+    if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+      void document.documentElement.requestFullscreen().catch(() => {
+        if (!isHandheld) toast.warning("Fullscreen was not granted. Tap the paper to try again before continuing.");
+      });
+    }
+    startMutation.mutate();
   };
 
   if (testQuery.isLoading || !test) {
@@ -273,9 +284,19 @@ export default function ClassTestAttempt() {
               Leaving this tab may end your test and flag it.
             </p>
 
+            <div className="space-y-1 border border-warning/40 bg-warning/10 p-3 text-xs text-foreground">
+              <p className="font-semibold">Proctoring notice</p>
+              <p>Leaving this tab or switching apps is recorded and can submit your test automatically.</p>
+              {isHandheld && (
+                <p className="text-muted-foreground">
+                  Mobile-safe mode is active. Fullscreen is requested on Start where your browser supports it; keep this page open.
+                </p>
+              )}
+            </div>
+
             <Button
               className="w-full bg-accent text-accent-foreground hover:bg-accent/90"
-              onClick={() => startMutation.mutate()}
+              onClick={handleStart}
               disabled={startMutation.isPending || test.computedStatus !== "Live"}
             >
               {test.computedStatus !== "Live"
@@ -321,10 +342,15 @@ export default function ClassTestAttempt() {
             />
           </div>
         </div>
+        {isHandheld && (
+          <div className="border-t border-warning/30 bg-warning/10 px-4 py-2 text-xs text-foreground">
+            Mobile-safe proctoring: switching apps or tabs is a violation. Keep this page open until submission.
+          </div>
+        )}
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto">
-        <div className="container max-w-3xl space-y-5 py-6">
+        <div className="container max-w-3xl space-y-5 px-3 py-4 sm:px-6 sm:py-6">
           {test.questions.map((question, index) => (
             <QuestionCard
               key={question.id}

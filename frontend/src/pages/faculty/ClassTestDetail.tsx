@@ -60,10 +60,11 @@ export default function ClassTestDetail() {
   });
 
   const publishMutation = useMutation({
-    mutationFn: () => classTestApi.publishResults(id, true, pathname),
+    mutationFn: () => classTestApi.publish(id, pathname),
     onSuccess: () => {
       toast.success("Results published — students can now see their marks");
       void queryClient.invalidateQueries({ queryKey: ["class-test", id] });
+      void queryClient.invalidateQueries({ queryKey: ["class-test-attempts", id] });
     },
     onError: (error: Error) => toast.error(error.message || "Could not publish results"),
   });
@@ -84,7 +85,7 @@ export default function ClassTestDetail() {
 
   return (
     <AppLayout>
-      <div className="container space-y-6 py-8">
+      <div className="container space-y-6 px-3 py-5 sm:px-6 sm:py-8">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="text-sm font-semibold uppercase tracking-widest text-accent">{test.subject}</p>
@@ -308,7 +309,7 @@ function GradeRow({
         <Label className="text-xs">Note for the student (optional)</Label>
         <Textarea rows={1} value={note} onChange={(e) => setNote(e.target.value)} />
       </div>
-      <Button onClick={() => onSave(points, note || null)} disabled={saving || points > max}>
+      <Button onClick={() => onSave(points, note || null)} disabled={saving || !Number.isInteger(points) || points < 0 || points > max}>
         Save
       </Button>
     </div>

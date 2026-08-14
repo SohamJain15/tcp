@@ -967,6 +967,13 @@ describe("Class Test — scoring and visibility", () => {
       .set(facultyHeaders)
       .send({ resultsPublished: true });
     expect(published.status).toBe(200);
+
+    // The action endpoint is the faculty UI's primary contract; PATCH above remains compatible.
+    const publishedAgain = await request(app)
+      .post(`/api/class-tests/${test.id}/results/publish`)
+      .set(facultyHeaders);
+    expect(publishedAgain.status).toBe(200);
+    expect(publishedAgain.body.classTest.resultsPublished).toBe(true);
   });
 
   it("refuses to award more than a question is worth", async () => {

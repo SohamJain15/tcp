@@ -34,7 +34,7 @@ export default function FacultyClassTests() {
 
   return (
     <AppLayout>
-      <div className="container space-y-6 py-8">
+      <div className="container space-y-6 px-3 py-5 sm:px-6 sm:py-8">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="text-sm font-semibold uppercase tracking-widest text-accent">Class Test</p>

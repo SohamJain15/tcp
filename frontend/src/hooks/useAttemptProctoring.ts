@@ -144,6 +144,7 @@ export function useAttemptProctoring({
       cooldownsRef.current[bucket] = now;
       return false;
     };
+    let wasHidden = false;
 
     const logEvent = async (
       payload: ContestProctoringPayload,
@@ -192,6 +193,7 @@ export function useAttemptProctoring({
 
     const onVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
+        wasHidden = true;
         setIsObscured(true);
         void logEvent(
           { type: "VISIBILITY_LOSS", details: "Document hidden" },
@@ -203,6 +205,10 @@ export function useAttemptProctoring({
       }
 
       setIsObscured(false);
+      if (wasHidden) {
+        wasHidden = false;
+        toast.warning(`You returned to the ${surfaceLabel}. The app switch was recorded.`);
+      }
       if (!document.fullscreenElement) {
         setIsLocked(true);
       }

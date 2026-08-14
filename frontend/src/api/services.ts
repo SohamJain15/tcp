@@ -502,6 +502,11 @@ export const classTestApi = {
       body: { resultsPublished },
       pathname,
     }),
+  publish: (classTestId: string, pathname?: string) =>
+    apiRequest<ClassTestRecordEnvelope>(`/api/class-tests/${encodeURIComponent(classTestId)}/results/publish`, {
+      method: "POST",
+      pathname,
+    }),
 
   // student
   listAssigned: (pathname?: string) =>

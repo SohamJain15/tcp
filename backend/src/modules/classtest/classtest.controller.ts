@@ -176,8 +176,11 @@ export function createClassTestController(classTestService: ClassTestService) {
 
     async publishResults(req: Request, res: Response): Promise<void> {
       const classTestId = routeIdSchema.parse(getRouteParam(req.params.classTestId));
-      const payload = classTestResultsSchema.parse(req.body);
-      const test = await classTestService.publishResults(req.user!, classTestId, payload.resultsPublished);
+      // POST is intentionally payload-free; PATCH retains the old publish/unpublish payload.
+      const resultsPublished = req.method === "POST"
+        ? true
+        : classTestResultsSchema.parse(req.body).resultsPublished;
+      const test = await classTestService.publishResults(req.user!, classTestId, resultsPublished);
       res.json({ classTest: test });
     },
   };

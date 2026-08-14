@@ -40,7 +40,7 @@ export const submissionRequestSchema = z.object({
 export const submissionQuerySchema = z.object({
   problemId: z.string().optional(),
   contestId: z.string().optional(),
-  sourceType: z.enum(["problem", "contest_coding"]).optional(),
+  sourceType: z.enum(["problem", "contest_coding", "classtest_coding"]).optional(),
   userEmail: z.string().email().optional(),
   studentDepartment: z
     .union([departmentSchema, z.string()])

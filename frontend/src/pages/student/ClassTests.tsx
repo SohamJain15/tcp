@@ -21,7 +21,7 @@ export default function StudentClassTests() {
 
   return (
     <AppLayout>
-      <div className="container space-y-6 py-8">
+      <div className="container space-y-6 px-3 py-5 sm:px-6 sm:py-8">
         <div>
           <p className="text-sm font-semibold uppercase tracking-widest text-accent">Class Test</p>
           <h1 className="mt-1 font-display text-3xl font-bold md:text-4xl">Your Class Tests</h1>

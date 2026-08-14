@@ -288,7 +288,7 @@ export const classTestCodingDraftSchema = z.object({
 
 export const gradeShortAnswerSchema = z.object({
   questionId: z.string().trim().min(1),
-  awardedPoints: z.coerce.number().min(0),
+  awardedPoints: z.coerce.number().int("Marks must be a whole number").min(0),
   graderNote: z.string().trim().max(1000).nullable().default(null),
 });
 
