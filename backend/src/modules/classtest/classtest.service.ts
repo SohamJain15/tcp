@@ -268,6 +268,15 @@ export interface FacultyAttemptDetail extends FacultyAttemptSummary {
     }[];
     graderNote: string | null;
     requiresManualGrading: boolean;
+    /** Coding work is held in a submission, not in the generic answer field. */
+    coding?: {
+      submissionId: string | null;
+      code: string | null;
+      language: string | null;
+      status: string | null;
+      passedCount: number;
+      totalCount: number;
+    };
   }[];
 }
 
@@ -1347,17 +1356,20 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
     };
   }
 
-  function toFacultyAttemptDetail(
+  async function toFacultyAttemptDetail(
     test: ClassTestRecord,
     attempt: ClassTestAttemptRecord,
     scoresVisible: boolean,
-  ): FacultyAttemptDetail {
+  ): Promise<FacultyAttemptDetail> {
     const byId = new Map(test.questions.map((question) => [question.id, question]));
     return {
       ...toFacultyAttemptSummary(attempt, scoresVisible),
-      answers: attempt.questionStates.map((state) => {
+      answers: await Promise.all(attempt.questionStates.map(async (state) => {
         const question = byId.get(state.questionId);
         const isShortAnswer = question?.type === "ShortAnswer";
+        const submission = state.lastSubmissionId
+          ? await dependencies.submissionRepository.getById(state.lastSubmissionId)
+          : null;
         return {
           questionId: state.questionId,
           type: state.questionType,
@@ -1370,10 +1382,23 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
           ...(question?.type === "Crossword"
             ? { crossword: resolveCrosswordAnswer(question, state.crosswordLayout, state.submittedAnswer) }
             : {}),
+          ...(question?.type === "Coding"
+            ? {
+                coding: {
+                  submissionId: state.lastSubmissionId,
+                  // A saved draft is recoverable even if the student did not press Submit.
+                  code: submission?.code ?? state.draftCode,
+                  language: submission?.language ?? state.draftLanguage,
+                  status: submission?.status ?? state.finalSubmissionStatus,
+                  passedCount: submission?.passedCount ?? state.passedCount,
+                  totalCount: submission?.totalCount ?? state.totalCount,
+                },
+              }
+            : {}),
           graderNote: state.graderNote,
           requiresManualGrading: isShortAnswer,
         };
-      }),
+      })),
     };
   }
 }

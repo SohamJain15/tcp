@@ -1418,6 +1418,14 @@ export interface FacultyClassTestAttemptDetail extends FacultyClassTestAttempt {
     }[];
     graderNote: string | null;
     requiresManualGrading: boolean;
+    coding?: {
+      submissionId: string | null;
+      code: string | null;
+      language: string | null;
+      status: string | null;
+      passedCount: number;
+      totalCount: number;
+    };
   }[];
 }
 

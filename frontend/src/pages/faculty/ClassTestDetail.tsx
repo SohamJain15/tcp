@@ -253,6 +253,23 @@ export default function ClassTestDetail() {
                     </div>
                   )}
 
+                  {answer.coding && (
+                    <div className="space-y-2 bg-muted/40 p-3 text-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs uppercase tracking-wide text-muted-foreground">Submitted code</span>
+                        <span className="text-xs text-muted-foreground">
+                          {answer.coding.language ?? "Unknown language"} · {answer.coding.status ?? "Draft"}
+                          {answer.coding.totalCount > 0 && ` · ${answer.coding.passedCount}/${answer.coding.totalCount} cases`}
+                        </span>
+                      </div>
+                      {answer.coding.code ? (
+                        <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded border border-border p-3 font-mono-code text-xs text-foreground">{answer.coding.code}</pre>
+                      ) : (
+                        <p className="italic text-muted-foreground">No code was saved for this question.</p>
+                      )}
+                    </div>
+                  )}
+
                   {answer.requiresManualGrading &&
                     (ended ? (
                       <GradeRow
