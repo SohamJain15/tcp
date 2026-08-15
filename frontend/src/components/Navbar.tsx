@@ -232,18 +232,6 @@ export function Navbar() {
             {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
           </Button>
 
-          <a
-            href="https://www.tcetmumbai.in/"
-            aria-label="Visit the TCET website"
-            className="rounded-md transition-transform duration-150 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <img
-              src="/tcetlogo.png"
-              alt="Thakur College of Engineering and Technology"
-              className="h-9 w-9 rounded-md bg-white object-contain p-0.5 ring-2 ring-accent/50"
-            />
-          </a>
-
           {userQuery.data ? (
             <DropdownMenu modal={false} open={profileMenuOpen} onOpenChange={setProfileMenuOpen}>
               <DropdownMenuTrigger
@@ -297,6 +285,26 @@ export function Navbar() {
               </AvatarFallback>
             </Avatar>
           )}
+
+          <a
+            href="https://www.tcetmumbai.in/"
+            aria-label="Visit the TCET website"
+            className="absolute right-14 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center bg-transparent transition-transform duration-150 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            {theme === "light" ? (
+              <img
+                src="/tcetlogo-light.png"
+                alt="Thakur College of Engineering and Technology"
+                className="h-12 w-12 bg-transparent object-contain drop-shadow-[0_0_2px_rgba(0,0,0,0.35)]"
+              />
+            ) : (
+              <img
+                src="/tcetlogo-transparent.png"
+                alt="Thakur College of Engineering and Technology"
+                className="h-12 w-12 bg-transparent object-contain drop-shadow-[0_0_2px_rgba(255,255,255,0.65)]"
+              />
+            )}
+          </a>
         </div>
       </div>
     </header>

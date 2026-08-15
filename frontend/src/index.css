@@ -100,6 +100,30 @@
   }
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 280ms;
+    animation-timing-function: ease-in-out;
+  }
+
+  ::view-transition-old(root) {
+    animation-name: theme-fade-out;
+  }
+
+  ::view-transition-new(root) {
+    animation-name: theme-fade-in;
+  }
+
+  @keyframes theme-fade-out {
+    to { opacity: 0; }
+  }
+
+  @keyframes theme-fade-in {
+    from { opacity: 0; }
+  }
+}
+
 @layer base {
   * { @apply border-border; }
   /* `color-scheme: dark` on .dark already makes Chromium draw the picker glyph light-on-dark.
