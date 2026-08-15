@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { LogOut, Menu, Moon, Sun, User } from "lucide-react";
+import { ExternalLink, LogOut, Menu, Moon, Sun, User } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTheme } from "./ThemeProvider";
 import { Button } from "@/components/ui/button";
@@ -232,6 +232,18 @@ export function Navbar() {
             {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
           </Button>
 
+          <a
+            href="https://www.tcetmumbai.in/"
+            aria-label="Visit the TCET website"
+            className="rounded-md transition-transform duration-150 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <img
+              src="/tcetlogo.png"
+              alt="Thakur College of Engineering and Technology"
+              className="h-9 w-9 rounded-md bg-white object-contain p-0.5 ring-2 ring-accent/50"
+            />
+          </a>
+
           {userQuery.data ? (
             <DropdownMenu modal={false} open={profileMenuOpen} onOpenChange={setProfileMenuOpen}>
               <DropdownMenuTrigger
@@ -269,6 +281,12 @@ export function Navbar() {
                 >
                   <LogOut className="mr-2 h-4 w-4" />
                   Logout
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <a href="https://tcetcercd.in/" className="cursor-pointer rounded-none">
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    COE Portal
+                  </a>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
