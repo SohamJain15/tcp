@@ -144,9 +144,9 @@ export function Navbar() {
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border bg-gradient-hero text-primary-foreground">
-      <div className="container flex h-16 items-center gap-4">
-        <Link to="/" className="flex items-center gap-3 shrink-0">
-          <img src="/logo.png" alt="TCET Coding Platform logo" className="h-10 w-10 rounded-md bg-background object-cover ring-2 ring-accent/40" />
+      <div className="container flex h-16 min-w-0 items-center gap-2 sm:gap-4">
+        <Link to="/" className="flex min-w-0 shrink-0 items-center gap-3">
+          <img src="/logo.png" alt="TCET Coding Platform logo" className="h-9 w-9 rounded-md bg-background object-cover ring-2 ring-accent/40 sm:h-10 sm:w-10" />
           <div className="hidden md:flex flex-col leading-tight">
             <span className="font-display text-base font-bold tracking-tight">TCET Coding Platform</span>
             <span className="font-deva text-[11px] text-accent">॥ शास्त्रं कोडः तीर्थं चेतः ॥</span>
@@ -162,7 +162,7 @@ export function Navbar() {
                 variant="ghost"
                 size="icon"
                 aria-label="Open menu"
-                className="ml-1 text-primary-foreground hover:bg-white/10 lg:hidden"
+                className="ml-0 shrink-0 text-primary-foreground hover:bg-white/10 lg:hidden"
               >
                 <Menu className="h-5 w-5" />
               </Button>
@@ -221,7 +221,7 @@ export function Navbar() {
           ))}
         </nav>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
           <Button
             variant="ghost"
             size="icon"
@@ -289,19 +289,19 @@ export function Navbar() {
           <a
             href="https://www.tcetmumbai.in/"
             aria-label="Visit the TCET website"
-            className="absolute right-14 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center bg-transparent transition-transform duration-150 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="hidden h-10 w-10 items-center justify-center bg-transparent transition-transform duration-150 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:flex lg:h-12 lg:w-12"
           >
             {theme === "light" ? (
               <img
                 src="/tcetlogo-light.png"
                 alt="Thakur College of Engineering and Technology"
-                className="h-12 w-12 bg-transparent object-contain drop-shadow-[0_0_2px_rgba(0,0,0,0.35)]"
+                className="h-10 w-10 bg-transparent object-contain drop-shadow-[0_0_2px_rgba(0,0,0,0.35)] lg:h-12 lg:w-12"
               />
             ) : (
               <img
                 src="/tcetlogo-transparent.png"
                 alt="Thakur College of Engineering and Technology"
-                className="h-12 w-12 bg-transparent object-contain drop-shadow-[0_0_2px_rgba(255,255,255,0.65)]"
+                className="h-10 w-10 bg-transparent object-contain drop-shadow-[0_0_2px_rgba(255,255,255,0.65)] lg:h-12 lg:w-12"
               />
             )}
           </a>
