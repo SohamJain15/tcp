@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { copyTextToClipboard } from "@/lib/clipboard";
 
 const PATHNAME = "/faculty/labs/create";
 const CODING_LANGUAGES = ["c", "cpp", "java", "python", "javascript", "typescript", "go", "kotlin"];
@@ -73,6 +74,85 @@ function blankExperiment(kind: "sql" | "coding"): ExperimentDraft {
 
 const stripZero = (value: string) => Number(value.replace(/^0+(?=\d)/, ""));
 
+const LAB_EXPERIMENTS_EXAMPLE_JSON = `[
+  {
+    "kind": "sql",
+    "title": "List all students",
+    "aim": "Select every student ordered by id.",
+    "points": 10,
+    "schemaSql": "CREATE TABLE students (id INT, name VARCHAR(50));\\nINSERT INTO students VALUES (1,'Ada'),(2,'Alan');",
+    "solutionSql": "SELECT id, name FROM students ORDER BY id;",
+    "ordered": true
+  },
+  {
+    "kind": "coding",
+    "title": "Echo a number",
+    "aim": "Read an integer and print it.",
+    "points": 20,
+    "difficulty": "Easy",
+    "supportedLanguages": ["python", "cpp"],
+    "constraints": "",
+    "inputFormat": "",
+    "outputFormat": "",
+    "timeLimitSeconds": 2,
+    "memoryLimitMb": 256,
+    "sampleTestCases": [{ "input": "5", "output": "5" }],
+    "hiddenTestCases": [{ "input": "9", "output": "9" }]
+  }
+]`;
+
+/** Parses a JSON array of experiments into editable drafts. Lenient — fills sensible defaults. */
+function parseLabExperiments(source: string): { experiments?: ExperimentDraft[]; error?: string } {
+  let data: unknown;
+  try {
+    data = JSON.parse(source);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Invalid JSON" };
+  }
+  const items = Array.isArray(data) ? data : [data];
+  if (items.length === 0) {
+    return { error: "Provide at least one experiment" };
+  }
+  const experiments: ExperimentDraft[] = [];
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    if (!item || typeof item !== "object") {
+      return { error: `Experiment ${index + 1} is not an object` };
+    }
+    const record = item as Record<string, unknown>;
+    const kind = record.kind === "coding" ? "coding" : "sql";
+    const base = blankExperiment(kind);
+    const cases = (value: unknown): TestCaseDraft[] =>
+      Array.isArray(value)
+        ? value.map((entry) => {
+            const testCase = entry as Record<string, unknown>;
+            return { input: String(testCase.input ?? ""), output: String(testCase.output ?? "") };
+          })
+        : [emptyCase()];
+    experiments.push({
+      ...base,
+      title: String(record.title ?? ""),
+      aim: String(record.aim ?? ""),
+      points: Number(record.points ?? base.points),
+      schemaSql: String(record.schemaSql ?? base.schemaSql),
+      solutionSql: String(record.solutionSql ?? base.solutionSql),
+      ordered: record.ordered === true,
+      difficulty: (record.difficulty as ExperimentDraft["difficulty"]) ?? "Easy",
+      supportedLanguages: Array.isArray(record.supportedLanguages)
+        ? record.supportedLanguages.map(String)
+        : base.supportedLanguages,
+      constraints: String(record.constraints ?? ""),
+      inputFormat: String(record.inputFormat ?? ""),
+      outputFormat: String(record.outputFormat ?? ""),
+      timeLimitSeconds: Number(record.timeLimitSeconds ?? base.timeLimitSeconds),
+      memoryLimitMb: Number(record.memoryLimitMb ?? base.memoryLimitMb),
+      sampleTestCases: cases(record.sampleTestCases),
+      hiddenTestCases: cases(record.hiddenTestCases),
+    });
+  }
+  return { experiments };
+}
+
 export default function CreateLab() {
   const { id } = useParams();
   const isEdit = Boolean(id);
@@ -86,6 +166,20 @@ export default function CreateLab() {
   const [description, setDescription] = useState("");
   const [lifecycleState, setLifecycleState] = useState<"Draft" | "Published" | "Archived">("Draft");
   const [experiments, setExperiments] = useState<ExperimentDraft[]>([blankExperiment("sql")]);
+  const [showImport, setShowImport] = useState(false);
+  const [jsonSource, setJsonSource] = useState("");
+
+  const importFromJson = () => {
+    const { experiments: parsed, error } = parseLabExperiments(jsonSource);
+    if (error || !parsed) {
+      toast.error(error ?? "Could not parse the JSON");
+      return;
+    }
+    setExperiments(parsed);
+    setShowImport(false);
+    setJsonSource("");
+    toast.success(`${parsed.length} experiment${parsed.length === 1 ? "" : "s"} imported`);
+  };
 
   const existing = useQuery({
     queryKey: ["faculty-lab", id],
@@ -255,6 +349,48 @@ export default function CreateLab() {
             <Label className="text-xs">Description (optional)</Label>
             <Textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={2} />
           </div>
+        </Card>
+
+        <Card className="space-y-3 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold">Experiments</p>
+            <Button type="button" size="sm" variant="outline" onClick={() => setShowImport((open) => !open)}>
+              {showImport ? "Close import" : "Import from JSON"}
+            </Button>
+          </div>
+          {showImport && (
+            <div className="space-y-2">
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    void copyTextToClipboard(LAB_EXPERIMENTS_EXAMPLE_JSON);
+                    toast.success("Example structure copied");
+                  }}
+                >
+                  Copy JSON structure
+                </Button>
+              </div>
+              <Textarea
+                className="font-mono-code"
+                rows={8}
+                placeholder="Paste an array of experiments (sql and/or coding)…"
+                value={jsonSource}
+                onChange={(event) => setJsonSource(event.target.value)}
+              />
+              <div className="flex justify-end">
+                <Button type="button" size="sm" disabled={!jsonSource.trim()} onClick={importFromJson}>
+                  Import
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Importing replaces the current experiment list. Each item needs a <code>kind</code> of
+                <code> "sql"</code> or <code>"coding"</code>.
+              </p>
+            </div>
+          )}
         </Card>
 
         <div className="space-y-4">

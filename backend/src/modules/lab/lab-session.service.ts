@@ -417,6 +417,11 @@ export function createLabSessionService(dependencies: LabSessionServiceDependenc
 
     async publishResults(user, sessionId, published) {
       const existing = ensureFacultyCanManage(user, await dependencies.labSessionRepository.getById(sessionId));
+      // Results can only go out once the shared window has closed — otherwise a student still
+      // writing could see marks, and grading (which reads final submissions) has not run yet.
+      if (published && computeClassTestStatus(existing, dependencies.now()) !== "Ended") {
+        throw new AppError(409, "Results can be published only after the session window ends");
+      }
       const updated = { ...existing, resultsPublished: published, updatedAt: dependencies.now() };
       return dependencies.labSessionRepository.save(updated);
     },
