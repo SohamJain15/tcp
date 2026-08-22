@@ -3,8 +3,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
-import { labApi, labSessionApi } from "@/api/services";
-import { DEPARTMENTS, type Department } from "@/api/types";
+import { classTestApi, labApi, labSessionApi } from "@/api/services";
+import { DEPARTMENTS, type AudiencePreviewItem, type Department } from "@/api/types";
 import { AppLayout } from "@/components/AppLayout";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { Button } from "@/components/ui/button";
@@ -28,10 +28,30 @@ export default function CreateLabSession() {
   const [rollFrom, setRollFrom] = useState("");
   const [rollTo, setRollTo] = useState("");
   const [maxViolations, setMaxViolations] = useState(1);
+  const [roster, setRoster] = useState<AudiencePreviewItem[] | null>(null);
+  const [picked, setPicked] = useState<Record<string, boolean>>({});
 
   const labsQuery = useQuery({ queryKey: ["faculty-labs"], queryFn: () => labApi.list(PATHNAME) });
   const labs = labsQuery.data?.items ?? [];
   const lab = useMemo(() => labs.find((item) => item.id === labId), [labs, labId]);
+
+  const audienceFilter = () => ({
+    department: department as Department,
+    division: division === "ALL" ? null : division,
+    semester: semester === "ALL" ? null : Number(semester),
+    rollFrom: rollFrom.trim() === "" ? null : Number(rollFrom),
+    rollTo: rollTo.trim() === "" ? null : Number(rollTo),
+  });
+
+  const previewMutation = useMutation({
+    mutationFn: () => classTestApi.previewAudience(audienceFilter(), PATHNAME),
+    onSuccess: ({ students }) => {
+      setRoster(students);
+      // Default to everyone matched; the faculty then unticks anyone who should not sit it.
+      setPicked(Object.fromEntries(students.map((student) => [student.email, true])));
+    },
+    onError: (error: Error) => toast.error(error.message || "Could not load students"),
+  });
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -42,14 +62,11 @@ export default function CreateLabSession() {
           experimentIds,
           startAt: startAt ? new Date(startAt).toISOString() : "",
           durationMinutes: Number(durationMinutes),
-          audience: {
-            department,
-            division: division === "ALL" ? null : division,
-            semester: semester === "ALL" ? null : Number(semester),
-            rollFrom: rollFrom.trim() === "" ? null : Number(rollFrom),
-            rollTo: rollTo.trim() === "" ? null : Number(rollTo),
-          },
-          assignedEmails: [],
+          audience: audienceFilter(),
+          // A previewed + ticked subset assigns just those students; no preview = the whole class.
+          assignedEmails: roster
+            ? roster.filter((student) => picked[student.email]).map((student) => student.email)
+            : [],
           maxViolations: Number(maxViolations),
           lifecycleState: "Published",
         },
@@ -165,8 +182,44 @@ export default function CreateLabSession() {
               <Input value={rollTo} onChange={(event) => setRollTo(event.target.value)} placeholder="optional" />
             </div>
           </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!department || previewMutation.isPending}
+              onClick={() => previewMutation.mutate()}
+            >
+              {previewMutation.isPending ? "Loading…" : "Preview students"}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              {roster
+                ? `${roster.filter((s) => picked[s.email]).length} of ${roster.length} students will be assigned.`
+                : "Not previewed — everyone matching the filter is assigned."}
+            </p>
+          </div>
+
+          {roster && roster.length > 0 && (
+            <div className="max-h-64 space-y-1 overflow-y-auto rounded border border-border p-3">
+              {roster.map((student) => (
+                <label key={student.email} className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={picked[student.email] ?? false}
+                    onCheckedChange={(checked) =>
+                      setPicked((current) => ({ ...current, [student.email]: checked === true }))
+                    }
+                  />
+                  <span className="font-medium">{student.name ?? student.email}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {student.rollNumber ?? "—"} · {student.division ?? "—"}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+
           <p className="text-xs text-muted-foreground">
-            Everyone matching this filter is assigned. {chosenCount} experiment{chosenCount === 1 ? "" : "s"} selected.
+            {chosenCount} experiment{chosenCount === 1 ? "" : "s"} selected.
           </p>
         </Card>
 

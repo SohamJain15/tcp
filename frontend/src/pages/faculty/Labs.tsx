@@ -30,8 +30,8 @@ export default function FacultyLabs() {
 
         <Tabs defaultValue="regular">
           <TabsList className="rounded-none">
-            <TabsTrigger value="regular" className="rounded-none">Regular</TabsTrigger>
-            <TabsTrigger value="test" className="rounded-none">Test</TabsTrigger>
+            <TabsTrigger value="regular" className="rounded-none">Unproctored</TabsTrigger>
+            <TabsTrigger value="test" className="rounded-none">Proctored</TabsTrigger>
           </TabsList>
 
           <TabsContent value="regular" className="mt-4 space-y-4">

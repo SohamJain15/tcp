@@ -19,7 +19,11 @@ export default function StudentLabs() {
   });
 
   const labs = labsQuery.data?.items ?? [];
-  const sessions = sessionsQuery.data?.items ?? [];
+  // Only sessions the student can act on right now: a live window to sit, or a finished one whose
+  // results are published to review. Scheduled-but-not-started and closed-unpublished stay hidden.
+  const sessions = (sessionsQuery.data?.items ?? []).filter(
+    (session) => session.computedStatus === "Live" || session.resultsPublished,
+  );
 
   return (
     <AppLayout>
@@ -34,8 +38,8 @@ export default function StudentLabs() {
 
         <Tabs defaultValue="regular">
           <TabsList className="rounded-none">
-            <TabsTrigger value="regular" className="rounded-none">Regular</TabsTrigger>
-            <TabsTrigger value="test" className="rounded-none">Test</TabsTrigger>
+            <TabsTrigger value="regular" className="rounded-none">Unproctored</TabsTrigger>
+            <TabsTrigger value="test" className="rounded-none">Proctored</TabsTrigger>
           </TabsList>
 
           <TabsContent value="regular" className="mt-4">
@@ -70,7 +74,7 @@ export default function StudentLabs() {
             {sessionsQuery.isLoading ? (
               <Card className="p-6 text-center text-muted-foreground">Loading…</Card>
             ) : sessions.length === 0 ? (
-              <Card className="p-8 text-center text-muted-foreground">No lab tests assigned to you right now.</Card>
+              <Card className="p-8 text-center text-muted-foreground">No active lab tests right now.</Card>
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
                 {sessions.map((session) => {
