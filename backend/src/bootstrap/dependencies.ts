@@ -76,6 +76,13 @@ import {
   type LabRepository,
   type LabSqlSubmissionRepository,
 } from "../modules/lab/lab.repository";
+import { createLabSessionService, type LabSessionService } from "../modules/lab/lab-session.service";
+import {
+  MongoLabSessionAttemptRepository,
+  MongoLabSessionRepository,
+  type LabSessionAttemptRepository,
+  type LabSessionRepository,
+} from "../modules/lab/lab-session.repository";
 import type { SqlExecutor } from "../execution/sql/sql-executor";
 import { MysqlSandboxExecutor } from "../execution/sql/mysql-sandbox-executor";
 import { StubSqlExecutor } from "../execution/sql/stub-sql-executor";
@@ -98,6 +105,8 @@ export interface RepositoryBundle {
   contestReportRepository: ContestReportRepository;
   labRepository: LabRepository;
   labSqlSubmissionRepository: LabSqlSubmissionRepository;
+  labSessionRepository: LabSessionRepository;
+  labSessionAttemptRepository: LabSessionAttemptRepository;
 }
 
 export interface ServiceBundle {
@@ -109,6 +118,7 @@ export interface ServiceBundle {
   departmentService: DepartmentService;
   classTestService: ClassTestService;
   labService: LabService;
+  labSessionService: LabSessionService;
   reportService: ReportService;
 }
 
@@ -160,6 +170,9 @@ function createRepositories(overrides?: Partial<RepositoryBundle>): RepositoryBu
     labRepository: overrides?.labRepository ?? new MongoLabRepository(),
     labSqlSubmissionRepository:
       overrides?.labSqlSubmissionRepository ?? new MongoLabSqlSubmissionRepository(),
+    labSessionRepository: overrides?.labSessionRepository ?? new MongoLabSessionRepository(),
+    labSessionAttemptRepository:
+      overrides?.labSessionAttemptRepository ?? new MongoLabSessionAttemptRepository(),
   };
 }
 
@@ -210,6 +223,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     contestAttemptRepository: repositories.contestAttemptRepository,
     classTestRepository: repositories.classTestRepository,
     labRepository: repositories.labRepository,
+    labSessionRepository: repositories.labSessionRepository,
     submissionRepository: repositories.submissionRepository,
     userRepository: repositories.userRepository,
     leaderboardRepository: repositories.leaderboardRepository,
@@ -286,6 +300,18 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     now,
   });
 
+  const labSessionService = createLabSessionService({
+    labSessionRepository: repositories.labSessionRepository,
+    labSessionAttemptRepository: repositories.labSessionAttemptRepository,
+    labRepository: repositories.labRepository,
+    userRepository: repositories.userRepository,
+    submissionRepository: repositories.submissionRepository,
+    submissionQueue,
+    executionProvider,
+    sqlExecutor,
+    now,
+  });
+
   return {
     userRepository: repositories.userRepository,
     authMiddleware: overrides.authMiddleware ?? createAuthMiddleware(userService),
@@ -307,6 +333,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     departmentService,
     classTestService,
     labService,
+    labSessionService,
     reportService,
   };
 }

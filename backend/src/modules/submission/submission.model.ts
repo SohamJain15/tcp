@@ -100,6 +100,11 @@ export interface SubmissionRecord {
    */
   labId?: string | null;
   labExperimentId?: string | null;
+  /**
+   * Set for a `lab_coding` submission made inside a scheduled Lab Session — grading then uses the
+   * session's frozen experiment snapshot rather than the live lab.
+   */
+  labSessionId?: string | null;
   code: string;
   language: ExecutableLanguage;
   status: SubmissionStatus;

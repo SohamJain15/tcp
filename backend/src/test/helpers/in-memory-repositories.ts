@@ -12,6 +12,8 @@ import type {
 } from "../../modules/classtest/classtest.repository";
 import type { LabRecord, LabSqlSubmissionRecord } from "../../modules/lab/lab.model";
 import type { LabRepository, LabSqlSubmissionRepository } from "../../modules/lab/lab.repository";
+import type { LabSessionAttemptRecord, LabSessionRecord } from "../../modules/lab/lab-session.model";
+import type { LabSessionAttemptRepository, LabSessionRepository } from "../../modules/lab/lab-session.repository";
 import type { LeaderboardEntry } from "../../modules/leaderboard/leaderboard.model";
 import type { LeaderboardRepository } from "../../modules/leaderboard/leaderboard.repository";
 import type {
@@ -692,5 +694,60 @@ export class InMemoryLabSqlSubmissionRepository implements LabSqlSubmissionRepos
   async save(record: LabSqlSubmissionRecord): Promise<LabSqlSubmissionRecord> {
     this.submissions.set(this.key(record.labId, record.experimentId, record.userEmail), structuredClone(record));
     return structuredClone(record);
+  }
+}
+
+export class InMemoryLabSessionRepository implements LabSessionRepository {
+  private readonly sessions = new Map<string, LabSessionRecord>();
+
+  constructor(seed: LabSessionRecord[] = []) {
+    seed.forEach((session) => this.sessions.set(session.id, structuredClone(session)));
+  }
+
+  async getById(sessionId: string): Promise<LabSessionRecord | null> {
+    const session = this.sessions.get(sessionId);
+    return session ? structuredClone(session) : null;
+  }
+
+  async save(session: LabSessionRecord): Promise<LabSessionRecord> {
+    this.sessions.set(session.id, structuredClone(session));
+    return structuredClone(session);
+  }
+
+  async list(): Promise<LabSessionRecord[]> {
+    return Array.from(this.sessions.values()).map((session) => structuredClone(session));
+  }
+}
+
+export class InMemoryLabSessionAttemptRepository implements LabSessionAttemptRepository {
+  private readonly attempts = new Map<string, LabSessionAttemptRecord>();
+
+  async getById(attemptId: string): Promise<LabSessionAttemptRecord | null> {
+    const attempt = this.attempts.get(attemptId);
+    return attempt ? structuredClone(attempt) : null;
+  }
+
+  async getBySessionAndUser(sessionId: string, userEmail: string): Promise<LabSessionAttemptRecord | null> {
+    const attempt = Array.from(this.attempts.values()).find(
+      (item) => item.sessionId === sessionId && item.userEmail === userEmail,
+    );
+    return attempt ? structuredClone(attempt) : null;
+  }
+
+  async listBySession(sessionId: string): Promise<LabSessionAttemptRecord[]> {
+    return Array.from(this.attempts.values())
+      .filter((attempt) => attempt.sessionId === sessionId)
+      .map((attempt) => structuredClone(attempt));
+  }
+
+  async save(attempt: LabSessionAttemptRecord): Promise<LabSessionAttemptRecord> {
+    this.attempts.set(attempt.id, structuredClone(attempt));
+    return structuredClone(attempt);
+  }
+
+  async listActiveExpired(now: Date): Promise<LabSessionAttemptRecord[]> {
+    return Array.from(this.attempts.values())
+      .filter((attempt) => attempt.status === "ACTIVE" && attempt.deadlineAt.getTime() <= now.getTime())
+      .map((attempt) => structuredClone(attempt));
   }
 }

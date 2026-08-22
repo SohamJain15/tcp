@@ -29,6 +29,7 @@ import type { ClassTestCodingQuestion } from "../classtest/classtest.model";
 import type { ClassTestRepository } from "../classtest/classtest.repository";
 import type { LabCodingExperiment } from "../lab/lab.model";
 import type { LabRepository } from "../lab/lab.repository";
+import type { LabSessionRepository } from "../lab/lab-session.repository";
 import type { ProblemRecord } from "../problem/problem.model";
 import type { ProblemRepository } from "../problem/problem.repository";
 import type { UserRecord } from "../user/user.model";
@@ -65,6 +66,7 @@ interface SubmissionServiceDependencies {
   contestAttemptRepository: ContestAttemptRepository;
   classTestRepository: ClassTestRepository;
   labRepository: LabRepository;
+  labSessionRepository: LabSessionRepository;
   submissionRepository: SubmissionRepository;
   userRepository: UserRepository;
   leaderboardRepository: LeaderboardRepository;
@@ -717,14 +719,16 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
             });
           }
         } else if (runningSubmission.sourceType === "lab_coding") {
-          const lab = runningSubmission.labId
-            ? await dependencies.labRepository.getById(runningSubmission.labId)
-            : null;
-          if (!lab) {
+          // A session submission grades against the session's frozen snapshot; a self-paced one
+          // grades against the live lab.
+          const experiments = runningSubmission.labSessionId
+            ? (await dependencies.labSessionRepository.getById(runningSubmission.labSessionId))?.experiments
+            : (runningSubmission.labId ? await dependencies.labRepository.getById(runningSubmission.labId) : null)?.experiments;
+          if (!experiments) {
             throw new AppError(404, "Lab not found");
           }
 
-          const experiment = lab.experiments.find(
+          const experiment = experiments.find(
             (item): item is LabCodingExperiment =>
               item.id === runningSubmission.labExperimentId && item.kind === "coding",
           );
@@ -749,7 +753,7 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
               language: runningSubmission.language,
               testCases: [...experiment.sampleTestCases, ...experiment.hiddenTestCases],
               sampleCaseCount: experiment.sampleTestCases.length,
-              problemId: `${lab.id}:${experiment.id}`,
+              problemId: `${runningSubmission.labSessionId ?? runningSubmission.labId ?? "lab"}:${experiment.id}`,
               timeLimitSeconds: experiment.timeLimitSeconds,
               memoryLimitMb: experiment.memoryLimitMb,
             });

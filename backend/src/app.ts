@@ -13,6 +13,7 @@ import { createProblemRouter } from "./modules/problem/problem.routes";
 import { createSubmissionRouter } from "./modules/submission/submission.routes";
 import { createClassTestRouter } from "./modules/classtest/classtest.routes";
 import { createLabRouter } from "./modules/lab/lab.routes";
+import { createLabSessionRouter } from "./modules/lab/lab-session.routes";
 import { createContestRouter } from "./modules/contest/contest.routes";
 import { createAuthRouter, createLegacyUserRouter, createUserRouter } from "./modules/user/user.routes";
 import { errorHandler, notFoundHandler } from "./shared/middleware/error-handler";
@@ -241,6 +242,7 @@ export function createApp(dependencies: ApplicationDependencies): Express {
   app.use("/api/admin", createAdminRouter(dependencies));
   app.use("/api/class-tests", createClassTestRouter(dependencies));
   app.use("/api/labs", createLabRouter(dependencies));
+  app.use("/api/lab-sessions", createLabSessionRouter(dependencies));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

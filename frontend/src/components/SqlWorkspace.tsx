@@ -4,7 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { labApi } from "@/api/services";
-import type { SqlResultSet } from "@/api/types";
+import type { LabSqlRunResponse, LabSqlSubmitResponse, SqlResultSet } from "@/api/types";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -14,6 +14,13 @@ import { Button } from "@/components/ui/button";
  * against the reference result. Both are synchronous — the SQL sandbox is fast, so unlike the
  * Judge0 coding path there is nothing to poll.
  */
+export interface SqlWorkspaceRunner {
+  run: (sql: string) => Promise<LabSqlRunResponse>;
+  submit: (sql: string) => Promise<LabSqlSubmitResponse | { saved: boolean }>;
+  /** Overrides the Submit button label (e.g. "Save" inside a timed session). */
+  submitLabel?: string;
+}
+
 export interface SqlWorkspaceProps {
   labId: string;
   experimentId: string;
@@ -21,9 +28,11 @@ export interface SqlWorkspaceProps {
   pathname: string;
   initialSql?: string;
   onSolved?: () => void;
+  /** When set, run/submit go through these instead of the self-paced lab endpoints. */
+  runner?: SqlWorkspaceRunner;
 }
 
-export function SqlWorkspace({ labId, experimentId, schemaSql, pathname, initialSql, onSolved }: SqlWorkspaceProps) {
+export function SqlWorkspace({ labId, experimentId, schemaSql, pathname, initialSql, onSolved, runner }: SqlWorkspaceProps) {
   const [sql, setSql] = useState(initialSql ?? "SELECT * FROM ");
   const [grid, setGrid] = useState<SqlResultSet | null>(null);
   const [message, setMessage] = useState<{ tone: "ok" | "warn" | "err"; text: string } | null>(null);
@@ -31,7 +40,7 @@ export function SqlWorkspace({ labId, experimentId, schemaSql, pathname, initial
   const isDark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
 
   const runMutation = useMutation({
-    mutationFn: () => labApi.runSql(labId, experimentId, sql, pathname),
+    mutationFn: () => (runner ? runner.run(sql) : labApi.runSql(labId, experimentId, sql, pathname)),
     onSuccess: (result) => {
       if (result.ok && result.result) {
         setGrid(result.result);
@@ -45,14 +54,20 @@ export function SqlWorkspace({ labId, experimentId, schemaSql, pathname, initial
   });
 
   const submitMutation = useMutation({
-    mutationFn: () => labApi.submitSql(labId, experimentId, sql, pathname),
+    mutationFn: () => (runner ? runner.submit(sql) : labApi.submitSql(labId, experimentId, sql, pathname)),
     onSuccess: (result) => {
-      setGrid(result.result ?? null);
-      if (result.passed) {
-        setMessage({ tone: "ok", text: `Correct! Awarded ${result.awardedPoints}/${result.maxPoints} marks.` });
-        onSolved?.();
+      if ("passed" in result) {
+        setGrid(result.result ?? null);
+        if (result.passed) {
+          setMessage({ tone: "ok", text: `Correct! Awarded ${result.awardedPoints}/${result.maxPoints} marks.` });
+          onSolved?.();
+        } else {
+          setMessage({ tone: "warn", text: result.message ?? "Not quite — your result does not match." });
+        }
       } else {
-        setMessage({ tone: "warn", text: result.message ?? "Not quite — your result does not match." });
+        // Session "Save": stored, graded after the window closes — no verdict shown now.
+        setMessage({ tone: "ok", text: "Saved. Your query will be graded when the session ends." });
+        onSolved?.();
       }
     },
     onError: (error: Error) => toast.error(error.message || "Could not submit"),
@@ -93,7 +108,7 @@ export function SqlWorkspace({ labId, experimentId, schemaSql, pathname, initial
           {runMutation.isPending ? "Running…" : "Run"}
         </Button>
         <Button type="button" size="sm" disabled={busy} onClick={() => submitMutation.mutate()}>
-          {submitMutation.isPending ? "Submitting…" : "Submit"}
+          {submitMutation.isPending ? "Saving…" : runner?.submitLabel ?? "Submit"}
         </Button>
       </div>
 

@@ -6,6 +6,7 @@ import { createRequireHod } from "../../middleware/require-hod";
 import { createClassTestService } from "../../modules/classtest/classtest.service";
 import { NoopCrosswordClueGenerator } from "../../modules/classtest/ai/crossword-clue-generator";
 import { createLabService } from "../../modules/lab/lab.service";
+import { createLabSessionService } from "../../modules/lab/lab-session.service";
 import { StubSqlExecutor } from "../../execution/sql/stub-sql-executor";
 import { createDepartmentService } from "../../modules/department/department.service";
 import { createReportService } from "../../modules/report/report.service";
@@ -36,6 +37,8 @@ import {
   InMemoryHintRevealRepository,
   InMemoryLabRepository,
   InMemoryLabSqlSubmissionRepository,
+  InMemoryLabSessionRepository,
+  InMemoryLabSessionAttemptRepository,
   InMemoryLeaderboardRepository,
   InMemoryProblemRepository,
   InMemorySubmissionRepository,
@@ -249,6 +252,8 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
   const contestReportRepository = new InMemoryContestReportRepository();
   const labRepository = new InMemoryLabRepository();
   const labSqlSubmissionRepository = new InMemoryLabSqlSubmissionRepository();
+  const labSessionRepository = new InMemoryLabSessionRepository();
+  const labSessionAttemptRepository = new InMemoryLabSessionAttemptRepository();
   let tick = 0;
 
   const now = () => {
@@ -302,6 +307,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       contestAttemptRepository,
       classTestRepository,
       labRepository,
+      labSessionRepository,
       submissionRepository,
       userRepository,
       leaderboardRepository,
@@ -353,6 +359,17 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       submissionQueue,
       executionProvider: new StubExecutionProvider(),
       userRepository,
+      sqlExecutor: new StubSqlExecutor(),
+      now,
+    }),
+    labSessionService: createLabSessionService({
+      labSessionRepository,
+      labSessionAttemptRepository,
+      labRepository,
+      userRepository,
+      submissionRepository,
+      submissionQueue,
+      executionProvider: new StubExecutionProvider(),
       sqlExecutor: new StubSqlExecutor(),
       now,
     }),

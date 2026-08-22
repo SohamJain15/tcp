@@ -1746,3 +1746,68 @@ export interface LabSqlPreviewResponse {
   studentResult?: SqlResultSet;
   studentError?: string;
 }
+
+// --- Lab Sessions (assignable, scheduled) ------------------------------------
+
+export interface StudentLabSessionSummary {
+  id: string;
+  title: string;
+  subject: string;
+  kind: LabKind;
+  startAt: string;
+  endAt: string;
+  durationMinutes: number;
+  computedStatus: string;
+  experimentCount: number;
+  totalPoints: number;
+  attemptStatus: "NOT_STARTED" | "ACTIVE" | "SUBMITTED" | "AUTO_SUBMITTED";
+  resultsPublished: boolean;
+}
+
+export interface StudentLabSessionDetail extends StudentLabSessionSummary {
+  experiments: StudentLabExperiment[];
+  deadlineAt: string | null;
+  maxViolations: number;
+  violationCount: number;
+  answers: { experimentId: string; submittedSql: string | null; draftCode: string | null; draftLanguage: string | null }[];
+}
+
+export interface FacultyLabSession {
+  id: string;
+  labId: string;
+  title: string;
+  subject: string;
+  kind: LabKind;
+  experiments: FacultyLabExperiment[];
+  startAt: string;
+  durationMinutes: number;
+  audience: ClassTestAudienceFilter;
+  assignedStudents: AssignedStudent[];
+  maxViolations: number;
+  lifecycleState: "Draft" | "Published" | "Archived";
+  resultsPublished: boolean;
+}
+
+export interface FacultyLabSessionAttempt {
+  attemptId: string;
+  email: string;
+  name: string | null;
+  uid: string | null;
+  rollNumber: string | null;
+  division: string | null;
+  status: string;
+  violationCount: number;
+  suspectedMalpractice: boolean;
+  autoScore: number | null;
+  finalScore: number | null;
+  totalPoints: number;
+  timeTakenMs: number | null;
+}
+
+export interface LabSessionResult {
+  sessionId: string;
+  title: string;
+  finalScore: number;
+  totalPoints: number;
+  experiments: { experimentId: string; title: string; kind: string; maxPoints: number; awardedPoints: number }[];
+}

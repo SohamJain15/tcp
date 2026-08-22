@@ -46,15 +46,20 @@ const attemptFinalizerTimer =
           return;
         }
         finalizerRunning = true;
-        void dependencies.contestService
-          .finalizeExpiredAttempts()
-          .then((summary) => {
+        void Promise.allSettled([
+          dependencies.contestService.finalizeExpiredAttempts().then((summary) => {
             if (summary.finalizedCount > 0) {
               console.log(
-                `Finalised ${summary.finalizedCount} expired attempt(s): ${summary.finalizedAttemptIds.join(", ")}`,
+                `Finalised ${summary.finalizedCount} expired contest attempt(s): ${summary.finalizedAttemptIds.join(", ")}`,
               );
             }
-          })
+          }),
+          dependencies.labSessionService.finalizeExpiredAttempts().then((summary) => {
+            if (summary.finalizedCount > 0) {
+              console.log(`Finalised ${summary.finalizedCount} expired lab-session attempt(s).`);
+            }
+          }),
+        ])
           .catch((error) => {
             console.error("Attempt finaliser failed:", error instanceof Error ? error.message : error);
           })

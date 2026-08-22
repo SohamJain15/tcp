@@ -11,11 +11,16 @@ import type {
   FacultyClassTestAttempt,
   FacultyClassTestAttemptDetail,
   FacultyLab,
+  FacultyLabSession,
+  FacultyLabSessionAttempt,
+  LabSessionResult,
   LabSqlPreviewResponse,
   LabSqlRunResponse,
   LabSqlSubmitResponse,
   StudentClassTestDetail,
   StudentLabDetail,
+  StudentLabSessionDetail,
+  StudentLabSessionSummary,
   StudentLabSummary,
   StudentClassTestResult,
   StudentClassTestSummary,
@@ -644,4 +649,81 @@ export const labApi = {
       body: payload,
       pathname,
     }),
+};
+
+export const labSessionApi = {
+  // faculty
+  list: (pathname?: string) =>
+    apiRequest<{ items: FacultyLabSession[] }>("/api/lab-sessions", { pathname }),
+  get: (sessionId: string, pathname?: string) =>
+    apiRequest<{ session: FacultyLabSession }>(`/api/lab-sessions/${encodeURIComponent(sessionId)}`, { pathname }),
+  create: (payload: Record<string, unknown>, pathname?: string) =>
+    apiRequest<{ session: FacultyLabSession }>("/api/lab-sessions", { method: "POST", body: payload, pathname }),
+  update: (sessionId: string, payload: Record<string, unknown>, pathname?: string) =>
+    apiRequest<{ session: FacultyLabSession }>(`/api/lab-sessions/${encodeURIComponent(sessionId)}`, {
+      method: "PATCH",
+      body: payload,
+      pathname,
+    }),
+  listAttempts: (sessionId: string, pathname?: string) =>
+    apiRequest<{ items: FacultyLabSessionAttempt[] }>(`/api/lab-sessions/${encodeURIComponent(sessionId)}/attempts`, { pathname }),
+  publishResults: (sessionId: string, resultsPublished: boolean, pathname?: string) =>
+    apiRequest<{ session: FacultyLabSession }>(`/api/lab-sessions/${encodeURIComponent(sessionId)}/results`, {
+      method: "PATCH",
+      body: { resultsPublished },
+      pathname,
+    }),
+
+  // student
+  listMine: (pathname?: string) =>
+    apiRequest<{ items: StudentLabSessionSummary[] }>("/api/lab-sessions/mine", { pathname }),
+  getMine: (sessionId: string, pathname?: string) =>
+    apiRequest<{ session: StudentLabSessionDetail }>(`/api/lab-sessions/mine/${encodeURIComponent(sessionId)}`, { pathname }),
+  getResult: (sessionId: string, pathname?: string) =>
+    apiRequest<{ result: LabSessionResult }>(`/api/lab-sessions/mine/${encodeURIComponent(sessionId)}/result`, { pathname }),
+  startAttempt: (sessionId: string, pathname?: string) =>
+    apiRequest<{ session: StudentLabSessionDetail }>(`/api/lab-sessions/mine/${encodeURIComponent(sessionId)}/attempts`, {
+      method: "POST",
+      pathname,
+    }),
+  runSql: (sessionId: string, experimentId: string, sql: string, pathname?: string) =>
+    apiRequest<LabSqlRunResponse>(`/api/lab-sessions/mine/${encodeURIComponent(sessionId)}/sql-run`, {
+      method: "POST",
+      body: { experimentId, sql },
+      pathname,
+    }),
+  saveSql: (sessionId: string, experimentId: string, sql: string, pathname?: string) =>
+    apiRequest<{ saved: boolean }>(`/api/lab-sessions/mine/${encodeURIComponent(sessionId)}/sql-save`, {
+      method: "POST",
+      body: { experimentId, sql },
+      pathname,
+    }),
+  runCoding: (sessionId: string, payload: { experimentId: string; code: string; language: ExecutableLanguage }, pathname?: string) =>
+    apiRequest<{ result: SubmissionResult }>(`/api/lab-sessions/mine/${encodeURIComponent(sessionId)}/coding-run`, {
+      method: "POST",
+      body: payload,
+      pathname,
+    }),
+  submitCoding: (sessionId: string, payload: { experimentId: string; code: string; language: ExecutableLanguage }, pathname?: string) =>
+    apiRequest<{ submissionId: string; status: "queued" }>(`/api/lab-sessions/mine/${encodeURIComponent(sessionId)}/coding-submit`, {
+      method: "POST",
+      body: payload,
+      pathname,
+    }),
+  saveCodingDraft: (sessionId: string, payload: { experimentId: string; code: string; language: ExecutableLanguage }, pathname?: string) =>
+    apiRequest<{ saved: boolean }>(`/api/lab-sessions/mine/${encodeURIComponent(sessionId)}/coding-draft`, {
+      method: "POST",
+      body: payload,
+      pathname,
+    }),
+  submitAttempt: (sessionId: string, pathname?: string) =>
+    apiRequest<{ submitted: boolean }>(`/api/lab-sessions/mine/${encodeURIComponent(sessionId)}/submit`, {
+      method: "POST",
+      pathname,
+    }),
+  recordProctorEvent: (sessionId: string, type: string, pathname?: string) =>
+    apiRequest<{ autoSubmitted: boolean; violationCount: number }>(
+      `/api/lab-sessions/mine/${encodeURIComponent(sessionId)}/proctor-events`,
+      { method: "POST", body: { type }, pathname },
+    ),
 };
