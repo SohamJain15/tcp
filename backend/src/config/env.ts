@@ -84,6 +84,23 @@ const envSchema = z.object({
   RATING_POINTS_EASY: z.coerce.number().int().nonnegative().default(100),
   RATING_POINTS_MEDIUM: z.coerce.number().int().nonnegative().default(200),
   RATING_POINTS_HARD: z.coerce.number().int().nonnegative().default(300),
+  // DBMS Lab SQL sandbox. Off by default: with it disabled the rest of the platform runs with no
+  // MySQL dependency, and the lab module falls back to a stub executor. When enabled, the backend
+  // provisions a throwaway database per attempt on this MySQL, so the admin user must be able to
+  // CREATE/DROP DATABASE. The server must be reachable only from the backend.
+  SQL_SANDBOX_ENABLED: z.unknown().transform((value) => parseBoolean(value, false)),
+  MYSQL_HOST: z.string().min(1).default("127.0.0.1"),
+  MYSQL_PORT: z.coerce.number().int().positive().default(3306),
+  MYSQL_ADMIN_USER: z.string().optional().transform((value) => value?.trim() ?? "root"),
+  MYSQL_ADMIN_PASSWORD: z.string().optional().transform((value) => value?.trim() ?? ""),
+  // Per-statement ceiling for a student's query, and the row cap on a captured result set, so a
+  // runaway JOIN cannot pin the shared MySQL or return a million rows to the browser.
+  SQL_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+  SQL_MAX_ROWS: z.coerce.number().int().positive().default(500),
+  SQL_SANDBOX_POOL_SIZE: z.coerce.number().int().min(1).max(50).default(5),
+  // A throwaway `lab_%` database older than this is treated as orphaned (its request crashed
+  // mid-run) and dropped by the sweeper. 0 disables the sweeper.
+  SQL_SANDBOX_SWEEP_INTERVAL_MS: z.coerce.number().int().nonnegative().default(300000),
   // Local AI contest reports. Every default is safe with nothing installed: the adapter probes the
   // runtime, finds it absent, and falls back to template-generated narratives.
   AI_ENABLED: z.unknown().transform((value) => parseBoolean(value, true)),

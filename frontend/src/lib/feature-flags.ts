@@ -18,3 +18,12 @@
  * test coverage for them and disabling it server-side would only mean reverting more later.
  */
 export const CLASS_TESTS_ENABLED = true;
+
+/**
+ * Labs (DSA Lab, DBMS Lab) — live.
+ *
+ * Set back to `false` to hide the student and faculty lab pages and the navbar link behind a
+ * placeholder. The `/api/labs` routes stay mounted regardless; the DBMS SQL sandbox itself is a
+ * separate, backend-only switch (`SQL_SANDBOX_ENABLED`).
+ */
+export const LABS_ENABLED = true;

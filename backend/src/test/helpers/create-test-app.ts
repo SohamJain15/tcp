@@ -5,6 +5,8 @@ import { createRequireCompleteProfile } from "../../middleware/require-complete-
 import { createRequireHod } from "../../middleware/require-hod";
 import { createClassTestService } from "../../modules/classtest/classtest.service";
 import { NoopCrosswordClueGenerator } from "../../modules/classtest/ai/crossword-clue-generator";
+import { createLabService } from "../../modules/lab/lab.service";
+import { StubSqlExecutor } from "../../execution/sql/stub-sql-executor";
 import { createDepartmentService } from "../../modules/department/department.service";
 import { createReportService } from "../../modules/report/report.service";
 import {
@@ -32,6 +34,8 @@ import {
   InMemoryContestReportRepository,
   InMemoryContestRepository,
   InMemoryHintRevealRepository,
+  InMemoryLabRepository,
+  InMemoryLabSqlSubmissionRepository,
   InMemoryLeaderboardRepository,
   InMemoryProblemRepository,
   InMemorySubmissionRepository,
@@ -243,6 +247,8 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
   const classTestFeedbackRepository = new InMemoryClassTestFeedbackRepository();
   const classTestProctoringRepository = new InMemoryClassTestProctoringRepository();
   const contestReportRepository = new InMemoryContestReportRepository();
+  const labRepository = new InMemoryLabRepository();
+  const labSqlSubmissionRepository = new InMemoryLabSqlSubmissionRepository();
   let tick = 0;
 
   const now = () => {
@@ -337,6 +343,13 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       executionProvider: new StubExecutionProvider(),
       submissionQueue,
       crosswordClueGenerator: new NoopCrosswordClueGenerator(),
+      now,
+    }),
+    labService: createLabService({
+      labRepository,
+      labSqlSubmissionRepository,
+      userRepository,
+      sqlExecutor: new StubSqlExecutor(),
       now,
     }),
     reportService: createReportService({

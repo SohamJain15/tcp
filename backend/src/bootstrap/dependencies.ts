@@ -69,6 +69,16 @@ import {
   type AiReportGenerator,
 } from "../modules/report/ai/ollama-client";
 import { env } from "../config/env";
+import { createLabService, type LabService } from "../modules/lab/lab.service";
+import {
+  MongoLabRepository,
+  MongoLabSqlSubmissionRepository,
+  type LabRepository,
+  type LabSqlSubmissionRepository,
+} from "../modules/lab/lab.repository";
+import type { SqlExecutor } from "../execution/sql/sql-executor";
+import { MysqlSandboxExecutor } from "../execution/sql/mysql-sandbox-executor";
+import { StubSqlExecutor } from "../execution/sql/stub-sql-executor";
 
 export interface RepositoryBundle {
   userRepository: UserRepository;
@@ -86,6 +96,8 @@ export interface RepositoryBundle {
   classTestFeedbackRepository: ClassTestFeedbackRepository;
   classTestProctoringRepository: ClassTestProctoringRepository;
   contestReportRepository: ContestReportRepository;
+  labRepository: LabRepository;
+  labSqlSubmissionRepository: LabSqlSubmissionRepository;
 }
 
 export interface ServiceBundle {
@@ -96,6 +108,7 @@ export interface ServiceBundle {
   contestService: ContestService;
   departmentService: DepartmentService;
   classTestService: ClassTestService;
+  labService: LabService;
   reportService: ReportService;
 }
 
@@ -105,11 +118,14 @@ export interface ApplicationDependencies extends ServiceBundle {
   profileCompletionMiddleware: RequestHandler;
   hodMiddleware: RequestHandler;
   databaseHealthcheck?: () => Promise<void>;
+  /** Present only when the real MySQL sandbox is enabled — drops `lab_%` DBs a crash left behind. */
+  sqlSandboxSweep?: (staleMs: number) => Promise<void>;
 }
 
 export interface DependencyOverrides {
   authMiddleware?: RequestHandler;
   executionProvider?: ExecutionProvider;
+  sqlExecutor?: SqlExecutor;
   submissionQueue?: SubmissionQueue;
   repositories?: Partial<RepositoryBundle>;
   /** Tests inject a deterministic generator so both the AI and template paths are exercisable. */
@@ -141,6 +157,9 @@ function createRepositories(overrides?: Partial<RepositoryBundle>): RepositoryBu
     classTestProctoringRepository:
       overrides?.classTestProctoringRepository ?? new MongoClassTestProctoringRepository(),
     contestReportRepository: overrides?.contestReportRepository ?? new MongoContestReportRepository(),
+    labRepository: overrides?.labRepository ?? new MongoLabRepository(),
+    labSqlSubmissionRepository:
+      overrides?.labSqlSubmissionRepository ?? new MongoLabSqlSubmissionRepository(),
   };
 }
 
@@ -153,6 +172,21 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
   const now = overrides.now ?? (() => new Date());
   const submissionQueue = overrides.submissionQueue ?? new BullMQSubmissionQueue();
   const executionProvider = overrides.executionProvider ?? new Judge0ExecutionProvider();
+  // The DBMS Lab sandbox. Off by default → a database-free stub, so the platform runs with no MySQL
+  // and the whole test suite stays hermetic; enabled → the real per-attempt MySQL sandbox.
+  const sqlExecutor =
+    overrides.sqlExecutor ??
+    (env.SQL_SANDBOX_ENABLED
+      ? new MysqlSandboxExecutor({
+          host: env.MYSQL_HOST,
+          port: env.MYSQL_PORT,
+          adminUser: env.MYSQL_ADMIN_USER,
+          adminPassword: env.MYSQL_ADMIN_PASSWORD,
+          statementTimeoutMs: env.SQL_STATEMENT_TIMEOUT_MS,
+          maxRows: env.SQL_MAX_ROWS,
+          poolSize: env.SQL_SANDBOX_POOL_SIZE,
+        })
+      : new StubSqlExecutor());
 
   const userService = createUserService({
     userRepository: repositories.userRepository,
@@ -240,6 +274,14 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     now,
   });
 
+  const labService = createLabService({
+    labRepository: repositories.labRepository,
+    labSqlSubmissionRepository: repositories.labSqlSubmissionRepository,
+    userRepository: repositories.userRepository,
+    sqlExecutor,
+    now,
+  });
+
   return {
     userRepository: repositories.userRepository,
     authMiddleware: overrides.authMiddleware ?? createAuthMiddleware(userService),
@@ -249,6 +291,10 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
       const db = await getMongoDatabase();
       await db.command({ ping: 1 });
     },
+    sqlSandboxSweep:
+      sqlExecutor instanceof MysqlSandboxExecutor
+        ? (staleMs: number) => (sqlExecutor as MysqlSandboxExecutor).sweepOrphans(staleMs)
+        : undefined,
     userService,
     problemService,
     submissionService,
@@ -256,6 +302,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     contestService,
     departmentService,
     classTestService,
+    labService,
     reportService,
   };
 }

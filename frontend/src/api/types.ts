@@ -1653,3 +1653,96 @@ export interface ClassTestCodingPayload {
   code: string;
   language: ExecutableLanguage;
 }
+
+// --- Labs --------------------------------------------------------------------
+
+export type LabKind = "DSA" | "DBMS";
+export type LabExperimentKind = "coding" | "sql";
+
+/** A cell in a SQL result grid. */
+export type SqlCell = string | number | boolean | null;
+
+export interface SqlResultSet {
+  columns: string[];
+  rows: SqlCell[][];
+  truncated: boolean;
+}
+
+/** An experiment as a student sees it — never the SQL reference query or hidden coding tests. */
+export interface StudentLabExperiment {
+  id: string;
+  kind: LabExperimentKind;
+  number: number;
+  title: string;
+  aim: string;
+  points: number;
+  // sql
+  schemaSql?: string;
+  ordered?: boolean;
+  // coding
+  difficulty?: Difficulty;
+  constraints?: string;
+  inputFormat?: string;
+  outputFormat?: string;
+  sampleTestCases?: { input: string; output: string; explanation?: string }[];
+  supportedLanguages?: string[];
+  timeLimitSeconds?: number;
+  memoryLimitMb?: number;
+}
+
+export interface StudentLabSummary {
+  id: string;
+  title: string;
+  subject: string;
+  kind: LabKind;
+  experimentCount: number;
+  totalPoints: number;
+}
+
+export interface StudentLabDetail extends StudentLabSummary {
+  description: string | null;
+  experiments: StudentLabExperiment[];
+  progress: { experimentId: string; passed: boolean; awardedPoints: number; status: string }[];
+}
+
+/** Faculty-facing lab record (mirrors the backend LabRecord; experiments carry the reference query). */
+export interface FacultyLabExperiment extends StudentLabExperiment {
+  solutionSql?: string;
+  hiddenTestCases?: { input: string; output: string; explanation?: string }[];
+}
+
+export interface FacultyLab {
+  id: string;
+  title: string;
+  subject: string;
+  kind: LabKind;
+  department: Department | null;
+  semester: number | null;
+  description: string | null;
+  lifecycleState: "Draft" | "Published" | "Archived";
+  experiments: FacultyLabExperiment[];
+  createdBy: string;
+  managerEmails: string[];
+}
+
+export interface LabSqlRunResponse {
+  ok: boolean;
+  result?: SqlResultSet;
+  error?: string;
+  timedOut: boolean;
+}
+
+export interface LabSqlSubmitResponse {
+  status: string;
+  passed: boolean;
+  awardedPoints: number;
+  maxPoints: number;
+  result?: SqlResultSet;
+  message?: string;
+}
+
+export interface LabSqlPreviewResponse {
+  expected: SqlResultSet;
+  studentResult?: SqlResultSet;
+  studentError?: string;
+}

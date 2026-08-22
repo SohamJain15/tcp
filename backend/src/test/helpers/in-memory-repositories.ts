@@ -10,6 +10,8 @@ import type {
   ClassTestProctoringRepository,
   ClassTestRepository,
 } from "../../modules/classtest/classtest.repository";
+import type { LabRecord, LabSqlSubmissionRecord } from "../../modules/lab/lab.model";
+import type { LabRepository, LabSqlSubmissionRepository } from "../../modules/lab/lab.repository";
 import type { LeaderboardEntry } from "../../modules/leaderboard/leaderboard.model";
 import type { LeaderboardRepository } from "../../modules/leaderboard/leaderboard.repository";
 import type {
@@ -640,5 +642,55 @@ export class InMemoryContestReportRepository implements ContestReportRepository 
   async save(record: ContestReportRecord): Promise<ContestReportRecord> {
     this.reports.set(record.contestId, { ...record });
     return { ...record };
+  }
+}
+
+export class InMemoryLabRepository implements LabRepository {
+  private readonly labs = new Map<string, LabRecord>();
+
+  constructor(seed: LabRecord[] = []) {
+    seed.forEach((lab) => this.labs.set(lab.id, structuredClone(lab)));
+  }
+
+  async getById(labId: string): Promise<LabRecord | null> {
+    const lab = this.labs.get(labId);
+    return lab ? structuredClone(lab) : null;
+  }
+
+  async save(lab: LabRecord): Promise<LabRecord> {
+    this.labs.set(lab.id, structuredClone(lab));
+    return structuredClone(lab);
+  }
+
+  async list(): Promise<LabRecord[]> {
+    return Array.from(this.labs.values()).map((lab) => structuredClone(lab));
+  }
+}
+
+export class InMemoryLabSqlSubmissionRepository implements LabSqlSubmissionRepository {
+  private readonly submissions = new Map<string, LabSqlSubmissionRecord>();
+
+  private key(labId: string, experimentId: string, userEmail: string): string {
+    return `${labId}::${experimentId}::${userEmail}`;
+  }
+
+  async getByExperimentAndUser(
+    labId: string,
+    experimentId: string,
+    userEmail: string,
+  ): Promise<LabSqlSubmissionRecord | null> {
+    const record = this.submissions.get(this.key(labId, experimentId, userEmail));
+    return record ? structuredClone(record) : null;
+  }
+
+  async listByLabAndUser(labId: string, userEmail: string): Promise<LabSqlSubmissionRecord[]> {
+    return Array.from(this.submissions.values())
+      .filter((record) => record.labId === labId && record.userEmail === userEmail)
+      .map((record) => structuredClone(record));
+  }
+
+  async save(record: LabSqlSubmissionRecord): Promise<LabSqlSubmissionRecord> {
+    this.submissions.set(this.key(record.labId, record.experimentId, record.userEmail), structuredClone(record));
+    return structuredClone(record);
   }
 }

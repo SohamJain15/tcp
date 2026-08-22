@@ -10,7 +10,13 @@ import type {
   ContestAnswerPayload,
   FacultyClassTestAttempt,
   FacultyClassTestAttemptDetail,
+  FacultyLab,
+  LabSqlPreviewResponse,
+  LabSqlRunResponse,
+  LabSqlSubmitResponse,
   StudentClassTestDetail,
+  StudentLabDetail,
+  StudentLabSummary,
   StudentClassTestResult,
   StudentClassTestSummary,
   ContestAttemptEnvelope,
@@ -570,4 +576,42 @@ export const classTestApi = {
       `/api/class-tests/mine/${encodeURIComponent(classTestId)}/coding-draft`,
       { method: "POST", body: payload, pathname },
     ),
+};
+
+export const labApi = {
+  // faculty
+  list: (pathname?: string) =>
+    apiRequest<{ items: FacultyLab[] }>("/api/labs", { pathname }),
+  get: (labId: string, pathname?: string) =>
+    apiRequest<{ lab: FacultyLab }>(`/api/labs/${encodeURIComponent(labId)}`, { pathname }),
+  create: (payload: Record<string, unknown>, pathname?: string) =>
+    apiRequest<{ lab: FacultyLab }>("/api/labs", { method: "POST", body: payload, pathname }),
+  update: (labId: string, payload: Record<string, unknown>, pathname?: string) =>
+    apiRequest<{ lab: FacultyLab }>(`/api/labs/${encodeURIComponent(labId)}`, {
+      method: "PATCH",
+      body: payload,
+      pathname,
+    }),
+  previewSql: (
+    payload: { schemaSql: string; solutionSql: string; ordered: boolean; studentSql?: string },
+    pathname?: string,
+  ) => apiRequest<LabSqlPreviewResponse>("/api/labs/sql-preview", { method: "POST", body: payload, pathname }),
+
+  // student
+  listMine: (pathname?: string) =>
+    apiRequest<{ items: StudentLabSummary[] }>("/api/labs/mine", { pathname }),
+  getMine: (labId: string, pathname?: string) =>
+    apiRequest<{ lab: StudentLabDetail }>(`/api/labs/mine/${encodeURIComponent(labId)}`, { pathname }),
+  runSql: (labId: string, experimentId: string, sql: string, pathname?: string) =>
+    apiRequest<LabSqlRunResponse>(`/api/labs/mine/${encodeURIComponent(labId)}/sql-run`, {
+      method: "POST",
+      body: { experimentId, sql },
+      pathname,
+    }),
+  submitSql: (labId: string, experimentId: string, sql: string, pathname?: string) =>
+    apiRequest<LabSqlSubmitResponse>(`/api/labs/mine/${encodeURIComponent(labId)}/sql-submit`, {
+      method: "POST",
+      body: { experimentId, sql },
+      pathname,
+    }),
 };

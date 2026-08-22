@@ -69,6 +69,21 @@ if (attemptFinalizerTimer) {
   attemptFinalizerTimer.unref();
 }
 
+// Reap DBMS-Lab sandbox databases a crashed run left behind. Only wired when the real MySQL
+// sandbox is enabled; a database still in use is younger than one sweep interval, so this only
+// ever drops orphans.
+const sqlSweepIntervalMs = env.SQL_SANDBOX_SWEEP_INTERVAL_MS;
+const sqlSandboxSweep = dependencies.sqlSandboxSweep;
+const sqlSweepTimer =
+  sqlSandboxSweep && sqlSweepIntervalMs > 0
+    ? setInterval(() => {
+        void sqlSandboxSweep(sqlSweepIntervalMs).catch((error) => {
+          console.error("SQL sandbox sweep failed:", error instanceof Error ? error.message : error);
+        });
+      }, sqlSweepIntervalMs)
+    : null;
+sqlSweepTimer?.unref();
+
 if (embeddedWorker) {
   embeddedWorker.on("ready", () => {
     console.log("Embedded submission worker is ready.");

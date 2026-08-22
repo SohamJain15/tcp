@@ -6,7 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { RoleRoute } from "@/components/RoleRoute";
 import { FeatureComingSoon } from "@/components/FeatureComingSoon";
-import { CLASS_TESTS_ENABLED } from "@/lib/feature-flags";
+import { CLASS_TESTS_ENABLED, LABS_ENABLED } from "@/lib/feature-flags";
 import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
 import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
@@ -26,6 +26,10 @@ import ClassTestFeedback from "./pages/student/ClassTestFeedback.tsx";
 import FacultyClassTests from "./pages/faculty/ClassTests.tsx";
 import CreateClassTest from "./pages/faculty/CreateClassTest.tsx";
 import ClassTestDetail from "./pages/faculty/ClassTestDetail.tsx";
+import StudentLabs from "./pages/student/Labs.tsx";
+import LabDetail from "./pages/student/LabDetail.tsx";
+import FacultyLabs from "./pages/faculty/Labs.tsx";
+import CreateLab from "./pages/faculty/CreateLab.tsx";
 import AdminDashboard from "./pages/admin/Dashboard.tsx";
 import AdminDepartment from "./pages/admin/Department.tsx";
 import AdminStudentDetail from "./pages/admin/StudentDetail.tsx";
@@ -65,6 +69,17 @@ function classTestElement(page: JSX.Element): JSX.Element {
   );
 }
 
+function labElement(page: JSX.Element): JSX.Element {
+  return LABS_ENABLED ? (
+    page
+  ) : (
+    <FeatureComingSoon
+      title="Labs"
+      description="Labs are under development and will be rolled out soon. Problems, contests and class tests are unaffected."
+    />
+  );
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
@@ -86,6 +101,8 @@ const App = () => (
             <Route path="/student/class-tests" element={<RoleRoute allowedRole="STUDENT">{classTestElement(<StudentClassTests />)}</RoleRoute>} />
             <Route path="/student/class-tests/:id/feedback" element={<RoleRoute allowedRole="STUDENT">{classTestElement(<ClassTestFeedback />)}</RoleRoute>} />
             <Route path="/student/class-tests/:id" element={<RoleRoute allowedRole="STUDENT">{classTestElement(<ClassTestAttempt />)}</RoleRoute>} />
+            <Route path="/student/labs" element={<RoleRoute allowedRole="STUDENT">{labElement(<StudentLabs />)}</RoleRoute>} />
+            <Route path="/student/labs/:id" element={<RoleRoute allowedRole="STUDENT">{labElement(<LabDetail />)}</RoleRoute>} />
             <Route path="/complete-profile" element={<RoleRoute allowedRole={["STUDENT", "FACULTY"]}><CompleteProfile /></RoleRoute>} />
             <Route path="/faculty/dashboard" element={<RoleRoute allowedRole="FACULTY"><FacultyDashboard /></RoleRoute>} />
             <Route path="/faculty/department" element={<RoleRoute allowedRole="FACULTY"><FacultyDepartment /></RoleRoute>} />
@@ -94,6 +111,9 @@ const App = () => (
             <Route path="/faculty/class-tests/create" element={<RoleRoute allowedRole="FACULTY">{classTestElement(<CreateClassTest />)}</RoleRoute>} />
             <Route path="/faculty/class-tests/:id/edit" element={<RoleRoute allowedRole="FACULTY">{classTestElement(<CreateClassTest />)}</RoleRoute>} />
             <Route path="/faculty/class-tests/:id" element={<RoleRoute allowedRole="FACULTY">{classTestElement(<ClassTestDetail />)}</RoleRoute>} />
+            <Route path="/faculty/labs" element={<RoleRoute allowedRole="FACULTY">{labElement(<FacultyLabs />)}</RoleRoute>} />
+            <Route path="/faculty/labs/create" element={<RoleRoute allowedRole="FACULTY">{labElement(<CreateLab />)}</RoleRoute>} />
+            <Route path="/faculty/labs/:id/edit" element={<RoleRoute allowedRole="FACULTY">{labElement(<CreateLab />)}</RoleRoute>} />
             <Route path="/faculty/students/:email" element={<RoleRoute allowedRole="FACULTY"><StudentProfile /></RoleRoute>} />
             <Route path="/faculty/create-problem" element={<RoleRoute allowedRole="FACULTY"><CreateProblem /></RoleRoute>} />
             <Route path="/faculty/create-contest" element={<RoleRoute allowedRole="FACULTY"><CreateContest /></RoleRoute>} />
