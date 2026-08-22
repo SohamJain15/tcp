@@ -76,14 +76,12 @@ export default function CreateLabSession() {
             <Label className="text-xs">Lab</Label>
             <ThemedSelect
               value={labId}
+              placeholder="Select a lab…"
               onValueChange={(value) => {
                 setLabId(value);
                 setSelected({});
               }}
-              options={[
-                { value: "", label: "Select a lab…" },
-                ...labs.map((item) => ({ value: item.id, label: `${item.title} (${item.kind})` })),
-              ]}
+              options={labs.map((item) => ({ value: item.id, label: `${item.title} (${item.kind})` }))}
             />
           </div>
 
@@ -129,8 +127,9 @@ export default function CreateLabSession() {
               <Label className="text-xs">Department</Label>
               <ThemedSelect
                 value={department}
+                placeholder="Select…"
                 onValueChange={(value) => setDepartment(value as Department)}
-                options={[{ value: "", label: "Select…" }, ...DEPARTMENTS.map((dept) => ({ value: dept, label: dept }))]}
+                options={DEPARTMENTS.map((dept) => ({ value: dept, label: dept }))}
               />
             </div>
             <div>
