@@ -16,6 +16,20 @@ import { Label } from "@/components/ui/label";
 const PATHNAME = "/faculty/lab-sessions/create";
 const DIVISIONS = ["A", "B", "C", "D", "E"];
 
+/** Pulls the first specific field error the server returned, so the toast isn't a bare "Validation failed". */
+function firstFieldIssue(error: Error): string | null {
+  const body = (error as { details?: unknown }).details;
+  const inner = body && typeof body === "object" ? (body as { details?: unknown }).details : undefined;
+  const issues = inner && typeof inner === "object" ? (inner as { fieldIssues?: unknown }).fieldIssues : undefined;
+  if (!Array.isArray(issues) || issues.length === 0) {
+    return null;
+  }
+  const first = issues[0] as { path?: unknown; message?: unknown };
+  const path = typeof first.path === "string" ? first.path : "";
+  const message = typeof first.message === "string" ? first.message : "Something is invalid";
+  return path ? `${path}: ${message}` : message;
+}
+
 export default function CreateLabSession() {
   const navigate = useNavigate();
   const [labId, setLabId] = useState("");
@@ -75,9 +89,9 @@ export default function CreateLabSession() {
     },
     onSuccess: () => {
       toast.success("Session scheduled");
-      navigate("/faculty/lab-sessions");
+      navigate("/faculty/labs");
     },
-    onError: (error: Error) => toast.error(error.message || "Could not schedule the session"),
+    onError: (error: Error) => toast.error(firstFieldIssue(error) ?? error.message ?? "Could not schedule the session"),
   });
 
   const chosenCount = Object.values(selected).filter(Boolean).length;
@@ -224,7 +238,7 @@ export default function CreateLabSession() {
         </Card>
 
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={() => navigate("/faculty/lab-sessions")}>
+          <Button type="button" variant="outline" onClick={() => navigate("/faculty/labs")}>
             Cancel
           </Button>
           <Button type="button" disabled={!canSave || saveMutation.isPending} onClick={() => saveMutation.mutate()}>

@@ -17,7 +17,7 @@ const bodySchema = z.object({
   durationMinutes: z.coerce.number().int().min(1).max(240),
   audience: audiencePreviewSchema,
   assignedEmails: z.array(z.string().trim().toLowerCase().email()).default([]),
-  maxViolations: z.coerce.number().int().min(1).max(20).default(1),
+  maxViolations: z.coerce.number().int().min(1).max(100).default(1),
   lifecycleState: z.enum(["Draft", "Published", "Archived"]).default("Published"),
 });
 

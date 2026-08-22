@@ -41,8 +41,8 @@ export default function LabSessionDetail() {
   return (
     <AppLayout>
       <div className="container space-y-6 px-3 py-5 sm:px-6 sm:py-8">
-        <Link to="/faculty/lab-sessions" className="text-sm text-muted-foreground hover:underline">
-          ← All sessions
+        <Link to="/faculty/labs" className="text-sm text-muted-foreground hover:underline">
+          ← Back to Labs
         </Link>
         {session && (
           <div className="flex flex-wrap items-start justify-between gap-3">
