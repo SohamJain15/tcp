@@ -5,7 +5,7 @@ import { toIsoString } from "../../shared/utils/date";
 
 export type { FailedTestCase } from "../../execution/execution-provider";
 
-export type SubmissionSourceType = "problem" | "contest_coding" | "classtest_coding";
+export type SubmissionSourceType = "problem" | "contest_coding" | "classtest_coding" | "lab_coding";
 
 /** How much of a captured failing case a student is allowed to see. */
 export type FailedTestVisibility = "full" | "truncated";
@@ -36,7 +36,9 @@ export interface FailedTestCaseView {
  * student reconstruct the answer key one wrong submission at a time.
  */
 export function resolveFailedTestVisibility(sourceType: SubmissionSourceType): FailedTestVisibility {
-  return sourceType === "problem" ? "full" : "truncated";
+  // Practice-style surfaces (standalone problems and self-paced lab experiments) show the full
+  // failing case; the timed/proctored surfaces (contest, class test) truncate it.
+  return sourceType === "problem" || sourceType === "lab_coding" ? "full" : "truncated";
 }
 
 function truncate(value: string): string {
@@ -92,6 +94,12 @@ export interface SubmissionRecord {
   /** Set only for `classtest_coding`; contests use the `contest*` fields above. */
   classTestId: string | null;
   classTestQuestionId: string | null;
+  /**
+   * Set only for `lab_coding` (DSA Lab experiments). Optional so every existing submission literal
+   * and stored document stays valid without a migration; absent means "not a lab submission".
+   */
+  labId?: string | null;
+  labExperimentId?: string | null;
   code: string;
   language: ExecutableLanguage;
   status: SubmissionStatus;

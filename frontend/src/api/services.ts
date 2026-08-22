@@ -39,6 +39,7 @@ import type {
   ContestStandingsEnvelope,
   CreateContestPayload,
   Department,
+  ExecutableLanguage,
   DepartmentContestParticipation,
   DepartmentFacultyEnvelope,
   DepartmentOverviewEnvelope,
@@ -612,6 +613,35 @@ export const labApi = {
     apiRequest<LabSqlSubmitResponse>(`/api/labs/mine/${encodeURIComponent(labId)}/sql-submit`, {
       method: "POST",
       body: { experimentId, sql },
+      pathname,
+    }),
+  runCoding: (
+    labId: string,
+    payload: { experimentId: string; code: string; language: ExecutableLanguage },
+    pathname?: string,
+  ) =>
+    apiRequest<{ result: SubmissionResult }>(`/api/labs/mine/${encodeURIComponent(labId)}/coding-run`, {
+      method: "POST",
+      body: payload,
+      pathname,
+    }),
+  submitCoding: (
+    labId: string,
+    payload: { experimentId: string; code: string; language: ExecutableLanguage },
+    pathname?: string,
+  ) =>
+    apiRequest<{ submissionId: string; status: "queued" }>(
+      `/api/labs/mine/${encodeURIComponent(labId)}/coding-submit`,
+      { method: "POST", body: payload, pathname },
+    ),
+  saveCodingDraft: (
+    labId: string,
+    payload: { experimentId: string; code: string; language: ExecutableLanguage },
+    pathname?: string,
+  ) =>
+    apiRequest<{ saved: boolean }>(`/api/labs/mine/${encodeURIComponent(labId)}/coding-draft`, {
+      method: "POST",
+      body: payload,
       pathname,
     }),
 };

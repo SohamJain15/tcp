@@ -121,6 +121,83 @@ describe("lab student catalog", () => {
   });
 });
 
+const codingLabPayload = {
+  title: "DSA Practical Lab",
+  subject: "Data Structures Lab",
+  kind: "DSA",
+  department: "B.E. Computer Engineering",
+  semester: 4,
+  lifecycleState: "Published",
+  experiments: [
+    {
+      kind: "coding",
+      number: 1,
+      title: "Echo a number",
+      aim: "Read a number and print it.",
+      points: 20,
+      difficulty: "Easy",
+      constraints: "",
+      inputFormat: "",
+      outputFormat: "",
+      timeLimitSeconds: 2,
+      memoryLimitMb: 256,
+      supportedLanguages: ["python"],
+      sampleTestCases: [{ input: "5", output: "5" }],
+      hiddenTestCases: [{ input: "9", output: "9" }],
+    },
+  ],
+};
+
+describe("lab coding run and submit", () => {
+  it("runs and submits a coding experiment, and marks it solved once judged", async () => {
+    const { app, services } = createTestApp();
+    await request(app).post("/api/labs").set(facultyHeaders).send(codingLabPayload);
+
+    const list = await request(app).get("/api/labs/mine").set(studentHeaders);
+    const labId = list.body.items[0].id;
+    const detail = await request(app).get(`/api/labs/mine/${labId}`).set(studentHeaders);
+    const experiment = detail.body.lab.experiments[0];
+    expect(experiment.kind).toBe("coding");
+    expect(experiment).not.toHaveProperty("hiddenTestCases"); // hidden tests never reach the student
+    expect(experiment.sampleTestCases).toHaveLength(1);
+
+    const run = await request(app)
+      .post(`/api/labs/mine/${labId}/coding-run`)
+      .set(studentHeaders)
+      .send({ experimentId: experiment.id, code: "print(input())", language: "python" });
+    expect(run.status).toBe(200);
+    expect(run.body.result.status).toBe("ACCEPTED"); // the stub accepts ordinary code
+
+    const submit = await request(app)
+      .post(`/api/labs/mine/${labId}/coding-submit`)
+      .set(studentHeaders)
+      .send({ experimentId: experiment.id, code: "print(input())", language: "python" });
+    expect(submit.status).toBe(201);
+    expect(submit.body.submissionId).toBeDefined();
+
+    // Drive the (stub) judge worker, then the experiment should read as solved.
+    await services.submissionService.processQueuedSubmission(submit.body.submissionId);
+
+    const after = await request(app).get(`/api/labs/mine/${labId}`).set(studentHeaders);
+    expect(after.body.lab.progress[0].passed).toBe(true);
+    expect(after.body.lab.progress[0].awardedPoints).toBe(20);
+  });
+
+  it("rejects a language the experiment does not allow", async () => {
+    const { app } = createTestApp();
+    await request(app).post("/api/labs").set(facultyHeaders).send(codingLabPayload);
+    const list = await request(app).get("/api/labs/mine").set(studentHeaders);
+    const labId = list.body.items[0].id;
+    const detail = await request(app).get(`/api/labs/mine/${labId}`).set(studentHeaders);
+
+    const run = await request(app)
+      .post(`/api/labs/mine/${labId}/coding-run`)
+      .set(studentHeaders)
+      .send({ experimentId: detail.body.lab.experiments[0].id, code: "x", language: "java" });
+    expect(run.status).toBe(400);
+  });
+});
+
 describe("lab SQL run and submit", () => {
   async function seedAndGetExperiment(app: ReturnType<typeof createTestApp>["app"]) {
     await createLab(app);

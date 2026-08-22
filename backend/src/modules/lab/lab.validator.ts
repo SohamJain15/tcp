@@ -84,6 +84,13 @@ export const labSqlRunSchema = z.object({
   sql: z.string().min(1, "Write a query first"),
 });
 
+/** Student run/submit/draft of a coding experiment. A draft may be empty (editor cleared). */
+export const labCodingRunSchema = z.object({
+  experimentId: z.string().trim().min(1),
+  code: z.string(),
+  language: z.enum(EXECUTABLE_LANGUAGES as [ExecutableLanguage, ...ExecutableLanguage[]]),
+});
+
 /** Faculty "Run solution" preview — lay out the expected grid for an experiment being authored. */
 export const labSqlPreviewSchema = z.object({
   schemaSql: z.string().trim().min(1),

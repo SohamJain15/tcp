@@ -209,6 +209,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     contestRepository: repositories.contestRepository,
     contestAttemptRepository: repositories.contestAttemptRepository,
     classTestRepository: repositories.classTestRepository,
+    labRepository: repositories.labRepository,
     submissionRepository: repositories.submissionRepository,
     userRepository: repositories.userRepository,
     leaderboardRepository: repositories.leaderboardRepository,
@@ -277,6 +278,9 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
   const labService = createLabService({
     labRepository: repositories.labRepository,
     labSqlSubmissionRepository: repositories.labSqlSubmissionRepository,
+    submissionRepository: repositories.submissionRepository,
+    submissionQueue,
+    executionProvider,
     userRepository: repositories.userRepository,
     sqlExecutor,
     now,

@@ -17,27 +17,61 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 const PATHNAME = "/faculty/labs/create";
+const CODING_LANGUAGES = ["c", "cpp", "java", "python", "javascript", "typescript", "go", "kotlin"];
 
-interface SqlExperimentDraft {
+interface TestCaseDraft {
+  input: string;
+  output: string;
+}
+
+interface ExperimentDraft {
   key: string;
+  kind: "sql" | "coding";
   title: string;
   aim: string;
   points: number;
+  // sql
   schemaSql: string;
   solutionSql: string;
   ordered: boolean;
   preview?: SqlResultSet;
+  // coding
+  difficulty: "Easy" | "Medium" | "Hard";
+  supportedLanguages: string[];
+  constraints: string;
+  inputFormat: string;
+  outputFormat: string;
+  timeLimitSeconds: number;
+  memoryLimitMb: number;
+  sampleTestCases: TestCaseDraft[];
+  hiddenTestCases: TestCaseDraft[];
 }
 
-const blankExperiment = (): SqlExperimentDraft => ({
-  key: `exp_${Math.random().toString(36).slice(2)}`,
-  title: "",
-  aim: "",
-  points: 10,
-  schemaSql: "CREATE TABLE example (id INT, name VARCHAR(50));\nINSERT INTO example VALUES (1, 'Ada');",
-  solutionSql: "SELECT * FROM example;",
-  ordered: false,
-});
+const emptyCase = (): TestCaseDraft => ({ input: "", output: "" });
+
+function blankExperiment(kind: "sql" | "coding"): ExperimentDraft {
+  return {
+    key: `exp_${Math.random().toString(36).slice(2)}`,
+    kind,
+    title: "",
+    aim: "",
+    points: kind === "coding" ? 20 : 10,
+    schemaSql: "CREATE TABLE example (id INT, name VARCHAR(50));\nINSERT INTO example VALUES (1, 'Ada');",
+    solutionSql: "SELECT * FROM example;",
+    ordered: false,
+    difficulty: "Easy",
+    supportedLanguages: ["python"],
+    constraints: "",
+    inputFormat: "",
+    outputFormat: "",
+    timeLimitSeconds: 2,
+    memoryLimitMb: 256,
+    sampleTestCases: [emptyCase()],
+    hiddenTestCases: [emptyCase()],
+  };
+}
+
+const stripZero = (value: string) => Number(value.replace(/^0+(?=\d)/, ""));
 
 export default function CreateLab() {
   const { id } = useParams();
@@ -51,7 +85,7 @@ export default function CreateLab() {
   const [semester, setSemester] = useState<string>("ALL");
   const [description, setDescription] = useState("");
   const [lifecycleState, setLifecycleState] = useState<"Draft" | "Published" | "Archived">("Draft");
-  const [experiments, setExperiments] = useState<SqlExperimentDraft[]>([blankExperiment()]);
+  const [experiments, setExperiments] = useState<ExperimentDraft[]>([blankExperiment("sql")]);
 
   const existing = useQuery({
     queryKey: ["faculty-lab", id],
@@ -71,35 +105,45 @@ export default function CreateLab() {
     setSemester(lab.semester ? String(lab.semester) : "ALL");
     setDescription(lab.description ?? "");
     setLifecycleState(lab.lifecycleState);
-    const sqlExperiments = lab.experiments
-      .filter((experiment) => experiment.kind === "sql")
-      .map((experiment) => ({
-        key: experiment.id,
-        title: experiment.title,
-        aim: experiment.aim,
-        points: experiment.points,
-        schemaSql: experiment.schemaSql ?? "",
-        solutionSql: experiment.solutionSql ?? "",
-        ordered: experiment.ordered ?? false,
-      }));
-    if (sqlExperiments.length > 0) {
-      setExperiments(sqlExperiments);
+    if (lab.experiments.length > 0) {
+      setExperiments(
+        lab.experiments.map((experiment) => ({
+          ...blankExperiment(experiment.kind === "coding" ? "coding" : "sql"),
+          key: experiment.id,
+          kind: experiment.kind === "coding" ? "coding" : "sql",
+          title: experiment.title,
+          aim: experiment.aim,
+          points: experiment.points,
+          schemaSql: experiment.schemaSql ?? "",
+          solutionSql: experiment.solutionSql ?? "",
+          ordered: experiment.ordered ?? false,
+          difficulty: experiment.difficulty ?? "Easy",
+          supportedLanguages: experiment.supportedLanguages ?? ["python"],
+          constraints: experiment.constraints ?? "",
+          inputFormat: experiment.inputFormat ?? "",
+          outputFormat: experiment.outputFormat ?? "",
+          timeLimitSeconds: experiment.timeLimitSeconds ?? 2,
+          memoryLimitMb: experiment.memoryLimitMb ?? 256,
+          sampleTestCases: experiment.sampleTestCases?.map((tc) => ({ input: tc.input, output: tc.output })) ?? [emptyCase()],
+          hiddenTestCases: experiment.hiddenTestCases?.map((tc) => ({ input: tc.input, output: tc.output })) ?? [emptyCase()],
+        })),
+      );
     }
   }, [existing.data]);
 
   const previewMutation = useMutation({
-    mutationFn: (experiment: SqlExperimentDraft) =>
+    mutationFn: (experiment: ExperimentDraft) =>
       labApi.previewSql(
         { schemaSql: experiment.schemaSql, solutionSql: experiment.solutionSql, ordered: experiment.ordered },
         PATHNAME,
       ),
   });
 
-  const updateExperiment = (key: string, patch: Partial<SqlExperimentDraft>) => {
+  const updateExperiment = (key: string, patch: Partial<ExperimentDraft>) => {
     setExperiments((current) => current.map((item) => (item.key === key ? { ...item, ...patch } : item)));
   };
 
-  const runPreview = async (experiment: SqlExperimentDraft) => {
+  const runPreview = async (experiment: ExperimentDraft) => {
     try {
       const result = await previewMutation.mutateAsync(experiment);
       updateExperiment(experiment.key, { preview: result.expected });
@@ -116,16 +160,35 @@ export default function CreateLab() {
     semester: semester === "ALL" ? null : Number(semester),
     description: description.trim() === "" ? null : description,
     lifecycleState,
-    experiments: experiments.map((experiment, index) => ({
-      kind: "sql" as const,
-      number: index + 1,
-      title: experiment.title,
-      aim: experiment.aim,
-      points: Number(experiment.points),
-      schemaSql: experiment.schemaSql,
-      solutionSql: experiment.solutionSql,
-      ordered: experiment.ordered,
-    })),
+    experiments: experiments.map((experiment, index) =>
+      experiment.kind === "sql"
+        ? {
+            kind: "sql" as const,
+            number: index + 1,
+            title: experiment.title,
+            aim: experiment.aim,
+            points: Number(experiment.points),
+            schemaSql: experiment.schemaSql,
+            solutionSql: experiment.solutionSql,
+            ordered: experiment.ordered,
+          }
+        : {
+            kind: "coding" as const,
+            number: index + 1,
+            title: experiment.title,
+            aim: experiment.aim,
+            points: Number(experiment.points),
+            difficulty: experiment.difficulty,
+            constraints: experiment.constraints,
+            inputFormat: experiment.inputFormat,
+            outputFormat: experiment.outputFormat,
+            timeLimitSeconds: Number(experiment.timeLimitSeconds),
+            memoryLimitMb: Number(experiment.memoryLimitMb),
+            supportedLanguages: experiment.supportedLanguages,
+            sampleTestCases: experiment.sampleTestCases.filter((tc) => tc.input.trim() !== "" || tc.output.trim() !== ""),
+            hiddenTestCases: experiment.hiddenTestCases.filter((tc) => tc.input.trim() !== "" || tc.output.trim() !== ""),
+          },
+    ),
   });
 
   const saveMutation = useMutation({
@@ -192,29 +255,35 @@ export default function CreateLab() {
             <Label className="text-xs">Description (optional)</Label>
             <Textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={2} />
           </div>
-          {kind === "DSA" && (
-            <p className="text-xs text-muted-foreground">
-              Note: coding-experiment authoring is coming next. For now, experiments below are SQL.
-            </p>
-          )}
         </Card>
 
         <div className="space-y-4">
           {experiments.map((experiment, index) => (
             <Card key={experiment.key} className="space-y-3 p-5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-semibold">Experiment {index + 1}</p>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  aria-label="Remove experiment"
-                  disabled={experiments.length <= 1}
-                  onClick={() => setExperiments((current) => current.filter((item) => item.key !== experiment.key))}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <ThemedSelect
+                    value={experiment.kind}
+                    onValueChange={(value) => updateExperiment(experiment.key, { kind: value as "sql" | "coding" })}
+                    options={[
+                      { value: "sql", label: "SQL" },
+                      { value: "coding", label: "Coding" },
+                    ]}
+                  />
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    aria-label="Remove experiment"
+                    disabled={experiments.length <= 1}
+                    onClick={() => setExperiments((current) => current.filter((item) => item.key !== experiment.key))}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
+
               <div className="grid gap-3 md:grid-cols-[1fr_auto]">
                 <Input
                   placeholder="Experiment title"
@@ -225,7 +294,7 @@ export default function CreateLab() {
                   type="number"
                   className="w-28"
                   value={experiment.points}
-                  onChange={(event) => updateExperiment(experiment.key, { points: Number(event.target.value.replace(/^0+(?=\d)/, "")) })}
+                  onChange={(event) => updateExperiment(experiment.key, { points: stripZero(event.target.value) })}
                 />
               </div>
               <Textarea
@@ -234,54 +303,66 @@ export default function CreateLab() {
                 rows={2}
                 onChange={(event) => updateExperiment(experiment.key, { aim: event.target.value })}
               />
-              <div>
-                <Label className="text-xs">Schema + seed SQL (shown to students)</Label>
-                <Textarea
-                  className="font-mono-code"
-                  rows={4}
-                  value={experiment.schemaSql}
-                  onChange={(event) => updateExperiment(experiment.key, { schemaSql: event.target.value })}
-                />
-              </div>
-              <div>
-                <Label className="text-xs">Reference (solution) query — hidden from students</Label>
-                <Textarea
-                  className="font-mono-code"
-                  rows={3}
-                  value={experiment.solutionSql}
-                  onChange={(event) => updateExperiment(experiment.key, { solutionSql: event.target.value })}
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="flex items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={experiment.ordered}
-                    onCheckedChange={(checked) => updateExperiment(experiment.key, { ordered: checked === true })}
-                  />
-                  Row order matters (task uses ORDER BY)
-                </label>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={previewMutation.isPending}
-                  onClick={() => runPreview(experiment)}
-                >
-                  {previewMutation.isPending ? "Running…" : "Preview expected result"}
-                </Button>
-              </div>
-              {experiment.preview && (
-                <div>
-                  <p className="mb-1 text-xs text-muted-foreground">Expected result:</p>
-                  <SqlResultTable result={experiment.preview} />
-                </div>
+
+              {experiment.kind === "sql" ? (
+                <>
+                  <div>
+                    <Label className="text-xs">Schema + seed SQL (shown to students)</Label>
+                    <Textarea
+                      className="font-mono-code"
+                      rows={4}
+                      value={experiment.schemaSql}
+                      onChange={(event) => updateExperiment(experiment.key, { schemaSql: event.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Reference (solution) query — hidden from students</Label>
+                    <Textarea
+                      className="font-mono-code"
+                      rows={3}
+                      value={experiment.solutionSql}
+                      onChange={(event) => updateExperiment(experiment.key, { solutionSql: event.target.value })}
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={experiment.ordered}
+                        onCheckedChange={(checked) => updateExperiment(experiment.key, { ordered: checked === true })}
+                      />
+                      Row order matters (task uses ORDER BY)
+                    </label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={previewMutation.isPending}
+                      onClick={() => runPreview(experiment)}
+                    >
+                      {previewMutation.isPending ? "Running…" : "Preview expected result"}
+                    </Button>
+                  </div>
+                  {experiment.preview && (
+                    <div>
+                      <p className="mb-1 text-xs text-muted-foreground">Expected result:</p>
+                      <SqlResultTable result={experiment.preview} />
+                    </div>
+                  )}
+                </>
+              ) : (
+                <CodingFields experiment={experiment} onChange={(patch) => updateExperiment(experiment.key, patch)} />
               )}
             </Card>
           ))}
 
-          <Button type="button" variant="ghost" onClick={() => setExperiments((current) => [...current, blankExperiment()])}>
-            + Experiment
-          </Button>
+          <div className="flex gap-2">
+            <Button type="button" variant="ghost" onClick={() => setExperiments((current) => [...current, blankExperiment("sql")])}>
+              + SQL experiment
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => setExperiments((current) => [...current, blankExperiment("coding")])}>
+              + Coding experiment
+            </Button>
+          </div>
         </div>
 
         <div className="flex justify-end gap-2">
@@ -294,5 +375,110 @@ export default function CreateLab() {
         </div>
       </div>
     </AppLayout>
+  );
+}
+
+function CodingFields({
+  experiment,
+  onChange,
+}: {
+  experiment: ExperimentDraft;
+  onChange: (patch: Partial<ExperimentDraft>) => void;
+}) {
+  const editCases = (field: "sampleTestCases" | "hiddenTestCases", cases: TestCaseDraft[]) => onChange({ [field]: cases });
+
+  const renderCases = (field: "sampleTestCases" | "hiddenTestCases", label: string) => (
+    <div className="space-y-2">
+      <Label className="text-xs">{label}</Label>
+      {experiment[field].map((testCase, index) => (
+        <div key={index} className="grid gap-2 md:grid-cols-2">
+          <Textarea
+            className="font-mono-code"
+            rows={2}
+            placeholder="Input"
+            value={testCase.input}
+            onChange={(event) => {
+              const next = [...experiment[field]];
+              next[index] = { ...next[index], input: event.target.value };
+              editCases(field, next);
+            }}
+          />
+          <Textarea
+            className="font-mono-code"
+            rows={2}
+            placeholder="Expected output"
+            value={testCase.output}
+            onChange={(event) => {
+              const next = [...experiment[field]];
+              next[index] = { ...next[index], output: event.target.value };
+              editCases(field, next);
+            }}
+          />
+        </div>
+      ))}
+      <Button type="button" size="sm" variant="ghost" onClick={() => editCases(field, [...experiment[field], emptyCase()])}>
+        + Case
+      </Button>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 md:grid-cols-2">
+        <div>
+          <Label className="text-xs">Difficulty</Label>
+          <ThemedSelect
+            value={experiment.difficulty}
+            onValueChange={(value) => onChange({ difficulty: value as ExperimentDraft["difficulty"] })}
+            options={["Easy", "Medium", "Hard"].map((d) => ({ value: d, label: d }))}
+          />
+        </div>
+        <div>
+          <Label className="text-xs">Time / memory limits</Label>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              value={experiment.timeLimitSeconds}
+              onChange={(event) => onChange({ timeLimitSeconds: stripZero(event.target.value) })}
+            />
+            <Input
+              type="number"
+              value={experiment.memoryLimitMb}
+              onChange={(event) => onChange({ memoryLimitMb: stripZero(event.target.value) })}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <Label className="text-xs">Allowed languages</Label>
+        <div className="flex flex-wrap gap-3">
+          {CODING_LANGUAGES.map((language) => (
+            <label key={language} className="flex items-center gap-1 text-sm">
+              <Checkbox
+                checked={experiment.supportedLanguages.includes(language)}
+                onCheckedChange={(checked) =>
+                  onChange({
+                    supportedLanguages: checked
+                      ? [...experiment.supportedLanguages, language]
+                      : experiment.supportedLanguages.filter((item) => item !== language),
+                  })
+                }
+              />
+              {language}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <Textarea
+        placeholder="Constraints"
+        value={experiment.constraints}
+        rows={2}
+        onChange={(event) => onChange({ constraints: event.target.value })}
+      />
+      {renderCases("sampleTestCases", "Sample test cases (shown to students)")}
+      {renderCases("hiddenTestCases", "Hidden test cases (at least one required)")}
+    </div>
   );
 }

@@ -179,6 +179,11 @@ export function toStudentExperiment(experiment: LabExperiment): StudentLabExperi
   };
 }
 
+/** Whether a language may be used for a coding experiment. Enforced server-side, not just in the UI. */
+export function isLanguageAllowedForExperiment(experiment: LabCodingExperiment, language: string): boolean {
+  return experiment.supportedLanguages.includes(language as ExecutableLanguage);
+}
+
 /** Whether a student in this department/semester may see this lab. */
 export function isLabVisibleToStudent(
   lab: LabRecord,

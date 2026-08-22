@@ -1,13 +1,22 @@
 import { randomUUID } from "node:crypto";
 
+import { env } from "../../config/env";
+import type { ExecutionProvider } from "../../execution/execution-provider";
+import { generateSubmissionProgram } from "../../execution/harness";
 import type { SqlExecutor, SqlResultSet } from "../../execution/sql/sql-executor";
+import type { SubmissionQueue } from "../../queue/submission-queue";
 import { AppError } from "../../shared/errors/app-error";
 import type { AuthenticatedUser } from "../../shared/types/auth";
+import type { ExecutableLanguage } from "../../shared/types/domain";
+import { redactFailedTest, type SubmissionRunResponse } from "../submission/submission.model";
+import type { SubmissionRepository } from "../submission/submission.repository";
 import type { UserRepository } from "../user/user.repository";
 import {
   isLabVisibleToStudent,
+  isLanguageAllowedForExperiment,
   labTotalPoints,
   toStudentExperiment,
+  type LabCodingExperiment,
   type LabExperiment,
   type LabRecord,
   type LabSqlExperiment,
@@ -17,6 +26,12 @@ import {
 } from "./lab.model";
 import type { LabRepository, LabSqlSubmissionRepository } from "./lab.repository";
 import type { CreateLabInput, LabSqlPreviewInput, UpdateLabInput } from "./lab.validator";
+
+export interface LabCodingRunInput {
+  experimentId: string;
+  code: string;
+  language: ExecutableLanguage;
+}
 
 export interface LabSqlRunResponse {
   ok: boolean;
@@ -53,11 +68,16 @@ export interface LabService {
   getForStudent(user: AuthenticatedUser, labId: string): Promise<StudentLabDetail>;
   runSql(user: AuthenticatedUser, labId: string, experimentId: string, sql: string): Promise<LabSqlRunResponse>;
   submitSql(user: AuthenticatedUser, labId: string, experimentId: string, sql: string): Promise<LabSqlSubmitResponse>;
+  runCoding(user: AuthenticatedUser, labId: string, input: LabCodingRunInput): Promise<SubmissionRunResponse>;
+  submitCoding(user: AuthenticatedUser, labId: string, input: LabCodingRunInput): Promise<{ submissionId: string; status: "queued" }>;
 }
 
 interface LabServiceDependencies {
   labRepository: LabRepository;
   labSqlSubmissionRepository: LabSqlSubmissionRepository;
+  submissionRepository: SubmissionRepository;
+  submissionQueue: SubmissionQueue;
+  executionProvider: ExecutionProvider;
   userRepository: UserRepository;
   sqlExecutor: SqlExecutor;
   now: () => Date;
@@ -100,6 +120,52 @@ export function createLabService(dependencies: LabServiceDependencies): LabServi
       throw new AppError(404, "Experiment not found");
     }
     return { lab, experiment };
+  }
+
+  async function loadCodingExperiment(
+    user: AuthenticatedUser,
+    labId: string,
+    experimentId: string,
+  ): Promise<{ lab: LabRecord; experiment: LabCodingExperiment }> {
+    const lab = await dependencies.labRepository.getById(labId);
+    const profile = await dependencies.userRepository.getByEmail(user.email);
+    if (!lab || !isLabVisibleToStudent(lab, { department: profile?.department ?? null, semester: profile?.semester ?? null })) {
+      throw new AppError(404, "Lab not found");
+    }
+    const experiment = lab.experiments.find((item) => item.id === experimentId);
+    if (!experiment || experiment.kind !== "coding") {
+      throw new AppError(404, "Experiment not found");
+    }
+    return { lab, experiment };
+  }
+
+  /** Derives one student's coding-experiment progress from their lab_coding submissions. */
+  async function codingProgress(
+    labId: string,
+    experiment: LabCodingExperiment,
+    userEmail: string,
+  ): Promise<{ passed: boolean; awardedPoints: number; status: string }> {
+    const submissions = await dependencies.submissionRepository.list({
+      userEmail,
+      sourceType: "lab_coding",
+      problemId: experiment.id,
+    });
+    const forThisLab = submissions.filter((submission) => submission.labId === labId);
+    if (forThisLab.length === 0) {
+      return { passed: false, awardedPoints: 0, status: "NOT_ATTEMPTED" };
+    }
+    let passed = false;
+    let best = 0;
+    for (const submission of forThisLab) {
+      if (submission.totalCount > 0) {
+        best = Math.max(best, Math.round((experiment.points * submission.passedCount) / submission.totalCount));
+        if (submission.passedCount === submission.totalCount) {
+          passed = true;
+        }
+      }
+    }
+    const latest = forThisLab.reduce((newest, item) => (item.createdAt > newest.createdAt ? item : newest));
+    return { passed, awardedPoints: passed ? experiment.points : best, status: passed ? "SOLVED" : latest.status };
   }
 
   return {
@@ -191,8 +257,23 @@ export function createLabService(dependencies: LabServiceDependencies): LabServi
       if (!lab || !isLabVisibleToStudent(lab, { department: profile?.department ?? null, semester: profile?.semester ?? null })) {
         throw new AppError(404, "Lab not found");
       }
-      const submissions = await dependencies.labSqlSubmissionRepository.listByLabAndUser(labId, user.email);
-      const byExperiment = new Map(submissions.map((submission) => [submission.experimentId, submission]));
+      const sqlSubmissions = await dependencies.labSqlSubmissionRepository.listByLabAndUser(labId, user.email);
+      const sqlByExperiment = new Map(sqlSubmissions.map((submission) => [submission.experimentId, submission]));
+      const progress = await Promise.all(
+        lab.experiments.map(async (experiment) => {
+          if (experiment.kind === "coding") {
+            const coding = await codingProgress(labId, experiment, user.email);
+            return { experimentId: experiment.id, ...coding };
+          }
+          const submission = sqlByExperiment.get(experiment.id);
+          return {
+            experimentId: experiment.id,
+            passed: submission?.passed ?? false,
+            awardedPoints: submission?.awardedPoints ?? 0,
+            status: submission?.status ?? "NOT_ATTEMPTED",
+          };
+        }),
+      );
       return {
         id: lab.id,
         title: lab.title,
@@ -202,15 +283,7 @@ export function createLabService(dependencies: LabServiceDependencies): LabServi
         totalPoints: labTotalPoints(lab.experiments),
         description: lab.description,
         experiments: lab.experiments.map(toStudentExperiment),
-        progress: lab.experiments.map((experiment) => {
-          const submission = byExperiment.get(experiment.id);
-          return {
-            experimentId: experiment.id,
-            passed: submission?.passed ?? false,
-            awardedPoints: submission?.awardedPoints ?? 0,
-            status: submission?.status ?? "NOT_ATTEMPTED",
-          };
-        }),
+        progress,
       };
     },
 
@@ -257,6 +330,98 @@ export function createLabService(dependencies: LabServiceDependencies): LabServi
         result: graded.studentResult,
         message: graded.message,
       };
+    },
+
+    async runCoding(user, labId, input) {
+      const { lab, experiment } = await loadCodingExperiment(user, labId, input.experimentId);
+      if (!isLanguageAllowedForExperiment(experiment, input.language)) {
+        throw new AppError(400, "That language is not allowed for this experiment");
+      }
+
+      // Sample cases only — "Run" checks your own work, so hidden cases stay hidden.
+      const program = generateSubmissionProgram(input.language, input.code, experiment.harness);
+      const result = await dependencies.executionProvider.executeRun({
+        code: program.source,
+        comparison: program.comparison,
+        language: input.language,
+        testCases: experiment.sampleTestCases,
+        sampleCaseCount: experiment.sampleTestCases.length,
+        problemId: `${lab.id}:${experiment.id}`,
+        timeLimitSeconds: experiment.timeLimitSeconds,
+        memoryLimitMb: experiment.memoryLimitMb,
+      });
+
+      return {
+        problemId: experiment.id,
+        language: input.language,
+        status: result.status,
+        runtimeMs: result.runtimeMs,
+        memoryKb: result.memoryKb,
+        passedCount: result.passedCount,
+        totalCount: result.totalCount,
+        executionProvider: result.provider,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        // Run judges only the sample cases, which the experiment already shows in full.
+        failedTest: redactFailedTest(result.failedTest, "full"),
+      };
+    },
+
+    async submitCoding(user, labId, input) {
+      const { lab, experiment } = await loadCodingExperiment(user, labId, input.experimentId);
+      if (!isLanguageAllowedForExperiment(experiment, input.language)) {
+        throw new AppError(400, "That language is not allowed for this experiment");
+      }
+
+      const now = dependencies.now();
+      const profile = await dependencies.userRepository.getByEmail(user.email);
+      const submissionId = `submission_${randomUUID()}`;
+
+      await dependencies.submissionRepository.create({
+        id: submissionId,
+        queueJobId: null,
+        judge0Token: null,
+        sourceType: "lab_coding",
+        userEmail: user.email,
+        userRole: profile?.role ?? "STUDENT",
+        userDepartment: profile?.department ?? null,
+        resourceOwnerEmail: lab.createdBy,
+        resourceTargetDepartment: lab.department,
+        problemId: experiment.id,
+        problemTitleSnapshot: experiment.title,
+        problemDifficultySnapshot: experiment.difficulty,
+        contestId: null,
+        contestTitleSnapshot: null,
+        contestQuestionId: null,
+        classTestId: null,
+        classTestQuestionId: null,
+        labId: lab.id,
+        labExperimentId: experiment.id,
+        code: input.code,
+        language: input.language,
+        status: "QUEUED",
+        runtimeMs: 0,
+        memoryKb: 0,
+        passedCount: 0,
+        totalCount: experiment.sampleTestCases.length + experiment.hiddenTestCases.length,
+        executionProvider: env.EXECUTION_PROVIDER,
+        ratingAwarded: 0,
+        stdout: null,
+        stderr: null,
+        failedTest: null,
+        createdAt: now,
+        updatedAt: now,
+        judgedAt: null,
+        finalizationAppliedAt: null,
+      });
+
+      const queueJobId = await dependencies.submissionQueue.enqueue(submissionId);
+      const stored = await dependencies.submissionRepository.getById(submissionId);
+      if (stored) {
+        await dependencies.submissionRepository.save({ ...stored, queueJobId, updatedAt: dependencies.now() });
+      }
+
+      return { submissionId, status: "queued" };
     },
   };
 }

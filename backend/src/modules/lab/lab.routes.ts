@@ -24,6 +24,9 @@ export function createLabRouter(dependencies: ApplicationDependencies): Router {
   router.get("/mine/:labId", requireRole("STUDENT"), asyncHandler(controller.getStudentLab));
   router.post("/mine/:labId/sql-run", requireRole("STUDENT"), asyncHandler(controller.runSql));
   router.post("/mine/:labId/sql-submit", requireRole("STUDENT"), asyncHandler(controller.submitSql));
+  router.post("/mine/:labId/coding-run", requireRole("STUDENT"), asyncHandler(controller.runCoding));
+  router.post("/mine/:labId/coding-submit", requireRole("STUDENT"), asyncHandler(controller.submitCoding));
+  router.post("/mine/:labId/coding-draft", requireRole("STUDENT"), asyncHandler(controller.saveCodingDraft));
 
   // Faculty surface. Static "/sql-preview" before "/:labId" so it is not captured.
   router.get("/", requireRole("FACULTY"), asyncHandler(controller.listLabs));

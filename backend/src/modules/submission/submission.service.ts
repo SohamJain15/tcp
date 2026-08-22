@@ -27,6 +27,8 @@ import {
 import type { ContestAttemptRepository, ContestRepository } from "../contest/contest.repository";
 import type { ClassTestCodingQuestion } from "../classtest/classtest.model";
 import type { ClassTestRepository } from "../classtest/classtest.repository";
+import type { LabCodingExperiment } from "../lab/lab.model";
+import type { LabRepository } from "../lab/lab.repository";
 import type { ProblemRecord } from "../problem/problem.model";
 import type { ProblemRepository } from "../problem/problem.repository";
 import type { UserRecord } from "../user/user.model";
@@ -62,6 +64,7 @@ interface SubmissionServiceDependencies {
   contestRepository: ContestRepository;
   contestAttemptRepository: ContestAttemptRepository;
   classTestRepository: ClassTestRepository;
+  labRepository: LabRepository;
   submissionRepository: SubmissionRepository;
   userRepository: UserRepository;
   leaderboardRepository: LeaderboardRepository;
@@ -711,6 +714,44 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
               problemId: `${classTest.id}:${question.id}`,
               timeLimitSeconds: question.timeLimitSeconds,
               memoryLimitMb: question.memoryLimitMb,
+            });
+          }
+        } else if (runningSubmission.sourceType === "lab_coding") {
+          const lab = runningSubmission.labId
+            ? await dependencies.labRepository.getById(runningSubmission.labId)
+            : null;
+          if (!lab) {
+            throw new AppError(404, "Lab not found");
+          }
+
+          const experiment = lab.experiments.find(
+            (item): item is LabCodingExperiment =>
+              item.id === runningSubmission.labExperimentId && item.kind === "coding",
+          );
+          if (!experiment) {
+            throw new AppError(404, "Lab experiment not found");
+          }
+
+          {
+            const program = generateSubmissionProgram(
+              runningSubmission.language,
+              runningSubmission.code,
+              experiment.harness,
+            );
+            result = await dependencies.executionProvider.executeSubmission({
+              code: program.source,
+              comparison: program.comparison,
+              batchProgram: buildBatchProgram(
+                runningSubmission.language,
+                runningSubmission.code,
+                experiment.harness,
+              ),
+              language: runningSubmission.language,
+              testCases: [...experiment.sampleTestCases, ...experiment.hiddenTestCases],
+              sampleCaseCount: experiment.sampleTestCases.length,
+              problemId: `${lab.id}:${experiment.id}`,
+              timeLimitSeconds: experiment.timeLimitSeconds,
+              memoryLimitMb: experiment.memoryLimitMb,
             });
           }
         } else {

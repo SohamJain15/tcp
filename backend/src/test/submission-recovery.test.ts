@@ -5,6 +5,7 @@ import type { SubmissionQueue } from "../queue/submission-queue";
 import {
   InMemoryContestAttemptRepository,
   InMemoryClassTestRepository,
+  InMemoryLabRepository,
   InMemoryContestRepository,
   InMemoryLeaderboardRepository,
   InMemoryProblemRepository,
@@ -139,6 +140,7 @@ describe("submission recovery", () => {
       contestRepository: new InMemoryContestRepository(),
       contestAttemptRepository: new InMemoryContestAttemptRepository(),
       classTestRepository: new InMemoryClassTestRepository(),
+      labRepository: new InMemoryLabRepository(),
       submissionRepository,
       userRepository: new InMemoryUserRepository(),
       leaderboardRepository: new InMemoryLeaderboardRepository(),

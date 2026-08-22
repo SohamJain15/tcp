@@ -2,7 +2,13 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 
 import type { LabService } from "./lab.service";
-import { createLabSchema, labSqlPreviewSchema, labSqlRunSchema, updateLabSchema } from "./lab.validator";
+import {
+  createLabSchema,
+  labCodingRunSchema,
+  labSqlPreviewSchema,
+  labSqlRunSchema,
+  updateLabSchema,
+} from "./lab.validator";
 
 const routeIdSchema = z.string().regex(/^[a-z0-9_-]{4,80}$/i);
 
@@ -59,6 +65,26 @@ export function createLabController(labService: LabService) {
       const labId = routeIdSchema.parse(getRouteParam(req.params.labId));
       const payload = labSqlRunSchema.parse(req.body);
       res.status(201).json(await labService.submitSql(req.user!, labId, payload.experimentId, payload.sql));
+    },
+
+    async runCoding(req: Request, res: Response): Promise<void> {
+      const labId = routeIdSchema.parse(getRouteParam(req.params.labId));
+      const payload = labCodingRunSchema.parse(req.body);
+      const result = await labService.runCoding(req.user!, labId, payload);
+      res.json({ result });
+    },
+
+    async submitCoding(req: Request, res: Response): Promise<void> {
+      const labId = routeIdSchema.parse(getRouteParam(req.params.labId));
+      const payload = labCodingRunSchema.parse(req.body);
+      res.status(201).json(await labService.submitCoding(req.user!, labId, payload));
+    },
+
+    async saveCodingDraft(req: Request, res: Response): Promise<void> {
+      // The editor persists code in the browser (sessionStorage), so a server draft is not needed;
+      // the endpoint exists so the shared coding workspace's saveDraft call succeeds.
+      labCodingRunSchema.parse(req.body);
+      res.json({ saved: true });
     },
   };
 }

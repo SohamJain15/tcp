@@ -3,10 +3,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 
 import { labApi } from "@/api/services";
+import type { ExecutableLanguage } from "@/api/types";
 import { AppLayout } from "@/components/AppLayout";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ContestCodingBody } from "@/components/ContestCodingBody";
 import { SqlWorkspace } from "@/components/SqlWorkspace";
 
 export default function LabDetail() {
@@ -78,11 +79,33 @@ export default function LabDetail() {
                         onSolved={() => queryClient.invalidateQueries({ queryKey: ["student-lab", id] })}
                       />
                     ) : (
-                      <div className="space-y-2 text-sm text-muted-foreground">
-                        <p>This is a coding experiment.</p>
-                        <Button asChild size="sm" variant="outline">
-                          <Link to="/student/problems">Open the coding workspace</Link>
-                        </Button>
+                      <div className="border border-border lg:h-[70vh]">
+                        <ContestCodingBody
+                          key={experiment.id}
+                          contestId={lab.id}
+                          questionId={experiment.id}
+                          pathname={pathname}
+                          attemptIsActive
+                          onAfterSubmit={() => queryClient.invalidateQueries({ queryKey: ["student-lab", id] })}
+                          question={{
+                            id: experiment.id,
+                            title: experiment.title,
+                            problemStatement: experiment.aim,
+                            constraints: experiment.constraints,
+                            inputFormat: experiment.inputFormat,
+                            outputFormat: experiment.outputFormat,
+                            sampleTestCases: experiment.sampleTestCases ?? [],
+                            supportedLanguages: experiment.supportedLanguages as ExecutableLanguage[] | undefined,
+                          }}
+                          codingApi={{
+                            run: (input) =>
+                              labApi.runCoding(lab.id, { experimentId: input.questionId, code: input.code, language: input.language }, pathname),
+                            submit: (input) =>
+                              labApi.submitCoding(lab.id, { experimentId: input.questionId, code: input.code, language: input.language }, pathname),
+                            saveDraft: (input) =>
+                              labApi.saveCodingDraft(lab.id, { experimentId: input.questionId, code: input.code, language: input.language }, pathname),
+                          }}
+                        />
                       </div>
                     )}
                   </div>

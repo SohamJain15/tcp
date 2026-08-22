@@ -301,6 +301,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       contestRepository,
       contestAttemptRepository,
       classTestRepository,
+      labRepository,
       submissionRepository,
       userRepository,
       leaderboardRepository,
@@ -348,6 +349,9 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
     labService: createLabService({
       labRepository,
       labSqlSubmissionRepository,
+      submissionRepository,
+      submissionQueue,
+      executionProvider: new StubExecutionProvider(),
       userRepository,
       sqlExecutor: new StubSqlExecutor(),
       now,
