@@ -49,7 +49,7 @@ backend production environment. Additional SQL requests wait in the backend queu
 run consumes approximately two MySQL sessions; the dedicated sandbox is configured for 128
 connections. Increase these only after load-testing the actual VM.
 
-The SQL Compose service is hardened with an internal Docker network, loopback-only MySQL
+The SQL Compose service is hardened with a dedicated Docker bridge network, loopback-only MySQL
 publication, a read-only root filesystem, dropped Linux capabilities, `no-new-privileges`, and
 CPU/memory/process limits. Verify that the server firewall does not allow inbound TCP 3307:
 

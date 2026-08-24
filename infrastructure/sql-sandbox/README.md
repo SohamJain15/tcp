@@ -53,10 +53,12 @@ the binding to `0.0.0.0:3307`. If the backend runs in another container, place i
 `tcp-sql-private` network and use `MYSQL_HOST=sql-sandbox`, `MYSQL_PORT=3306` instead of the
 loopback mapping.
 
-The SQL network is Docker-internal, so the MySQL container has no outbound internet route. The
-container also runs with a read-only root filesystem, `no-new-privileges`, dropped capabilities,
-and CPU, memory, process, and file-descriptor limits. The only writable locations are the named
-MySQL data volume and temporary filesystems required by MySQL.
+The MySQL container is attached to a dedicated bridge network so the host-based PM2 backend can
+use the loopback publication. MySQL is still not publicly reachable because the published port is
+bound exclusively to `127.0.0.1`. The container also runs with a read-only root filesystem,
+`no-new-privileges`, dropped capabilities, and CPU, memory, process, and file-descriptor limits.
+The only writable locations are the named MySQL data volume and temporary filesystems required by
+MySQL.
 
 The current 4-vCPU server profile uses 1 GB RAM, 2 CPU cores, and 512 processes for the SQL
 container. Tune these in the server-only `.env` only after checking the VM's total RAM and

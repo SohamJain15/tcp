@@ -58,4 +58,7 @@ volumes:
 networks:
   tcp-sql-private:
     name: tcp-sql-private
-    internal: true
+    # The backend currently runs on the Linux host under PM2. A Docker-internal
+    # network prevents Docker from publishing the loopback host port.
+    # Public exposure is still prevented by host_ip: 127.0.0.1 above.
+    internal: false
