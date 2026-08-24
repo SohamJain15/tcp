@@ -231,10 +231,10 @@ Set `EXECUTION_PROVIDER=judge0` and `JUDGE0_BASE_URL=http://127.0.0.1:2358` once
 
 Production deployments must keep the backend private behind the trusted authentication path. Do not make the API directly reachable from the public internet.
 
-The production SQL capacity setting is `SQL_SANDBOX_CONCURRENCY=500` and
-`SQL_SANDBOX_POOL_SIZE=500`. Each active SQL run uses approximately two MySQL sessions, so the
-dedicated SQL container is configured for 1,200 connections. Size and load-test the Linux host
-before enabling this capacity.
+The current 4-vCPU SQL profile uses `SQL_SANDBOX_CONCURRENCY=32` and
+`SQL_SANDBOX_POOL_SIZE=40`; additional users wait in the execution queue. Each active SQL run uses
+approximately two MySQL sessions, so the dedicated SQL container is configured for 128
+connections. Increase these only after measuring the host under load.
 
 ## Judge0 Sandbox Notes
 

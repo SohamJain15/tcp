@@ -3,6 +3,28 @@ services:
     image: mysql:8.0.41
     container_name: tcp-sql-sandbox
     restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Required by the official MySQL entrypoint to initialize the volume and drop to mysql.
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    pids_limit: ${SQL_SANDBOX_PIDS_LIMIT:-512}
+    mem_limit: ${SQL_SANDBOX_MEMORY_LIMIT:-1g}
+    cpus: ${SQL_SANDBOX_CPU_LIMIT:-4.0}
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+      - /run/mysqld:size=64m,mode=0755
     environment:
       MYSQL_ROOT_PASSWORD: ${SQL_SANDBOX_ROOT_PASSWORD:?Set SQL_SANDBOX_ROOT_PASSWORD in infrastructure/sql-sandbox/.env}
       MYSQL_SANDBOX_ADMIN_PASSWORD: ${SQL_SANDBOX_ADMIN_PASSWORD:?Set SQL_SANDBOX_ADMIN_PASSWORD in infrastructure/sql-sandbox/.env}
@@ -31,3 +53,4 @@ volumes:
 networks:
   tcp-sql-private:
     name: tcp-sql-private
+    internal: true

@@ -44,10 +44,22 @@ dedicated SQL sandbox. Its Compose service uses
 `restart: unless-stopped`, so it returns automatically after a server reboot. Use
 `npm run sql-sandbox:status` and `npm run sql-sandbox:logs` for verification and diagnostics.
 
-For the target capacity, set `SQL_SANDBOX_CONCURRENCY=500` and `SQL_SANDBOX_POOL_SIZE=500` in
-the backend production environment. Each active run consumes approximately two MySQL sessions;
-the dedicated sandbox is configured for 1,200 connections. Load-test this setting on the actual
-VM before opening the lab to a large cohort.
+For this 4-vCPU server, set `SQL_SANDBOX_CONCURRENCY=32` and `SQL_SANDBOX_POOL_SIZE=40` in the
+backend production environment. Additional SQL requests wait in the backend queue. Each active
+run consumes approximately two MySQL sessions; the dedicated sandbox is configured for 128
+connections. Increase these only after load-testing the actual VM.
+
+The SQL Compose service is hardened with an internal Docker network, loopback-only MySQL
+publication, a read-only root filesystem, dropped Linux capabilities, `no-new-privileges`, and
+CPU/memory/process limits. Verify that the server firewall does not allow inbound TCP 3307:
+
+```bash
+sudo ss -ltnp | grep ':3307'
+sudo ufw deny 3307/tcp
+```
+
+The `ss` output should show `127.0.0.1:3307`, never `0.0.0.0:3307` or the server's public/Tailscale
+address.
 
 ## 4. Proxy & Security Configuration
 The backend uses `app.set("trust proxy", 1)` to read Cloudflare's `X-Forwarded-For` headers. 

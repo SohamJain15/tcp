@@ -53,6 +53,15 @@ the binding to `0.0.0.0:3307`. If the backend runs in another container, place i
 `tcp-sql-private` network and use `MYSQL_HOST=sql-sandbox`, `MYSQL_PORT=3306` instead of the
 loopback mapping.
 
+The SQL network is Docker-internal, so the MySQL container has no outbound internet route. The
+container also runs with a read-only root filesystem, `no-new-privileges`, dropped capabilities,
+and CPU, memory, process, and file-descriptor limits. The only writable locations are the named
+MySQL data volume and temporary filesystems required by MySQL.
+
+The current 4-vCPU server profile uses 1 GB RAM, 2 CPU cores, and 512 processes for the SQL
+container. Tune these in the server-only `.env` only after checking the VM's total RAM and
+load-testing.
+
 For a separately managed backend compose project, join the existing private network rather than
 publishing another MySQL port:
 
@@ -91,21 +100,19 @@ SQL_MAX_COLUMNS=100
 SQL_MAX_QUERY_LENGTH=12000
 SQL_MAX_SCHEMA_LENGTH=100000
 SQL_MAX_SOLUTION_LENGTH=20000
-SQL_SANDBOX_CONCURRENCY=500
-SQL_SANDBOX_POOL_SIZE=500
+SQL_SANDBOX_CONCURRENCY=32
+SQL_SANDBOX_POOL_SIZE=40
 SQL_SANDBOX_SWEEP_INTERVAL_MS=300000
 ```
 
-The 500-run setting is for a properly sized Linux production host. Each active run temporarily
-uses two MySQL sessions: one admin session for provisioning/cleanup and one restricted student
-session for the query. The MySQL configuration therefore allows 1,200 connections, leaving
-headroom for health checks and maintenance. If the server has fewer resources, lower both values
-together; 500 signed-in users do not require 500 database sessions unless they execute at the
-same time.
+This profile supports many simultaneous users by queueing work: 32 SQL executions run at once and
+additional requests wait in the backend queue. Each active run temporarily uses one admin session
+and one restricted student session, so the MySQL configuration allows 128 connections with
+headroom. 500 signed-in users do not require 500 database sessions unless they execute at the same
+time.
 
-For this capacity, use at least 4 dedicated CPU cores and 8 GB RAM for the SQL container, and
-monitor CPU, memory, connection count, and query latency during a real load test. Do not expose
-the MySQL port publicly.
+Monitor CPU, memory, connection count, queue wait time, and query latency during a real load test.
+Do not expose the MySQL port publicly.
 
 The production backend now refuses to start when the SQL sandbox is enabled without an isolated
 instance acknowledgement, a password, or a non-root admin user.
@@ -140,6 +147,11 @@ The admin account has broad privileges because it must create/drop databases and
 acceptable only on this dedicated sandbox instance. Keep port 3306/3307 private, keep the admin
 password backend-only, and do not point `MYSQL_HOST` at MongoDB, production MySQL, or a shared
 institutional database.
+
+This is strong single-server isolation, not a complete host-compromise boundary. The SQL
+container must not be privileged, must not mount the Docker socket or host directories, and must
+not share its MySQL data with application databases. A container escape or Docker-host compromise
+could still affect other services on the same server.
 
 ## 4. Persistence and cleanup
 
