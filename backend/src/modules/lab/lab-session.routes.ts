@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import type { ApplicationDependencies } from "../../bootstrap/dependencies";
 import { requireRole } from "../../middleware/require-role";
+import { createSqlExecutionRateLimiter } from "../../middleware/rate-limit";
 import { asyncHandler } from "../../shared/middleware/async-handler";
 import { createLabSessionController } from "./lab-session.controller";
 
@@ -9,6 +10,7 @@ import { createLabSessionController } from "./lab-session.controller";
 export function createLabSessionRouter(dependencies: ApplicationDependencies): Router {
   const router = Router();
   const controller = createLabSessionController(dependencies.labSessionService);
+  const sqlExecutionLimiter = createSqlExecutionRateLimiter();
 
   router.use(dependencies.authMiddleware);
   router.use(dependencies.profileCompletionMiddleware);
@@ -19,7 +21,7 @@ export function createLabSessionRouter(dependencies: ApplicationDependencies): R
   router.get("/mine/:sessionId", requireRole("STUDENT"), asyncHandler(controller.getForStudent));
   router.get("/mine/:sessionId/result", requireRole("STUDENT"), asyncHandler(controller.getResult));
   router.post("/mine/:sessionId/attempts", requireRole("STUDENT"), asyncHandler(controller.startAttempt));
-  router.post("/mine/:sessionId/sql-run", requireRole("STUDENT"), asyncHandler(controller.runSql));
+  router.post("/mine/:sessionId/sql-run", requireRole("STUDENT"), sqlExecutionLimiter, asyncHandler(controller.runSql));
   router.post("/mine/:sessionId/sql-save", requireRole("STUDENT"), asyncHandler(controller.saveSql));
   router.post("/mine/:sessionId/coding-run", requireRole("STUDENT"), asyncHandler(controller.runCoding));
   router.post("/mine/:sessionId/coding-submit", requireRole("STUDENT"), asyncHandler(controller.submitCoding));

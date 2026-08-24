@@ -53,6 +53,9 @@ backend/.env
 # Judge0 config
 /infrastructure/judge0/judge0.conf
 
+# SQL sandbox deployment-only MySQL configuration
+/infrastructure/sql-sandbox/mysql.cnf
+
 .claude/
 
 mock-sso-server.js

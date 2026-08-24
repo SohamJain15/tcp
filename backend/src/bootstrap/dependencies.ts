@@ -195,8 +195,14 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
           port: env.MYSQL_PORT,
           adminUser: env.MYSQL_ADMIN_USER,
           adminPassword: env.MYSQL_ADMIN_PASSWORD,
+          namespace: env.SQL_SANDBOX_NAMESPACE,
           statementTimeoutMs: env.SQL_STATEMENT_TIMEOUT_MS,
           maxRows: env.SQL_MAX_ROWS,
+          maxColumns: env.SQL_MAX_COLUMNS,
+          maxQueryLength: env.SQL_MAX_QUERY_LENGTH,
+          maxSchemaLength: env.SQL_MAX_SCHEMA_LENGTH,
+          maxSolutionLength: env.SQL_MAX_SOLUTION_LENGTH,
+          maxConcurrentRuns: env.SQL_SANDBOX_CONCURRENCY,
           poolSize: env.SQL_SANDBOX_POOL_SIZE,
         })
       : new StubSqlExecutor());

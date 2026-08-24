@@ -86,19 +86,33 @@ const envSchema = z.object({
   RATING_POINTS_HARD: z.coerce.number().int().nonnegative().default(300),
   // DBMS Lab SQL sandbox. Off by default: with it disabled the rest of the platform runs with no
   // MySQL dependency, and the lab module falls back to a stub executor. When enabled, the backend
-  // provisions a throwaway database per attempt on this MySQL, so the admin user must be able to
-  // CREATE/DROP DATABASE. The server must be reachable only from the backend.
+  // provisions a throwaway database per attempt on a dedicated MySQL instance, so the admin user
+  // must be able to CREATE/DROP DATABASE and CREATE/DROP users. The server must be private.
   SQL_SANDBOX_ENABLED: z.unknown().transform((value) => parseBoolean(value, false)),
+  SQL_SANDBOX_ISOLATED_INSTANCE: z.unknown().transform((value) => parseBoolean(value, false)),
+  SQL_SANDBOX_NAMESPACE: z
+    .string()
+    .trim()
+    .regex(/^[a-z][a-z0-9_]{1,20}$/, "SQL_SANDBOX_NAMESPACE must contain only lowercase letters, digits, and underscores")
+    .default("tcp"),
   MYSQL_HOST: z.string().min(1).default("127.0.0.1"),
   MYSQL_PORT: z.coerce.number().int().positive().default(3306),
-  MYSQL_ADMIN_USER: z.string().optional().transform((value) => value?.trim() ?? "root"),
+  MYSQL_ADMIN_USER: z.string().trim().min(1).default("tcp_sql_admin"),
   MYSQL_ADMIN_PASSWORD: z.string().optional().transform((value) => value?.trim() ?? ""),
   // Per-statement ceiling for a student's query, and the row cap on a captured result set, so a
   // runaway JOIN cannot pin the shared MySQL or return a million rows to the browser.
   SQL_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   SQL_MAX_ROWS: z.coerce.number().int().positive().default(500),
-  SQL_SANDBOX_POOL_SIZE: z.coerce.number().int().min(1).max(50).default(5),
-  // A throwaway `lab_%` database older than this is treated as orphaned (its request crashed
+  SQL_MAX_COLUMNS: z.coerce.number().int().positive().max(500).default(100),
+  SQL_MAX_QUERY_LENGTH: z.coerce.number().int().min(128).max(100000).default(12000),
+  SQL_MAX_SCHEMA_LENGTH: z.coerce.number().int().min(1024).max(500000).default(100000),
+  SQL_MAX_SOLUTION_LENGTH: z.coerce.number().int().min(128).max(100000).default(20000),
+  // One active run consumes one admin-pool connection and one student connection. Keep the
+  // default conservative for development, while allowing the Linux production deployment to
+  // support 500 simultaneous sandbox executions when the host is sized for it.
+  SQL_SANDBOX_CONCURRENCY: z.coerce.number().int().min(1).max(500).default(5),
+  SQL_SANDBOX_POOL_SIZE: z.coerce.number().int().min(1).max(500).default(5),
+  // A namespaced throwaway database older than this is treated as orphaned (its request crashed
   // mid-run) and dropped by the sweeper. 0 disables the sweeper.
   SQL_SANDBOX_SWEEP_INTERVAL_MS: z.coerce.number().int().nonnegative().default(300000),
   // Local AI contest reports. Every default is safe with nothing installed: the adapter probes the
@@ -124,6 +138,30 @@ const envSchema = z.object({
   // A GENERATING report older than this is treated as abandoned and can be reclaimed, so a crash
   // mid-generation cannot wedge a contest's report forever.
   AI_STALE_LOCK_MS: z.coerce.number().int().positive().default(600000),
+}).superRefine((value, ctx) => {
+  if (value.NODE_ENV === "production" && value.SQL_SANDBOX_ENABLED) {
+    if (!value.SQL_SANDBOX_ISOLATED_INSTANCE) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["SQL_SANDBOX_ISOLATED_INSTANCE"],
+        message: "Production SQL sandbox requires a dedicated isolated MySQL instance.",
+      });
+    }
+    if (!value.MYSQL_ADMIN_PASSWORD) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["MYSQL_ADMIN_PASSWORD"],
+        message: "MYSQL_ADMIN_PASSWORD is required when the production SQL sandbox is enabled.",
+      });
+    }
+    if (value.MYSQL_ADMIN_USER.toLowerCase() === "root") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["MYSQL_ADMIN_USER"],
+        message: "Use a dedicated sandbox admin account instead of root.",
+      });
+    }
+  }
 });
 
 const parsedEnv = envSchema.parse(process.env);

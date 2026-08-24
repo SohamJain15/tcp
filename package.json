@@ -4,7 +4,12 @@
     "judge0:down": "./scripts/judge0-down.sh",
     "judge0:status": "./scripts/judge0-status.sh",
     "judge0:test-sandbox": "cd backend && npx ts-node src/scripts/test-sandbox.ts",
-    "judge0:test-languages": "cd backend && npx ts-node src/scripts/test-runtime-languages.ts"
+    "judge0:test-languages": "cd backend && npx ts-node src/scripts/test-runtime-languages.ts",
+    "sql-sandbox:up": "bash scripts/sql-sandbox-up.sh",
+    "sql-sandbox:down": "bash scripts/sql-sandbox-down.sh",
+    "sql-sandbox:status": "bash scripts/sql-sandbox-status.sh",
+    "sql-sandbox:logs": "bash scripts/sql-sandbox-logs.sh",
+    "sql-sandbox:enable": "bash scripts/sql-sandbox-enable.sh"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",

@@ -29,8 +29,8 @@ const labTestCaseSchema = z.object({
 const sqlExperimentSchema = z.object({
   ...experimentBase,
   kind: z.literal("sql"),
-  schemaSql: z.string().trim().min(1, "Provide the schema and seed data"),
-  solutionSql: z.string().trim().min(1, "Provide the reference (solution) query"),
+  schemaSql: z.string().trim().min(1, "Provide the schema and seed data").max(100_000, "Schema SQL is too large"),
+  solutionSql: z.string().trim().min(1, "Provide the reference (solution) query").max(20_000, "Solution SQL is too large"),
   ordered: z.boolean().default(false),
 });
 
@@ -81,7 +81,7 @@ export const updateLabSchema = labBodySchema
 /** Student run/submit of a SQL experiment. */
 export const labSqlRunSchema = z.object({
   experimentId: z.string().trim().min(1),
-  sql: z.string().min(1, "Write a query first"),
+  sql: z.string().trim().min(1, "Write a query first").max(12_000, "Query is too large"),
 });
 
 /** Student run/submit/draft of a coding experiment. A draft may be empty (editor cleared). */
@@ -93,11 +93,11 @@ export const labCodingRunSchema = z.object({
 
 /** Faculty "Run solution" preview — lay out the expected grid for an experiment being authored. */
 export const labSqlPreviewSchema = z.object({
-  schemaSql: z.string().trim().min(1),
-  solutionSql: z.string().trim().min(1),
+  schemaSql: z.string().trim().min(1).max(100_000),
+  solutionSql: z.string().trim().min(1).max(20_000),
   ordered: z.boolean().default(false),
   /** Optional: run this instead of the solution, to preview the student experience. */
-  studentSql: z.string().optional(),
+  studentSql: z.string().trim().max(12_000).optional(),
 });
 
 export type CreateLabInput = z.infer<typeof createLabSchema>;

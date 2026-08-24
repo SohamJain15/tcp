@@ -86,3 +86,20 @@ export function createCodeExecutionRateLimiter() {
     },
   });
 }
+
+/** SQL execution is synchronous and provisions a database, so it gets a tighter per-user budget. */
+export function createSqlExecutionRateLimiter() {
+  return rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: finalSubmissionKey,
+    skip: () => env.NODE_ENV === "test",
+    handler: (_req, res) => {
+      res.status(429).json({
+        message: "Too many SQL executions. Please wait a moment and try again.",
+      });
+    },
+  });
+}

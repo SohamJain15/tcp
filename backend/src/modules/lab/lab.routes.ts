@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import type { ApplicationDependencies } from "../../bootstrap/dependencies";
 import { requireRole } from "../../middleware/require-role";
+import { createSqlExecutionRateLimiter } from "../../middleware/rate-limit";
 import { asyncHandler } from "../../shared/middleware/async-handler";
 import { createLabController } from "./lab.controller";
 
@@ -14,6 +15,7 @@ import { createLabController } from "./lab.controller";
 export function createLabRouter(dependencies: ApplicationDependencies): Router {
   const router = Router();
   const controller = createLabController(dependencies.labService);
+  const sqlExecutionLimiter = createSqlExecutionRateLimiter();
 
   router.use(dependencies.authMiddleware);
   router.use(dependencies.profileCompletionMiddleware);
@@ -22,8 +24,8 @@ export function createLabRouter(dependencies: ApplicationDependencies): Router {
   // Student surface.
   router.get("/mine", requireRole("STUDENT"), asyncHandler(controller.listStudentLabs));
   router.get("/mine/:labId", requireRole("STUDENT"), asyncHandler(controller.getStudentLab));
-  router.post("/mine/:labId/sql-run", requireRole("STUDENT"), asyncHandler(controller.runSql));
-  router.post("/mine/:labId/sql-submit", requireRole("STUDENT"), asyncHandler(controller.submitSql));
+  router.post("/mine/:labId/sql-run", requireRole("STUDENT"), sqlExecutionLimiter, asyncHandler(controller.runSql));
+  router.post("/mine/:labId/sql-submit", requireRole("STUDENT"), sqlExecutionLimiter, asyncHandler(controller.submitSql));
   router.post("/mine/:labId/coding-run", requireRole("STUDENT"), asyncHandler(controller.runCoding));
   router.post("/mine/:labId/coding-submit", requireRole("STUDENT"), asyncHandler(controller.submitCoding));
   router.post("/mine/:labId/coding-draft", requireRole("STUDENT"), asyncHandler(controller.saveCodingDraft));
@@ -31,7 +33,7 @@ export function createLabRouter(dependencies: ApplicationDependencies): Router {
   // Faculty surface. Static "/sql-preview" before "/:labId" so it is not captured.
   router.get("/", requireRole("FACULTY"), asyncHandler(controller.listLabs));
   router.post("/", requireRole("FACULTY"), asyncHandler(controller.createLab));
-  router.post("/sql-preview", requireRole("FACULTY"), asyncHandler(controller.previewSql));
+  router.post("/sql-preview", requireRole("FACULTY"), sqlExecutionLimiter, asyncHandler(controller.previewSql));
   router.get("/:labId", requireRole("FACULTY"), asyncHandler(controller.getLab));
   router.patch("/:labId", requireRole("FACULTY"), asyncHandler(controller.updateLab));
 

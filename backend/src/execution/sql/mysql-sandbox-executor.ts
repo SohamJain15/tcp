@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import mysql from "mysql2/promise";
 
 import { compareResultSets } from "./sql-compare";
+import { validateSqlTextLength, validateStudentSql } from "./sql-policy";
 import type {
   SqlCell,
   SqlExecutor,
@@ -16,10 +17,16 @@ export interface MysqlSandboxConfig {
   port: number;
   adminUser: string;
   adminPassword: string;
+  namespace: string;
   /** Per-statement ceiling for the student's query (server-side MAX_EXECUTION_TIME + client wall). */
   statementTimeoutMs: number;
   /** Row cap on a captured grid. */
   maxRows: number;
+  maxColumns: number;
+  maxQueryLength: number;
+  maxSchemaLength: number;
+  maxSolutionLength: number;
+  maxConcurrentRuns: number;
   poolSize: number;
 }
 
@@ -45,7 +52,7 @@ function isTimeout(error: unknown): boolean {
  * Runs student SQL against a REAL MySQL, one throwaway database per attempt.
  *
  * Isolation is the whole point:
- *  - a fresh `lab_<ts>_<rand>` database and a fresh `labu_<ts>_<rand>` MySQL user are created per
+ *  - a fresh namespaced database and MySQL user are created per
  *    call; the user is granted privileges on *only* that database, so a student query cannot read
  *    `mysql.*` or another attempt's data;
  *  - the schema is seeded by the admin (schema owner); the student query runs as the restricted
@@ -59,6 +66,8 @@ function isTimeout(error: unknown): boolean {
 export class MysqlSandboxExecutor implements SqlExecutor {
   readonly provider = "sql-mysql";
   private readonly pool: mysql.Pool;
+  private activeRuns = 0;
+  private readonly waitingRuns: Array<() => void> = [];
 
   constructor(private readonly config: MysqlSandboxConfig) {
     this.pool = mysql.createPool({
@@ -70,20 +79,28 @@ export class MysqlSandboxExecutor implements SqlExecutor {
       waitForConnections: true,
       multipleStatements: true,
       dateStrings: true,
+      connectTimeout: 5000,
     });
   }
 
   async run(input: { studentSql: string; context: SqlExperimentContext }): Promise<SqlRunResult> {
-    return this.withEphemeralDb(input.context, async (names) => {
-      const ran = await this.runAsUser(names, input.studentSql);
-      return {
-        ok: ran.error === undefined,
-        result: ran.result,
-        error: ran.error,
-        timedOut: ran.timedOut,
-        runtimeMs: ran.runtimeMs,
-      };
-    }).catch((error) => ({
+    const validation = validateStudentSql(input.studentSql, this.config.maxQueryLength);
+    if (!validation.ok) {
+      return { ok: false, error: validation.error, timedOut: false, runtimeMs: 0 };
+    }
+
+    return this.withRunPermit(() =>
+      this.withEphemeralDb(input.context, async (names) => {
+        const ran = await this.runAsUser(names, input.studentSql);
+        return {
+          ok: ran.error === undefined,
+          result: ran.result,
+          error: ran.error,
+          timedOut: ran.timedOut,
+          runtimeMs: ran.runtimeMs,
+        };
+      }),
+    ).catch((error) => ({
       ok: false,
       error: error instanceof Error ? error.message : "Sandbox error",
       timedOut: false,
@@ -92,8 +109,19 @@ export class MysqlSandboxExecutor implements SqlExecutor {
   }
 
   async grade(input: { studentSql: string; context: SqlExperimentContext }): Promise<SqlGradeResult> {
+    const validation = validateStudentSql(input.studentSql, this.config.maxQueryLength);
+    if (!validation.ok) {
+      return {
+        status: "RUNTIME_ERROR",
+        passed: false,
+        runtimeMs: 0,
+        provider: this.provider,
+        message: validation.error,
+      };
+    }
+
     try {
-      return await this.withEphemeralDb(input.context, async (names, admin) => {
+      return await this.withRunPermit(() => this.withEphemeralDb(input.context, async (names, admin) => {
         // Reference result first, on pristine seeded data, as the trusted schema owner.
         const [expectedRows, expectedFields] = await admin.query({
           sql: input.context.solutionSql,
@@ -119,7 +147,7 @@ export class MysqlSandboxExecutor implements SqlExecutor {
           expectedResult: expected,
           message: comparison.reason,
         };
-      });
+      }));
     } catch (error) {
       return {
         status: "INTERNAL_ERROR",
@@ -136,16 +164,18 @@ export class MysqlSandboxExecutor implements SqlExecutor {
     const admin = await this.pool.getConnection();
     try {
       const cutoff = Date.now() - staleMs;
-      const [dbs] = await admin.query("SHOW DATABASES LIKE 'lab\\_%'");
+      const databasePrefix = `${this.config.namespace}_lab`;
+      const userPrefix = `${this.config.namespace}_labu`;
+      const [dbs] = await admin.query(`SHOW DATABASES LIKE '${databasePrefix}\\_%'`);
       for (const row of dbs as Record<string, string>[]) {
         const name = Object.values(row)[0];
-        if (this.timestampOf(name) < cutoff) {
+        if (this.timestampOf(name, databasePrefix) < cutoff) {
           await admin.query(`DROP DATABASE IF EXISTS \`${name}\``).catch(() => undefined);
         }
       }
-      const [users] = await admin.query("SELECT User AS u FROM mysql.user WHERE User LIKE 'labu\\_%'");
+      const [users] = await admin.query(`SELECT User AS u FROM mysql.user WHERE User LIKE '${userPrefix}\\_%'`);
       for (const row of users as { u: string }[]) {
-        if (this.timestampOf(row.u) < cutoff) {
+        if (this.timestampOf(row.u, userPrefix) < cutoff) {
           await admin.query(`DROP USER IF EXISTS '${row.u}'@'%'`).catch(() => undefined);
         }
       }
@@ -158,20 +188,40 @@ export class MysqlSandboxExecutor implements SqlExecutor {
     await this.pool.end();
   }
 
-  private timestampOf(name: string): number {
-    const parts = name.split("_");
-    const ts = Number.parseInt(parts[1] ?? "", 36);
+  private timestampOf(name: string, prefix: string): number {
+    const ts = Number.parseInt(name.slice(prefix.length + 1).split("_")[0] ?? "", 36);
     return Number.isFinite(ts) ? ts : 0;
+  }
+
+  private async withRunPermit<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.activeRuns >= this.config.maxConcurrentRuns) {
+      await new Promise<void>((resolve) => this.waitingRuns.push(resolve));
+    }
+    this.activeRuns += 1;
+    try {
+      return await operation();
+    } finally {
+      this.activeRuns -= 1;
+      this.waitingRuns.shift()?.();
+    }
   }
 
   private async withEphemeralDb<T>(
     context: SqlExperimentContext,
     body: (names: EphemeralNames, admin: mysql.PoolConnection) => Promise<T>,
   ): Promise<T> {
+    const schemaLength = validateSqlTextLength(context.schemaSql, this.config.maxSchemaLength, "Schema SQL");
+    const solutionLength = validateSqlTextLength(context.solutionSql, this.config.maxSolutionLength, "Solution SQL");
+    if (!schemaLength.ok || !solutionLength.ok) {
+      throw new Error(schemaLength.error ?? solutionLength.error ?? "SQL configuration is too large.");
+    }
+
     const suffix = `${Date.now().toString(36)}_${randomBytes(6).toString("hex")}`;
+    const databasePrefix = `${this.config.namespace}_lab`;
+    const userPrefix = `${this.config.namespace}_labu`;
     const names: EphemeralNames = {
-      db: `lab_${suffix}`,
-      user: `labu_${suffix}`,
+      db: `${databasePrefix}_${suffix}`,
+      user: `${userPrefix}_${suffix}`,
       password: randomBytes(16).toString("hex"),
     };
 
@@ -179,7 +229,9 @@ export class MysqlSandboxExecutor implements SqlExecutor {
     try {
       await admin.query(`CREATE DATABASE \`${names.db}\``);
       await admin.query(`CREATE USER '${names.user}'@'%' IDENTIFIED BY '${names.password}'`);
-      await admin.query(`GRANT ALL PRIVILEGES ON \`${names.db}\`.* TO '${names.user}'@'%'`);
+      await admin.query(
+        `GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES, CREATE TEMPORARY TABLES, LOCK TABLES, CREATE VIEW, SHOW VIEW ON \`${names.db}\`.* TO '${names.user}'@'%'`,
+      );
       await admin.query(`USE \`${names.db}\``);
       if (context.schemaSql.trim() !== "") {
         await admin.query(context.schemaSql);
@@ -201,10 +253,13 @@ export class MysqlSandboxExecutor implements SqlExecutor {
       database: names.db,
       multipleStatements: false,
       dateStrings: true,
+      connectTimeout: 5000,
+      enableKeepAlive: false,
     });
     const start = Date.now();
     try {
       await connection.query(`SET SESSION MAX_EXECUTION_TIME = ${this.config.statementTimeoutMs}`);
+      await connection.query("SET SESSION sql_mode = 'STRICT_ALL_TABLES,NO_ZERO_DATE,NO_ENGINE_SUBSTITUTION'");
       const [rows, fields] = await connection.query({
         sql: studentSql,
         rowsAsArray: true,
@@ -225,13 +280,14 @@ export class MysqlSandboxExecutor implements SqlExecutor {
   }
 
   private capture(rows: unknown, fields: unknown): SqlResultSet {
-    const columns = Array.isArray(fields)
+    const allColumns = Array.isArray(fields)
       ? (fields as { name: string }[]).map((field) => field.name)
       : [];
+    const columns = allColumns.slice(0, this.config.maxColumns);
     const allRows = Array.isArray(rows) ? (rows as unknown[]) : [];
-    const truncated = allRows.length > this.config.maxRows;
+    const truncated = allRows.length > this.config.maxRows || allColumns.length > this.config.maxColumns;
     const capped = allRows.slice(0, this.config.maxRows).map((row) =>
-      Array.isArray(row) ? (row as SqlCell[]) : (Object.values(row as object) as SqlCell[]),
+      (Array.isArray(row) ? (row as SqlCell[]) : (Object.values(row as object) as SqlCell[])).slice(0, this.config.maxColumns),
     );
     return { columns, rows: capped, truncated };
   }

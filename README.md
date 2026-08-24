@@ -192,6 +192,28 @@ npm run judge0:test-sandbox
 npm run judge0:test-languages
 ```
 
+### 5. Start the SQL sandbox
+
+Create `infrastructure/sql-sandbox/.env` from `.env.example`, copy
+`mysql.cnf.example` to the deployment-only `mysql.cnf`, set both MySQL passwords, and run the
+lifecycle commands from the repository root:
+
+```bash
+npm run sql-sandbox:up
+npm run sql-sandbox:status
+npm run sql-sandbox:logs
+```
+
+On a systemd-based Linux server, run this once to enable Docker at boot and make the SQL sandbox
+return automatically after a reboot:
+
+```bash
+npm run sql-sandbox:enable
+```
+
+The SQL Compose service uses `restart: unless-stopped`. `npm run sql-sandbox:down` stops it but
+preserves its dedicated data volume.
+
 Set `EXECUTION_PROVIDER=judge0` and `JUDGE0_BASE_URL=http://127.0.0.1:2358` once the runtime checks pass.
 
 ## Configuration Reference
@@ -205,9 +227,14 @@ Set `EXECUTION_PROVIDER=judge0` and `JUDGE0_BASE_URL=http://127.0.0.1:2358` once
 | Attempt lifecycle | `ATTEMPT_FINALIZER_INTERVAL_MS`, `EMBED_SUBMISSION_WORKER` |
 | Platform scoring | `DEFAULT_PROBLEM_TIME_LIMIT_SECONDS`, `DEFAULT_PROBLEM_MEMORY_LIMIT_MB`, `RATING_POINTS_EASY`, `RATING_POINTS_MEDIUM`, `RATING_POINTS_HARD` |
 | Local AI (reports, hints, crossword clues) | `AI_ENABLED`, `AI_BASE_URL`, `AI_MODEL`, `AI_HINT_MODEL`, `AI_CROSSWORD_MODEL`, `AI_TIMEOUT_MS`, `AI_STALE_LOCK_MS` |
-| DBMS Lab SQL sandbox (off by default) | `SQL_SANDBOX_ENABLED`, `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_ADMIN_USER`, `MYSQL_ADMIN_PASSWORD`, `SQL_STATEMENT_TIMEOUT_MS`, `SQL_MAX_ROWS`, `SQL_SANDBOX_POOL_SIZE`, `SQL_SANDBOX_SWEEP_INTERVAL_MS` |
+| DBMS Lab SQL sandbox (off by default) | `SQL_SANDBOX_ENABLED`, `SQL_SANDBOX_ISOLATED_INSTANCE`, `SQL_SANDBOX_NAMESPACE`, `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_ADMIN_USER`, `MYSQL_ADMIN_PASSWORD`, `SQL_STATEMENT_TIMEOUT_MS`, `SQL_MAX_ROWS`, `SQL_MAX_COLUMNS`, `SQL_MAX_QUERY_LENGTH`, `SQL_MAX_SCHEMA_LENGTH`, `SQL_MAX_SOLUTION_LENGTH`, `SQL_SANDBOX_CONCURRENCY`, `SQL_SANDBOX_POOL_SIZE`, `SQL_SANDBOX_SWEEP_INTERVAL_MS` |
 
 Production deployments must keep the backend private behind the trusted authentication path. Do not make the API directly reachable from the public internet.
+
+The production SQL capacity setting is `SQL_SANDBOX_CONCURRENCY=500` and
+`SQL_SANDBOX_POOL_SIZE=500`. Each active SQL run uses approximately two MySQL sessions, so the
+dedicated SQL container is configured for 1,200 connections. Size and load-test the Linux host
+before enabling this capacity.
 
 ## Judge0 Sandbox Notes
 
@@ -238,6 +265,11 @@ npm run judge0:status
 | `npm run judge0:status` | Inspect runtime readiness. |
 | `npm run judge0:test-sandbox` | Verify sandbox isolation. |
 | `npm run judge0:test-languages` | Verify supported runtime languages. |
+| `npm run sql-sandbox:up` | Start the dedicated MySQL SQL sandbox. |
+| `npm run sql-sandbox:down` | Stop the SQL sandbox without deleting its volume. |
+| `npm run sql-sandbox:status` | Check whether the SQL sandbox is running. |
+| `npm run sql-sandbox:logs` | Follow the last 100 SQL sandbox log lines. |
+| `npm run sql-sandbox:enable` | Enable Docker at boot and start the SQL sandbox on Linux. |
 
 ### Backend
 
