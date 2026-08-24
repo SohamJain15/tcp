@@ -5,7 +5,7 @@ source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/sql-sandbox-common.s
 
 require_sql_sandbox_files
 require_docker
-compose_cmd up -d
+compose_cmd up -d --force-recreate --remove-orphans
 wait_for_sql_sandbox
 compose_cmd ps
 
