@@ -38,6 +38,8 @@ services:
         published: "${SQL_SANDBOX_PUBLISHED_PORT:-3307}"
         host_ip: 127.0.0.1
         protocol: tcp
+        # This server uses ordinary Docker Compose, not Docker Swarm.
+        mode: host
     volumes:
       - tcp_sql_sandbox_data:/var/lib/mysql
       - ./mysql.cnf:/etc/mysql/conf.d/99-tcp-sandbox.cnf:ro
