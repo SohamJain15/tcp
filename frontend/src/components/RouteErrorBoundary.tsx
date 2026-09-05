@@ -1,4 +1,6 @@
 import React, { type ReactNode } from "react";
+import { reportClientError } from "@/lib/client-error-reporter";
+import { GENERIC_PRODUCTION_ERROR_MESSAGE } from "@/lib/public-errors";
 
 type RouteErrorBoundaryProps = {
   children: ReactNode;
@@ -19,9 +21,13 @@ export class RouteErrorBoundary extends React.Component<RouteErrorBoundaryProps,
     return { hasError: true, errorMessage: "" };
   }
 
-  override componentDidCatch(error: Error): void {
-    console.error("Faculty problem route crashed:", error);
-    this.setState({ errorMessage: error.message || "Unknown runtime error" });
+  override componentDidCatch(error: Error, info: React.ErrorInfo): void {
+    reportClientError("react", error, info.componentStack ?? undefined);
+    this.setState({
+      errorMessage: import.meta.env.PROD
+        ? GENERIC_PRODUCTION_ERROR_MESSAGE
+        : error.message || "Unknown runtime error",
+    });
   }
 
   override render() {
@@ -29,9 +35,9 @@ export class RouteErrorBoundary extends React.Component<RouteErrorBoundaryProps,
       return (
         <div className="container py-8">
           <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-6 text-sm text-destructive">
-            <div className="font-semibold">Faculty problem page crashed</div>
+            <div className="font-semibold">Something went wrong</div>
             <div className="mt-2">
-              {this.state.errorMessage || "Something went wrong while loading this faculty problem page."}
+              {this.state.errorMessage || GENERIC_PRODUCTION_ERROR_MESSAGE}
             </div>
           </div>
         </div>

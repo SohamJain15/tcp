@@ -51,6 +51,8 @@ export interface CreateTestAppOptions {
   aiReportGenerator?: AiReportGenerator;
   /** Override the hint generator to exercise hint generation without a local model. */
   hintGenerator?: HintGenerator;
+  /** Override authentication to verify routes reject unauthenticated requests. */
+  authMiddleware?: ApplicationDependencies["authMiddleware"];
 }
 
 export function createTestApp(options: CreateTestAppOptions = {}) {
@@ -283,7 +285,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
 
   const dependencies: ApplicationDependencies = {
     userRepository,
-    authMiddleware: mockAuthMiddleware,
+    authMiddleware: options.authMiddleware ?? mockAuthMiddleware,
     profileCompletionMiddleware: createRequireCompleteProfile(userRepository),
     hodMiddleware: createRequireHod(userRepository),
     userService: createUserService({

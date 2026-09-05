@@ -37,7 +37,7 @@ async function createProblem(app: Parameters<typeof request>[0], overrides: Reco
 }
 
 class FakeHintGenerator implements HintGenerator {
-  readonly model = "llama3.1:latest";
+  readonly model = "qwen2.5-coder:latest";
   readonly promptVersion = "1.0.0";
   public calls = 0;
 
@@ -193,7 +193,7 @@ describe("problem hints endpoints", () => {
     expect(response.body.hints[0].model).toBeNull();
     expect(response.body.hints[0].editedBy).toBe("faculty1@tcetmumbai.in");
     // Untouched hints keep their provenance.
-    expect(response.body.hints[1].model).toBe("llama3.1:latest");
+    expect(response.body.hints[1].model).toBe("qwen2.5-coder:latest");
   });
 
   it("does not let a student reach hints for another department's problem", async () => {

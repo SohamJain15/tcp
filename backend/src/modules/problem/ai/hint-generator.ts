@@ -1,5 +1,6 @@
 import { env } from "../../../config/env";
 import { callOllamaJson, probeOllama, type OllamaRuntimeStatus } from "../../../shared/ai/ollama";
+import { logServerError } from "../../../shared/logging/error-logger";
 import type { ProblemRecord } from "../problem.model";
 import {
   buildHintPrompt,
@@ -66,7 +67,7 @@ export class OllamaHintGenerator implements HintGenerator {
   readonly promptVersion = HINT_PROMPT_VERSION;
 
   constructor(
-    readonly model: string = env.AI_HINT_MODEL,
+    readonly model: string = env.AI_MODEL,
     private readonly baseUrl: string = env.AI_BASE_URL,
     private readonly timeoutMs: number = env.AI_TIMEOUT_MS,
     private readonly enabled: boolean = env.AI_ENABLED,
@@ -103,7 +104,16 @@ export class OllamaHintGenerator implements HintGenerator {
       numCtx: 16384,
     });
 
-    return raw === null ? null : parseHintResponse(raw);
+    if (raw === null) {
+      return null;
+    }
+    const parsed = parseHintResponse(raw);
+    if (parsed === null) {
+      logServerError("Ollama hint response was unusable", new Error("Invalid hint response"), {
+        model: this.model,
+      });
+    }
+    return parsed;
   }
 }
 

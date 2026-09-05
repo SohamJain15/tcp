@@ -24,7 +24,7 @@ async function backfillProblemHints(): Promise<void> {
   const hintGenerator = new OllamaHintGenerator();
 
   // Probe once up front. Without this a missing model produces one failure per problem, burying
-  // the actual cause ("ollama pull llama3.1") under a hundred identical lines.
+  // the actual missing-model cause under a hundred identical lines.
   const status = await hintGenerator.getStatus();
   if (!status.available) {
     console.error(`Cannot generate hints: ${status.reason}`);

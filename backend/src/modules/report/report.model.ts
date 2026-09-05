@@ -1,4 +1,9 @@
 import { createHash } from "node:crypto";
+import { env } from "../../config/env";
+import {
+  AI_NOT_REACHABLE_MESSAGE,
+  GENERIC_PRODUCTION_ERROR_MESSAGE,
+} from "../../shared/errors/public-messages";
 import { MIN_LANGUAGE_SAMPLE } from "../../shared/utils/language-percentile";
 import { lowerIsBetterPercentile } from "../../shared/utils/percentile";
 
@@ -301,20 +306,35 @@ export interface ContestReportResponse {
   failureReason: string | null;
 }
 
-export function toContestReportResponse(record: ContestReportRecord): ContestReportResponse {
+export function toContestReportResponse(
+  record: ContestReportRecord,
+  production = env.NODE_ENV === "production",
+): ContestReportResponse {
+  const warnings =
+    production
+      ? [...new Set(record.warnings.map((warning) =>
+          /ollama|model|runtime|localhost|https?:|\bpull\b|unreachable|timeout|error|failed/i.test(warning)
+            ? AI_NOT_REACHABLE_MESSAGE
+            : warning,
+        ))]
+      : record.warnings;
+
   return {
     contestId: record.contestId,
     status: record.status,
     source: record.source,
     metrics: record.metrics,
     narrative: record.narrative,
-    warnings: record.warnings,
+    warnings,
     modelId: record.modelId,
     promptVersion: record.promptVersion,
     metricsHash: record.metricsHash,
     generatedByEmail: record.generatedByEmail,
     generatedAt: record.generatedAt ? record.generatedAt.toISOString() : null,
-    failureReason: record.failureReason,
+    failureReason:
+      record.failureReason && production
+        ? GENERIC_PRODUCTION_ERROR_MESSAGE
+        : record.failureReason,
   };
 }
 

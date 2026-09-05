@@ -119,26 +119,22 @@ const envSchema = z.object({
   // runtime, finds it absent, and falls back to template-generated narratives.
   AI_ENABLED: z.unknown().transform((value) => parseBoolean(value, true)),
   AI_BASE_URL: z.string().min(1).default("http://localhost:11434"),
-  AI_MODEL: z.string().min(1).default("qwen2.5:3b"),
-  /**
-   * Model used for problem hints, kept separate from `AI_MODEL`.
-   *
-   * Hints are free-form reasoning about an algorithm, which a 3B model does poorly; the report
-   * prompts are tuned around `AI_MODEL` and should not be repointed to chase hint quality.
-   */
-  AI_HINT_MODEL: z.string().min(1).default("llama3.1:latest"),
-  /**
-   * Model used to draft crossword clues at authoring time, kept separate from the others.
-   *
-   * Clue writing is short natural-language reasoning about a single word — the same larger model
-   * that serves hints handles it well, so it shares that default but can be repointed on its own.
-   */
-  AI_CROSSWORD_MODEL: z.string().min(1).default("llama3.1:latest"),
+  // One model serves reports, hints, and crossword clues. Production must state it explicitly so
+  // no feature can silently select a different hardcoded model.
+  AI_MODEL: z.string().optional().transform((value) => value?.trim() ?? ""),
   AI_TIMEOUT_MS: z.coerce.number().int().positive().default(120000),
   // A GENERATING report older than this is treated as abandoned and can be reclaimed, so a crash
   // mid-generation cannot wedge a contest's report forever.
   AI_STALE_LOCK_MS: z.coerce.number().int().positive().default(600000),
 }).superRefine((value, ctx) => {
+  if (value.NODE_ENV === "production" && value.AI_ENABLED && !value.AI_MODEL) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["AI_MODEL"],
+      message: "AI_MODEL is required when AI is enabled in production.",
+    });
+  }
+
   if (value.NODE_ENV === "production" && value.SQL_SANDBOX_ENABLED) {
     if (!value.SQL_SANDBOX_ISOLATED_INSTANCE) {
       ctx.addIssue({
@@ -164,10 +160,17 @@ const envSchema = z.object({
   }
 });
 
-const parsedEnv = envSchema.parse(process.env);
+export function parseEnvironment(source: NodeJS.ProcessEnv) {
+  return envSchema.parse(source);
+}
+
+const parsedEnv = parseEnvironment(process.env);
 
 export const env = {
   ...parsedEnv,
+  // Development and tests remain zero-config; production is validated above and never reaches
+  // this fallback.
+  AI_MODEL: parsedEnv.AI_MODEL || "qwen2.5-coder:latest",
   coeTrustedProxyIps: parsedEnv.COE_TRUSTED_PROXY_IPS.split(",")
     .map((entry) => entry.trim())
     .filter(Boolean),

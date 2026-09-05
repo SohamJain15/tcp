@@ -9,6 +9,8 @@ import type { ExecutionRequest } from "../../execution/execution-provider";
 import type { HarnessSpec } from "../../execution/harness/contract";
 import { DIFFICULTY_RATING_WEIGHTS } from "../../shared/constants/domain";
 import { AppError } from "../../shared/errors/app-error";
+import { EXECUTION_SERVICE_UNAVAILABLE_MESSAGE } from "../../shared/errors/public-messages";
+import { logServerError } from "../../shared/logging/error-logger";
 import type { AuthenticatedUser } from "../../shared/types/auth";
 import type { Department, ExecutableLanguage, SupportedLanguage } from "../../shared/types/domain";
 import { isFinalSubmissionStatus, normalizeDepartment } from "../../shared/utils/normalize";
@@ -246,7 +248,7 @@ function buildSubmissionRunResponse(
   };
 }
 
-function buildInternalErrorResult(totalCount: number, message: string): ExecutionResult {
+function buildInternalErrorResult(totalCount: number): ExecutionResult {
   return {
     status: "INTERNAL_ERROR",
     runtimeMs: 0,
@@ -254,7 +256,7 @@ function buildInternalErrorResult(totalCount: number, message: string): Executio
     passedCount: 0,
     totalCount,
     provider: env.EXECUTION_PROVIDER,
-    stderr: message,
+    stderr: EXECUTION_SERVICE_UNAVAILABLE_MESSAGE,
   };
 }
 
@@ -513,7 +515,6 @@ async function finalizeSubmission(
 async function markSubmissionAsInternalError(
   dependencies: SubmissionServiceDependencies,
   submissionId: string,
-  message: string,
 ): Promise<SubmissionRecord | null> {
   const submission = await dependencies.submissionRepository.getById(submissionId);
   if (!submission) {
@@ -527,7 +528,7 @@ async function markSubmissionAsInternalError(
   return finalizeSubmission(
     dependencies,
     submissionId,
-    buildInternalErrorResult(submission.totalCount, message),
+    buildInternalErrorResult(submission.totalCount),
   );
 }
 
@@ -610,8 +611,8 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
           status: "queued",
         };
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to enqueue submission.";
-        await markSubmissionAsInternalError(dependencies, submission.id, message);
+        logServerError("Failed to enqueue submission", error, { submissionId: submission.id });
+        await markSubmissionAsInternalError(dependencies, submission.id);
         throw new AppError(500, "Failed to queue submission");
       }
     },
@@ -859,8 +860,10 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
           uid: user?.uid ?? null,
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Background submission execution failed.";
-        const failedSubmission = await markSubmissionAsInternalError(dependencies, runningSubmission.id, message);
+        logServerError("Background submission execution failed", error, {
+          submissionId: runningSubmission.id,
+        });
+        const failedSubmission = await markSubmissionAsInternalError(dependencies, runningSubmission.id);
         if (!failedSubmission) {
           throw error;
         }
@@ -897,10 +900,7 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
           });
           recoveredSubmissionIds.push(submission.id);
         } catch (error) {
-          console.error(
-            `Failed to recover stale submission ${submission.id}:`,
-            error instanceof Error ? error.message : error,
-          );
+          logServerError("Failed to recover stale submission", error, { submissionId: submission.id });
         }
       }
 

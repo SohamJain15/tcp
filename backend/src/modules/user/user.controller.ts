@@ -1,6 +1,8 @@
 import type { Request, Response } from "express";
 import { env } from "../../config/env";
 import { AppError } from "../../shared/errors/app-error";
+import { GENERIC_PRODUCTION_ERROR_MESSAGE } from "../../shared/errors/public-messages";
+import { logServerError } from "../../shared/logging/error-logger";
 import type { UserRole } from "../../shared/types/auth";
 import { deriveSemesterFromUid } from "../../shared/utils/uid-department";
 import type { UserRecord } from "./user.model";
@@ -97,9 +99,12 @@ export function createUserController({ userService, userRepository }: UserContro
         redirectUrl.searchParams.set("sso", "success");
         res.redirect(302, redirectUrl.toString());
       } catch (error) {
-        console.error("[SSO AUTH FATAL ERROR]:", error);
+        logServerError("SSO authentication failed", error, { method: req.method, path: req.path });
         res.status(500).json({
-          message: "SSO authentication failed. Check backend logs for the exact cause.",
+          message:
+            env.NODE_ENV === "production"
+              ? GENERIC_PRODUCTION_ERROR_MESSAGE
+              : "SSO authentication failed. Check backend logs for the exact cause.",
         });
       }
     },

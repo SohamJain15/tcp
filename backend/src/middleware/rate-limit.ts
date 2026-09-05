@@ -103,3 +103,15 @@ export function createSqlExecutionRateLimiter() {
     },
   });
 }
+
+/** Prevent a crashing or malicious browser from flooding PM2 stderr. */
+export function createClientErrorRateLimiter() {
+  return rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: finalSubmissionKey,
+    handler: rateLimitHandler,
+  });
+}

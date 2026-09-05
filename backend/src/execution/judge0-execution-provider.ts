@@ -1,5 +1,7 @@
 import { env } from "../config/env";
 import type { ExecutableLanguage, SubmissionStatus } from "../shared/types/domain";
+import { EXECUTION_SERVICE_UNAVAILABLE_MESSAGE } from "../shared/errors/public-messages";
+import { logServerError } from "../shared/logging/error-logger";
 import { isExecutableLanguage, tryNormalizeSupportedLanguage } from "../shared/utils/normalize";
 import type {
   ExecutionProvider,
@@ -207,7 +209,7 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
       const sample = request.testCases[0];
 
       if (!sample) {
-        return this.buildInternalErrorResult(0, "No sample test case configured.");
+        return this.buildInternalErrorResult(0, new Error("No sample test case configured."));
       }
 
       const languageId = await this.resolveLanguageId(request.language);
@@ -227,11 +229,9 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
         failedTest: this.captureFailedTest(request, [result], request.testCases.length),
       };
     } catch (error) {
-      const judge0Error = error as { response?: { data?: unknown }; message?: string };
-      console.error("JUDGE0_SYSTEM_ERROR:", judge0Error.response?.data || judge0Error.message);
       return this.buildInternalErrorResult(
         request.testCases.length > 0 ? 1 : 0,
-        error instanceof Error ? error.message : "Judge0 run execution failed.",
+        error,
       );
     }
   }
@@ -239,7 +239,7 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
   async executeSubmission(request: ExecutionRequest): Promise<ExecutionResult> {
     try {
       if (request.testCases.length === 0) {
-        return this.buildInternalErrorResult(0, "No test cases configured.");
+        return this.buildInternalErrorResult(0, new Error("No test cases configured."));
       }
 
       const languageId = await this.resolveLanguageId(request.language);
@@ -311,12 +311,7 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
         failedTest: this.captureFailedTest(request, results),
       };
     } catch (error) {
-      const judge0Error = error as { response?: { data?: unknown }; message?: string };
-      console.error("JUDGE0_SYSTEM_ERROR:", judge0Error.response?.data || judge0Error.message);
-      return this.buildInternalErrorResult(
-        request.testCases.length,
-        error instanceof Error ? error.message : "Judge0 submission execution failed.",
-      );
+      return this.buildInternalErrorResult(request.testCases.length, error);
     }
   }
 
@@ -411,8 +406,11 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
         enable_per_process_and_thread_memory_limit: false,
       });
     } catch (error) {
-      const judge0Error = error as { response?: { data?: unknown }; message?: string };
-      console.error("JUDGE0_SYSTEM_ERROR:", judge0Error.response?.data || judge0Error.message);
+      const judge0Error = error as { response?: { data?: unknown } };
+      logServerError("Judge0 batch execution failed", error, {
+        provider: PROVIDER_NAME,
+        providerResponse: judge0Error.response?.data,
+      });
       return null;
     }
 
@@ -488,8 +486,11 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
         return fallbackMatch.id;
       }
     } catch (error) {
-      const judge0Error = error as { response?: { data?: unknown }; message?: string };
-      console.error("JUDGE0_SYSTEM_ERROR:", judge0Error.response?.data || judge0Error.message);
+      const judge0Error = error as { response?: { data?: unknown } };
+      logServerError("Judge0 language discovery failed", error, {
+        provider: PROVIDER_NAME,
+        providerResponse: judge0Error.response?.data,
+      });
 
       if (!(error instanceof Judge0ClientError)) {
         throw error;
@@ -588,15 +589,18 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
 
       return outcome;
     } catch (error) {
-      const judge0Error = error as { response?: { data?: unknown }; message?: string };
-      console.error("JUDGE0_SYSTEM_ERROR:", judge0Error.response?.data || judge0Error.message);
+      const judge0Error = error as { response?: { data?: unknown } };
+      logServerError("Judge0 test-case execution failed", error, {
+        provider: PROVIDER_NAME,
+        providerResponse: judge0Error.response?.data,
+      });
 
       if (error instanceof Judge0ClientError) {
         return {
           status: "INTERNAL_ERROR",
           runtimeMs: 0,
           memoryKb: 0,
-          stderr: error.message,
+          stderr: EXECUTION_SERVICE_UNAVAILABLE_MESSAGE,
         };
       }
 
@@ -621,12 +625,24 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
   }
 
   private normalizeJudge0Response(response: Judge0SubmissionResponse): TestExecutionOutcome {
+    const status = this.normalizeStatus(response.status.id);
+    const diagnostic = this.extractDiagnostic(response);
+    if (status === "INTERNAL_ERROR") {
+      logServerError(
+        "Judge0 returned an internal error",
+        new Error(diagnostic ?? response.status.description ?? "Judge0 internal error"),
+        { provider: PROVIDER_NAME, providerStatusId: response.status.id },
+      );
+    }
     return {
-      status: this.normalizeStatus(response.status.id),
+      status,
       runtimeMs: this.parseRuntimeMs(response.time),
       memoryKb: response.memory ?? 0,
       stdout: response.stdout ?? undefined,
-      stderr: this.extractDiagnostic(response) ?? undefined,
+      stderr:
+        status === "INTERNAL_ERROR"
+          ? EXECUTION_SERVICE_UNAVAILABLE_MESSAGE
+          : diagnostic ?? undefined,
     };
   }
 
@@ -734,7 +750,8 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
     };
   }
 
-  private buildInternalErrorResult(totalCount: number, stderr: string): ExecutionResult {
+  private buildInternalErrorResult(totalCount: number, error: unknown): ExecutionResult {
+    logServerError("Judge0 execution failed", error, { provider: PROVIDER_NAME, totalCount });
     return {
       status: "INTERNAL_ERROR",
       runtimeMs: 0,
@@ -742,7 +759,7 @@ export class Judge0ExecutionProvider implements ExecutionProvider {
       passedCount: 0,
       totalCount,
       provider: PROVIDER_NAME,
-      stderr,
+      stderr: EXECUTION_SERVICE_UNAVAILABLE_MESSAGE,
     };
   }
 }

@@ -1,5 +1,6 @@
 import { createApplicationDependencies } from "./bootstrap/dependencies";
 import { createSubmissionWorker } from "./queue/submission-worker";
+import { logServerError } from "./shared/logging/error-logger";
 
 const dependencies = createApplicationDependencies();
 const worker = createSubmissionWorker(dependencies.submissionService);
@@ -17,7 +18,7 @@ worker.on("completed", (job) => {
 });
 
 worker.on("failed", (job, error) => {
-  console.error(`Submission job ${job?.id ?? "unknown"} failed:`, error.message);
+  logServerError("Submission worker job failed", error, { jobId: job?.id ?? "unknown" });
 });
 
 async function shutdown(signal: string): Promise<void> {

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, apiRequest, getApiBaseUrl } from "@/api/client";
+import { ApiError, apiRequest, getApiBaseUrl, sanitizeApiErrorPayload } from "@/api/client";
+import { AI_NOT_REACHABLE_MESSAGE, GENERIC_PRODUCTION_ERROR_MESSAGE } from "@/lib/public-errors";
 
 describe("api client", () => {
   afterEach(() => {
@@ -101,5 +102,19 @@ describe("api client", () => {
       message: "Authentication required.",
       loginUrl: "http://localhost:4000/login",
     });
+  });
+
+  it("removes production 5xx payload details while preserving the approved AI message", () => {
+    expect(sanitizeApiErrorPayload({
+      status: 500,
+      message: "database private-host refused connection",
+      details: { stack: "secret stack" },
+    }, true)).toEqual({ status: 500, message: GENERIC_PRODUCTION_ERROR_MESSAGE });
+
+    expect(sanitizeApiErrorPayload({
+      status: 503,
+      message: AI_NOT_REACHABLE_MESSAGE,
+      details: { command: "ollama pull private-model" },
+    }, true)).toEqual({ status: 503, message: AI_NOT_REACHABLE_MESSAGE });
   });
 });

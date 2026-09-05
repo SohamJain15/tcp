@@ -123,8 +123,8 @@ export function ContestReportSection({
           {aiRuntime ? (
             <p className="mx-auto mt-3 max-w-xl text-xs text-muted-foreground">
               {aiRuntime.available
-                ? `Local model ready: ${aiRuntime.model}`
-                : `${aiRuntime.reason ?? "Local model unavailable."} The report will still be generated using built-in summaries.`}
+                ? "AI ready"
+                : `${aiRuntime.message ?? "AI not reachable"}. The report will still be generated using built-in summaries.`}
             </p>
           ) : null}
 

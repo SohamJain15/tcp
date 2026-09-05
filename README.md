@@ -226,10 +226,15 @@ Set `EXECUTION_PROVIDER=judge0` and `JUDGE0_BASE_URL=http://127.0.0.1:2358` once
 | Submission throughput | `SUBMISSION_WORKER_CONCURRENCY`, `SUBMISSION_CHUNK_SIZE`, `SUBMISSION_BATCH_SIZE`, `SUBMISSION_BATCH_TEST_CASES`, `SUBMISSION_RECOVERY_STALE_MS` |
 | Attempt lifecycle | `ATTEMPT_FINALIZER_INTERVAL_MS`, `EMBED_SUBMISSION_WORKER` |
 | Platform scoring | `DEFAULT_PROBLEM_TIME_LIMIT_SECONDS`, `DEFAULT_PROBLEM_MEMORY_LIMIT_MB`, `RATING_POINTS_EASY`, `RATING_POINTS_MEDIUM`, `RATING_POINTS_HARD` |
-| Local AI (reports, hints, crossword clues) | `AI_ENABLED`, `AI_BASE_URL`, `AI_MODEL`, `AI_HINT_MODEL`, `AI_CROSSWORD_MODEL`, `AI_TIMEOUT_MS`, `AI_STALE_LOCK_MS` |
+| Local AI (reports, hints, crossword clues) | `AI_ENABLED`, `AI_BASE_URL`, `AI_MODEL`, `AI_TIMEOUT_MS`, `AI_STALE_LOCK_MS` |
 | DBMS Lab SQL sandbox (off by default) | `SQL_SANDBOX_ENABLED`, `SQL_SANDBOX_ISOLATED_INSTANCE`, `SQL_SANDBOX_NAMESPACE`, `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_ADMIN_USER`, `MYSQL_ADMIN_PASSWORD`, `SQL_STATEMENT_TIMEOUT_MS`, `SQL_MAX_ROWS`, `SQL_MAX_COLUMNS`, `SQL_MAX_QUERY_LENGTH`, `SQL_MAX_SCHEMA_LENGTH`, `SQL_MAX_SOLUTION_LENGTH`, `SQL_SANDBOX_CONCURRENCY`, `SQL_SANDBOX_POOL_SIZE`, `SQL_SANDBOX_SWEEP_INTERVAL_MS` |
 
 Production deployments must keep the backend private behind the trusted authentication path. Do not make the API directly reachable from the public internet.
+
+When `AI_ENABLED=true` in production, `AI_MODEL` is required and is used for every AI feature.
+Use the exact installed Ollama tag (for example, `AI_MODEL=qwen2.5-coder:latest`) and restart
+the backend process after changing `.env`. Missing-model and runtime diagnostics are written only
+to the backend/PM2 logs.
 
 The current 4-vCPU SQL profile uses `SQL_SANDBOX_CONCURRENCY=32` and
 `SQL_SANDBOX_POOL_SIZE=40`; additional users wait in the execution queue. Each active SQL run uses

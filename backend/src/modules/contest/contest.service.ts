@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { generateSubmissionProgram } from "../../execution/harness";
 import type { ExecutionProvider } from "../../execution/execution-provider";
 import { AppError } from "../../shared/errors/app-error";
+import { EXECUTION_SERVICE_UNAVAILABLE_MESSAGE } from "../../shared/errors/public-messages";
+import { logServerError } from "../../shared/logging/error-logger";
 import type { AuthenticatedUser } from "../../shared/types/auth";
 import type { Department, ExecutableLanguage } from "../../shared/types/domain";
 import { normalizeDepartment } from "../../shared/utils/normalize";
@@ -764,12 +766,13 @@ async function createContestCodingSubmission(
       updatedAt: dependencies.now(),
     });
   } catch (error) {
+    logServerError("Failed to enqueue contest submission", error, { submissionId });
     const persisted = await dependencies.submissionRepository.getById(submissionId);
     if (persisted) {
       await dependencies.submissionRepository.save({
         ...persisted,
         status: "INTERNAL_ERROR",
-        stderr: error instanceof Error ? error.message : "Failed to queue contest submission",
+        stderr: EXECUTION_SERVICE_UNAVAILABLE_MESSAGE,
         updatedAt: dependencies.now(),
         judgedAt: dependencies.now(),
         finalizationAppliedAt: dependencies.now(),
@@ -1317,10 +1320,7 @@ export function createContestService(dependencies: ContestServiceDependencies): 
           finalizedAttemptIds.push(attempt.id);
         } catch (error) {
           // One bad attempt must not stop the batch; the next timer tick retries it (still ACTIVE).
-          console.error(
-            `Failed to finalize expired attempt ${attempt.id}:`,
-            error instanceof Error ? error.message : error,
-          );
+          logServerError("Failed to finalize expired contest attempt", error, { attemptId: attempt.id });
         }
       }
 

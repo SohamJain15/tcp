@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { env } from "../../config/env";
 import { inferHarness } from "../../execution/harness/inference/infer-harness";
 import { AppError } from "../../shared/errors/app-error";
+import { AI_NOT_REACHABLE_MESSAGE } from "../../shared/errors/public-messages";
 import { paginateArray, type PaginatedResult, type PaginationInput } from "../../shared/utils/pagination";
 import type { AuthenticatedUser } from "../../shared/types/auth";
 import type {
@@ -309,7 +310,12 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
       const hints = await generateAndStoreHints(dependencies, problem, { force: true });
 
       if (hints.length === 0) {
-        throw new AppError(503, "Hint generation is unavailable right now");
+        throw new AppError(
+          503,
+          "Hint generation is unavailable right now",
+          undefined,
+          AI_NOT_REACHABLE_MESSAGE,
+        );
       }
 
       return { hints: toFacultyHintViews(hints) };

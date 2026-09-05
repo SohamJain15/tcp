@@ -1,4 +1,8 @@
 import type { ApiErrorPayload } from "@/api/types";
+import {
+  AI_NOT_REACHABLE_MESSAGE,
+  GENERIC_PRODUCTION_ERROR_MESSAGE,
+} from "@/lib/public-errors";
 
 function getDefaultApiBaseUrl(): string {
   if (typeof window !== "undefined" && window.location?.hostname) {
@@ -83,6 +87,23 @@ function buildQueryString(query?: ApiRequestOptions["query"]): string {
   return encoded ? `?${encoded}` : "";
 }
 
+export function sanitizeApiErrorPayload(
+  payload: ApiErrorPayload,
+  production: boolean,
+): ApiErrorPayload {
+  if (!production || payload.status < 500) {
+    return payload;
+  }
+
+  return {
+    status: payload.status,
+    message:
+      payload.message === AI_NOT_REACHABLE_MESSAGE
+        ? AI_NOT_REACHABLE_MESSAGE
+        : GENERIC_PRODUCTION_ERROR_MESSAGE,
+  };
+}
+
 async function parseErrorPayload(response: Response): Promise<ApiErrorPayload> {
   try {
     const data = await response.json();
@@ -96,21 +117,21 @@ async function parseErrorPayload(response: Response): Promise<ApiErrorPayload> {
         typeof (data as { message?: unknown }).message === "string"
           ? (data as { message: string }).message
           : `Request failed with status ${response.status}`;
-      return {
+      return sanitizeApiErrorPayload({
         status: response.status,
         message,
         loginUrl,
         details: data,
-      };
+      }, import.meta.env.PROD);
     }
   } catch {
     // ignore parse error
   }
 
-  return {
+  return sanitizeApiErrorPayload({
     status: response.status,
     message: `Request failed with status ${response.status}`,
-  };
+  }, import.meta.env.PROD);
 }
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
@@ -132,10 +153,13 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       body: isJsonBody ? JSON.stringify(options.body) : undefined,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Network request failed";
     throw new ApiError({
       status: 0,
-      message: `Unable to reach backend at ${API_BASE_URL}. ${message}`,
+      message: import.meta.env.PROD
+        ? GENERIC_PRODUCTION_ERROR_MESSAGE
+        : `Unable to reach backend at ${API_BASE_URL}. ${
+            error instanceof Error ? error.message : "Network request failed"
+          }`,
     });
   }
 

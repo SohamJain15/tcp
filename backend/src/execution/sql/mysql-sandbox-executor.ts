@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
 import mysql from "mysql2/promise";
 
+import { EXECUTION_SERVICE_UNAVAILABLE_MESSAGE } from "../../shared/errors/public-messages";
+import { logServerError } from "../../shared/logging/error-logger";
 import { compareResultSets } from "./sql-compare";
 import { validateSqlTextLength, validateStudentSql } from "./sql-policy";
 import type {
@@ -100,12 +102,16 @@ export class MysqlSandboxExecutor implements SqlExecutor {
           runtimeMs: ran.runtimeMs,
         };
       }),
-    ).catch((error) => ({
-      ok: false,
-      error: error instanceof Error ? error.message : "Sandbox error",
-      timedOut: false,
-      runtimeMs: 0,
-    }));
+    ).catch((error) => {
+      logServerError("SQL sandbox run failed", error, { provider: this.provider });
+      return {
+        ok: false,
+        error: EXECUTION_SERVICE_UNAVAILABLE_MESSAGE,
+        internalError: true,
+        timedOut: false,
+        runtimeMs: 0,
+      };
+    });
   }
 
   async grade(input: { studentSql: string; context: SqlExperimentContext }): Promise<SqlGradeResult> {
@@ -149,12 +155,13 @@ export class MysqlSandboxExecutor implements SqlExecutor {
         };
       }));
     } catch (error) {
+      logServerError("SQL sandbox grading failed", error, { provider: this.provider });
       return {
         status: "INTERNAL_ERROR",
         passed: false,
         runtimeMs: 0,
         provider: this.provider,
-        message: error instanceof Error ? error.message : "Sandbox error",
+        message: EXECUTION_SERVICE_UNAVAILABLE_MESSAGE,
       };
     }
   }

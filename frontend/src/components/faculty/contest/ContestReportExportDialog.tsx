@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { reportClientError } from "@/lib/client-error-reporter";
 import {
   DEFAULT_REPORT_SECTIONS,
   type ContestReportSections,
@@ -116,9 +117,9 @@ export function ContestReportExportDialog({
             onClick={() => {
               // Fired synchronously so the popup keeps the click's user activation; the caller
               // reports its own failures, so a rejection here would be a bug rather than a signal.
-              void Promise.resolve(onExport({ subtitle: subtitle.trim(), sections })).catch(
-                (error) => console.error("Report export failed", error),
-              );
+              void Promise.resolve(onExport({ subtitle: subtitle.trim(), sections })).catch((error) => {
+                reportClientError("window", error);
+              });
               onOpenChange(false);
             }}
           >

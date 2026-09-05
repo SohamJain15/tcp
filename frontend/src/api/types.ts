@@ -1629,9 +1629,7 @@ export interface ContestReport {
 
 export interface AiRuntimeStatus {
   available: boolean;
-  model: string;
-  baseUrl: string;
-  reason: string | null;
+  message: string | null;
 }
 
 export interface ContestReportEnvelope {

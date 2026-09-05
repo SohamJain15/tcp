@@ -16,6 +16,7 @@ import { createLabRouter } from "./modules/lab/lab.routes";
 import { createLabSessionRouter } from "./modules/lab/lab-session.routes";
 import { createContestRouter } from "./modules/contest/contest.routes";
 import { createAuthRouter, createLegacyUserRouter, createUserRouter } from "./modules/user/user.routes";
+import { createClientErrorRouter } from "./modules/client-error/client-error.routes";
 import { errorHandler, notFoundHandler } from "./shared/middleware/error-handler";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -232,6 +233,7 @@ export function createApp(dependencies: ApplicationDependencies): Express {
   });
 
   app.use("/api/auth", createAuthRouter(dependencies));
+  app.use("/api/client-errors", createClientErrorRouter(dependencies));
   app.use("/api/users", createUserRouter(dependencies));
   app.use("/api/user", createLegacyUserRouter(dependencies));
   app.use("/api/problems", createProblemRouter(dependencies));

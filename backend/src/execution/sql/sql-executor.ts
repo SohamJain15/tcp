@@ -41,6 +41,8 @@ export interface SqlRunResult {
   result?: SqlResultSet;
   /** SQL error text when `ok` is false. */
   error?: string;
+  /** True only for sandbox/provider failures; user SQL diagnostics remain false/undefined. */
+  internalError?: boolean;
   timedOut: boolean;
   runtimeMs: number;
 }

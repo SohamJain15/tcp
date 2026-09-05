@@ -2,6 +2,7 @@ import { createApp } from "./app";
 import { createApplicationDependencies } from "./bootstrap/dependencies";
 import { env } from "./config/env";
 import { createSubmissionWorker } from "./queue/submission-worker";
+import { logServerError } from "./shared/logging/error-logger";
 
 const port = env.PORT;
 const dependencies = createApplicationDependencies();
@@ -11,6 +12,7 @@ const attemptFinalizerIntervalMs = env.ATTEMPT_FINALIZER_INTERVAL_MS;
 
 const server = app.listen(port, () => {
   console.log(`Server running on port ${port}`);
+  console.log(`[AI] ${env.AI_ENABLED ? `Enabled with model ${env.AI_MODEL}` : "Disabled"}.`);
   console.log("[AUTH] Trusted proxy enforcement: ON.");
   console.log(`[AUTH] Trusted proxy IP/CIDR allowlist: ${env.coeTrustedProxyIps.join(", ")}`);
   if (embeddedWorker) {
@@ -27,7 +29,7 @@ const server = app.listen(port, () => {
       }
     })
     .catch((error) => {
-      console.error("Failed to recover stale submissions:", error instanceof Error ? error.message : error);
+      logServerError("Failed to recover stale submissions", error);
     });
 
   if (attemptFinalizerIntervalMs > 0) {
@@ -61,7 +63,7 @@ const attemptFinalizerTimer =
           }),
         ])
           .catch((error) => {
-            console.error("Attempt finaliser failed:", error instanceof Error ? error.message : error);
+            logServerError("Attempt finaliser failed", error);
           })
           .finally(() => {
             finalizerRunning = false;
@@ -83,7 +85,7 @@ const sqlSweepTimer =
   sqlSandboxSweep && sqlSweepIntervalMs > 0
     ? setInterval(() => {
         void sqlSandboxSweep(sqlSweepIntervalMs).catch((error) => {
-          console.error("SQL sandbox sweep failed:", error instanceof Error ? error.message : error);
+          logServerError("SQL sandbox sweep failed", error);
         });
       }, sqlSweepIntervalMs)
     : null;
@@ -103,7 +105,7 @@ if (embeddedWorker) {
   });
 
   embeddedWorker.on("failed", (job, error) => {
-    console.error(`Embedded worker job ${job?.id ?? "unknown"} failed:`, error.message);
+    logServerError("Embedded worker job failed", error, { jobId: job?.id ?? "unknown" });
   });
 }
 

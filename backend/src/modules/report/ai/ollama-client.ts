@@ -1,4 +1,6 @@
 import { env } from "../../../config/env";
+import { AI_NOT_REACHABLE_MESSAGE } from "../../../shared/errors/public-messages";
+import { logServerError } from "../../../shared/logging/error-logger";
 import { callOllamaJson, probeOllama } from "../../../shared/ai/ollama";
 import {
   assignNarrativeSection,
@@ -21,7 +23,7 @@ export interface AiRuntimeStatus {
   available: boolean;
   model: string;
   baseUrl: string;
-  /** Present when the runtime is unreachable, so the UI can explain why rather than just greying out. */
+  /** Internal diagnostic only. Public API responses must map this to a safe message. */
   reason: string | null;
 }
 
@@ -111,7 +113,7 @@ export class OllamaReportGenerator implements AiReportGenerator {
 
   constructor(
     private readonly baseUrl: string = env.AI_BASE_URL,
-    private readonly model: string = env.AI_MODEL,
+    readonly model: string = env.AI_MODEL,
     private readonly timeoutMs: number = env.AI_TIMEOUT_MS,
     private readonly enabled: boolean = env.AI_ENABLED,
   ) {}
@@ -158,7 +160,7 @@ export class OllamaReportGenerator implements AiReportGenerator {
         usedAi: false,
         modelId: null,
         promptVersion: PROMPT_VERSION,
-        warnings: [status.reason ?? "Local model unavailable; used generated summaries instead."],
+        warnings: [AI_NOT_REACHABLE_MESSAGE],
       };
     }
 
@@ -178,6 +180,10 @@ export class OllamaReportGenerator implements AiReportGenerator {
 
       const parsed = parseSectionResponse(raw, spec.key, spec.shape);
       if (parsed === null) {
+        logServerError("Ollama report response was unusable", new Error("Invalid report section"), {
+          model: this.model,
+          section: spec.key,
+        });
         warnings.push(`The model's ${spec.key} response could not be read; a generated summary was used.`);
         continue;
       }

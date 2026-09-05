@@ -1,5 +1,8 @@
 import { AppError } from "../../shared/errors/app-error";
 import type { AuthenticatedUser } from "../../shared/types/auth";
+import { env } from "../../config/env";
+import { GENERIC_PRODUCTION_ERROR_MESSAGE } from "../../shared/errors/public-messages";
+import { logServerError } from "../../shared/logging/error-logger";
 import type { ContestRecord } from "../contest/contest.model";
 import type {
   ContestAttemptRepository,
@@ -34,7 +37,19 @@ export interface ReportServiceDependencies {
 
 export interface ContestReportEnvelope {
   report: ContestReportResponse | null;
-  aiRuntime: AiRuntimeStatus;
+  aiRuntime: PublicAiRuntimeStatus;
+}
+
+export interface PublicAiRuntimeStatus {
+  available: boolean;
+  message: string | null;
+}
+
+export function toPublicAiRuntimeStatus(status: AiRuntimeStatus): PublicAiRuntimeStatus {
+  return {
+    available: status.available,
+    message: status.available ? null : "AI not reachable",
+  };
 }
 
 export interface ReportService {
@@ -151,7 +166,7 @@ export function createReportService(dependencies: ReportServiceDependencies): Re
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Report generation failed";
-      console.error(`Contest report generation failed for ${contest.id}`, error);
+      logServerError("Contest report generation failed", error, { contestId: contest.id });
 
       // Best effort: try to keep whatever metrics we can so the report is not a dead end.
       let metrics: ContestAnalytics | null = null;
@@ -171,11 +186,13 @@ export function createReportService(dependencies: ReportServiceDependencies): Re
           warnings: [],
           metricsHash: metrics ? hashMetrics(metrics) : null,
           generatedAt: null,
-          failureReason: reason,
+          failureReason: env.NODE_ENV === "production" ? GENERIC_PRODUCTION_ERROR_MESSAGE : reason,
           updatedAt: now(),
         })
         .catch((saveError) => {
-          console.error(`Failed to persist FAILED report for ${contest.id}`, saveError);
+          logServerError("Failed to persist failed contest report", saveError, {
+            contestId: contest.id,
+          });
         });
     }
   }
@@ -190,7 +207,7 @@ export function createReportService(dependencies: ReportServiceDependencies): Re
 
       return {
         report: record ? toContestReportResponse(record) : null,
-        aiRuntime,
+        aiRuntime: toPublicAiRuntimeStatus(aiRuntime),
       };
     },
 
@@ -206,7 +223,12 @@ export function createReportService(dependencies: ReportServiceDependencies): Re
         throw new AppError(409, "The report is still being generated. Try again shortly.");
       }
       if (record.status === "FAILED" || !record.metrics) {
-        throw new AppError(409, record.failureReason ?? "The report is not available for PDF export.");
+        throw new AppError(
+          409,
+          env.NODE_ENV === "production"
+            ? GENERIC_PRODUCTION_ERROR_MESSAGE
+            : record.failureReason ?? "The report is not available for PDF export.",
+        );
       }
 
       return toContestReportResponse(record);

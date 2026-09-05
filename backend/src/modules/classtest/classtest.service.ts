@@ -5,6 +5,11 @@ import { generateSubmissionProgram } from "../../execution/harness";
 import type { SubmissionQueue } from "../../queue/submission-queue";
 import { DEFAULT_PROBLEM_MEMORY_LIMIT_MB, DEFAULT_PROBLEM_TIME_LIMIT_SECONDS } from "../../shared/constants/domain";
 import { AppError } from "../../shared/errors/app-error";
+import {
+  AI_NOT_REACHABLE_MESSAGE,
+  EXECUTION_SERVICE_UNAVAILABLE_MESSAGE,
+} from "../../shared/errors/public-messages";
+import { logServerError } from "../../shared/logging/error-logger";
 import type { AuthenticatedUser } from "../../shared/types/auth";
 import type { ExecutableLanguage } from "../../shared/types/domain";
 import type { UserRepository } from "../user/user.repository";
@@ -148,7 +153,7 @@ export interface ClassTestService {
     user: AuthenticatedUser,
     words: string[],
     topic?: string,
-  ): Promise<{ clues: CrosswordClue[]; available: boolean; reason: string | null }>;
+  ): Promise<{ clues: CrosswordClue[]; available: boolean; message: string | null }>;
   /** Authoring aid: lay out a sample grid so faculty can preview and "Regenerate" it. */
   previewCrossword(
     user: AuthenticatedUser,
@@ -501,21 +506,19 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
       // Deduplicate and normalize so the model is asked once per distinct word.
       const normalized = [...new Set(words.map((word) => word.trim().toUpperCase()).filter(Boolean))];
       if (normalized.length === 0) {
-        return { clues: [], available: true, reason: null };
+        return { clues: [], available: true, message: null };
       }
 
       const clues = await dependencies.crosswordClueGenerator.generate(normalized, topic);
       if (clues) {
-        return { clues, available: true, reason: null };
+        return { clues, available: true, message: null };
       }
 
-      // Null means the model was unreachable, disabled, or returned unusable output — surface why
-      // so the UI can tell the faculty to type clues rather than silently doing nothing.
-      const status = await dependencies.crosswordClueGenerator.getStatus();
+      // The generator logs the operational cause. The browser receives one stable public message.
       return {
         clues: [],
         available: false,
-        reason: status.reason ?? "The clue model returned no usable clues. Please type them.",
+        message: AI_NOT_REACHABLE_MESSAGE,
       };
     },
 
@@ -874,6 +877,7 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
           });
         }
       } catch (error) {
+        logServerError("Failed to enqueue class-test submission", error, { submissionId });
         // The attempt keeps pointing at this submission, so the failure is visible to faculty
         // at grading time rather than silently scoring zero with no explanation.
         const persisted = await dependencies.submissionRepository.getById(submissionId);
@@ -881,7 +885,7 @@ export function createClassTestService(dependencies: ClassTestServiceDependencie
           await dependencies.submissionRepository.save({
             ...persisted,
             status: "INTERNAL_ERROR",
-            stderr: error instanceof Error ? error.message : "Failed to queue submission",
+            stderr: EXECUTION_SERVICE_UNAVAILABLE_MESSAGE,
             updatedAt: dependencies.now(),
             judgedAt: dependencies.now(),
             finalizationAppliedAt: dependencies.now(),

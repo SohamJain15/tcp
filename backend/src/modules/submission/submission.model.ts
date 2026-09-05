@@ -1,4 +1,5 @@
 import type { FailedTestCase } from "../../execution/execution-provider";
+import { EXECUTION_SERVICE_UNAVAILABLE_MESSAGE } from "../../shared/errors/public-messages";
 import type { UserRole } from "../../shared/types/auth";
 import type { Department, Difficulty, ExecutableLanguage, SubmissionStatus } from "../../shared/types/domain";
 import { toIsoString } from "../../shared/utils/date";
@@ -205,7 +206,10 @@ export function toSubmissionResponse(
     executionProvider: submission.executionProvider,
     ratingAwarded: submission.ratingAwarded,
     stdout: submission.stdout,
-    stderr: submission.stderr,
+    stderr:
+      submission.status === "INTERNAL_ERROR"
+        ? EXECUTION_SERVICE_UNAVAILABLE_MESSAGE
+        : submission.stderr,
     failedTest: redactFailedTest(submission.failedTest, resolveFailedTestVisibility(submission.sourceType)),
     createdAt: toIsoString(submission.createdAt) ?? new Date(0).toISOString(),
     updatedAt: toIsoString(submission.updatedAt) ?? new Date(0).toISOString(),

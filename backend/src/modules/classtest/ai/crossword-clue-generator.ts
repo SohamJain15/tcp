@@ -1,5 +1,6 @@
 import { env } from "../../../config/env";
 import { callOllamaJson, probeOllama, type OllamaRuntimeStatus } from "../../../shared/ai/ollama";
+import { logServerError } from "../../../shared/logging/error-logger";
 import {
   buildCrosswordCluePrompt,
   CROSSWORD_CLUE_PROMPT_VERSION,
@@ -70,7 +71,7 @@ export class OllamaCrosswordClueGenerator implements CrosswordClueGenerator {
   readonly promptVersion = CROSSWORD_CLUE_PROMPT_VERSION;
 
   constructor(
-    readonly model: string = env.AI_CROSSWORD_MODEL,
+    readonly model: string = env.AI_MODEL,
     private readonly baseUrl: string = env.AI_BASE_URL,
     private readonly timeoutMs: number = env.AI_TIMEOUT_MS,
     private readonly enabled: boolean = env.AI_ENABLED,
@@ -108,7 +109,17 @@ export class OllamaCrosswordClueGenerator implements CrosswordClueGenerator {
       user,
     });
 
-    return raw === null ? null : parseClueResponse(raw, words);
+    if (raw === null) {
+      return null;
+    }
+    const parsed = parseClueResponse(raw, words);
+    if (parsed === null) {
+      logServerError("Ollama crossword response was unusable", new Error("Invalid clue response"), {
+        model: this.model,
+        wordCount: words.length,
+      });
+    }
+    return parsed;
   }
 }
 

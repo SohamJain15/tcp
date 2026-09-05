@@ -1,10 +1,11 @@
 /**
  * Transport for the local Ollama runtime, shared by the contest report and problem hints.
  *
- * Deliberately thin and total: every failure — runtime not installed, model missing, timeout,
- * non-JSON reply — resolves to `null` rather than throwing. Both callers treat AI output as a
- * bonus over a working baseline, so a model outage must never surface as a request failure.
+ * Deliberately thin and total: every failure resolves to `null` rather than throwing. Diagnostics
+ * are written to server stderr for PM2; callers must never expose them to browser responses.
  */
+
+import { logServerError } from "../logging/error-logger";
 
 interface OllamaChatResponse {
   message?: { content?: string };
@@ -14,7 +15,7 @@ export interface OllamaRuntimeStatus {
   available: boolean;
   model: string;
   baseUrl: string;
-  /** Present when unreachable, so the UI can explain why rather than just greying out. */
+  /** Internal diagnostic only. Public API responses must map this to a safe message. */
   reason: string | null;
 }
 
@@ -37,6 +38,8 @@ export async function probeOllama(
   try {
     const response = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(timeoutMs) });
     if (!response.ok) {
+      const error = new Error(`Ollama tag probe returned HTTP ${response.status}.`);
+      logServerError("Ollama runtime probe failed", error, { baseUrl, model, status: response.status });
       return {
         available: false,
         model,
@@ -50,12 +53,14 @@ export async function probeOllama(
       .map((entry) => entry.name)
       .filter((name): name is string => typeof name === "string");
 
-    // Ollama reports tags as "llama3.1:latest"; a bare "llama3.1" in config should still match.
+    // Ollama reports tagged names; a bare model name in config should still match its tagged form.
     const hasModel = installed.some(
       (name) => name === model || name.split(":")[0] === model.split(":")[0],
     );
 
     if (!hasModel) {
+      const error = new Error(`Model "${model}" is not installed. Run: ollama pull ${model}`);
+      logServerError("Ollama model is missing", error, { baseUrl, model, installed });
       return {
         available: false,
         model,
@@ -66,6 +71,7 @@ export async function probeOllama(
 
     return { available: true, model, baseUrl, reason: null };
   } catch (error) {
+    logServerError("Ollama runtime is unreachable", error, { baseUrl, model });
     return {
       available: false,
       model,
@@ -102,12 +108,29 @@ export async function callOllamaJson(options: OllamaChatOptions): Promise<string
     });
 
     if (!response.ok) {
+      logServerError("Ollama chat request failed", new Error(`HTTP ${response.status}`), {
+        baseUrl: options.baseUrl,
+        model: options.model,
+        status: response.status,
+      });
       return null;
     }
 
     const body = (await response.json()) as OllamaChatResponse;
-    return body.message?.content ?? null;
-  } catch {
+    const content = body.message?.content;
+    if (typeof content !== "string") {
+      logServerError("Ollama chat returned no content", new Error("Missing message content"), {
+        baseUrl: options.baseUrl,
+        model: options.model,
+      });
+      return null;
+    }
+    return content;
+  } catch (error) {
+    logServerError("Ollama chat request failed", error, {
+      baseUrl: options.baseUrl,
+      model: options.model,
+    });
     return null;
   }
 }

@@ -1369,7 +1369,7 @@ function CrosswordAuthoring({
       ),
     onSuccess: (result) => {
       if (!result.available) {
-        toast.error(result.reason ?? "The clue model is unavailable. Type clues manually.");
+        toast.error(result.message ?? "AI not reachable");
         return;
       }
       const byWord = new Map(result.clues.map((clue) => [clue.word.toUpperCase(), clue.clue]));
