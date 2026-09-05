@@ -1,7 +1,8 @@
-import { BlockList, isIP } from "node:net";
+import type { BlockList } from "node:net";
 import type { Request, RequestHandler } from "express";
 import jwt, { type JwtPayload } from "jsonwebtoken";
 import { env } from "../config/env";
+import { buildTrustedProxyBlockList, isTrustedProxyIp, normalizeIp } from "../shared/utils/client-ip";
 import type { UserService } from "../modules/user/user.service";
 import type { UserRole } from "../shared/types/auth";
 
@@ -179,54 +180,8 @@ function readExtraClaimsFromToken(token: string): { uid?: string; isHod?: boolea
   return decoded ? { uid: decoded.uid, isHod: decoded.isHod } : {};
 }
 
-function parseTrustedProxyEntries(entries: string[]): BlockList {
-  const blockList = new BlockList();
-
-  for (const entry of entries.map((value) => value.trim()).filter(Boolean)) {
-    if (entry.includes("/")) {
-      const [network, rawPrefix] = entry.split("/", 2);
-      const ipVersion = isIP(network);
-      const parsedPrefix = Number.parseInt(rawPrefix, 10);
-
-      if (ipVersion === 4 && Number.isInteger(parsedPrefix) && parsedPrefix >= 0 && parsedPrefix <= 32) {
-        blockList.addSubnet(network, parsedPrefix, "ipv4");
-        continue;
-      }
-
-      if (ipVersion === 6 && Number.isInteger(parsedPrefix) && parsedPrefix >= 0 && parsedPrefix <= 128) {
-        blockList.addSubnet(network, parsedPrefix, "ipv6");
-        continue;
-      }
-
-      console.warn("[AUTH] Ignoring invalid trusted proxy CIDR entry.", { entry });
-      continue;
-    }
-
-    const ipVersion = isIP(entry);
-    if (ipVersion === 4) {
-      blockList.addAddress(entry, "ipv4");
-      continue;
-    }
-    if (ipVersion === 6) {
-      blockList.addAddress(entry, "ipv6");
-      continue;
-    }
-
-    console.warn("[AUTH] Ignoring invalid trusted proxy IP entry.", { entry });
-  }
-
-  return blockList;
-}
-
 function isTrustedProxySource(req: Request, trustedProxyBlockList: BlockList): boolean {
-  const sourceIp = normalizeHeaderValue(req.socket?.remoteAddress);
-  const ipVersion = isIP(sourceIp);
-
-  if (ipVersion !== 4 && ipVersion !== 6) {
-    return false;
-  }
-
-  return trustedProxyBlockList.check(sourceIp, ipVersion === 4 ? "ipv4" : "ipv6");
+  return isTrustedProxyIp(trustedProxyBlockList, req.socket?.remoteAddress);
 }
 
 function logSecurityEvent(
@@ -254,11 +209,10 @@ function logSecurityEvent(
 
 function logTrustedProxyDiagnostic(req: Request, trustedProxyBlockList: BlockList): void {
   const rawSourceIp = normalizeHeaderValue(req.socket?.remoteAddress);
-  const normalizedSourceIp = rawSourceIp.trim();
-  const ipVersion = isIP(normalizedSourceIp);
-  const allowed =
-    (ipVersion === 4 || ipVersion === 6) &&
-    trustedProxyBlockList.check(normalizedSourceIp, ipVersion === 4 ? "ipv4" : "ipv6");
+  const normalized = normalizeIp(rawSourceIp);
+  const normalizedSourceIp = normalized?.ip ?? "";
+  const ipVersion = normalized ? (normalized.family === "ipv4" ? 4 : 6) : 0;
+  const allowed = normalized !== null && trustedProxyBlockList.check(normalized.ip, normalized.family);
 
   console.warn("[AUTH] Trusted proxy diagnostic:", {
     method: req.method,
@@ -278,9 +232,7 @@ function logTrustedProxyDiagnostic(req: Request, trustedProxyBlockList: BlockLis
 }
 
 export function createAuthMiddleware(userService: Pick<UserService, "syncAuthenticatedUser">): RequestHandler {
-  const trustedProxyBlockList = parseTrustedProxyEntries([
-    ...env.coeTrustedProxyIps,
-  ]);
+  const trustedProxyBlockList = buildTrustedProxyBlockList(env.coeTrustedProxyIps);
 
   return async (req, res, next) => {
     try {
