@@ -35,6 +35,12 @@ export function createLabSessionController(service: LabSessionService) {
       const sessionId = routeIdSchema.parse(getRouteParam(req.params.sessionId));
       res.json({ items: await service.listAttempts(req.user!, sessionId) });
     },
+
+    async getAttemptDetail(req: Request, res: Response): Promise<void> {
+      const sessionId = routeIdSchema.parse(getRouteParam(req.params.sessionId));
+      const attemptId = routeIdSchema.parse(getRouteParam(req.params.attemptId));
+      res.json({ attempt: await service.getAttemptDetail(req.user!, sessionId, attemptId) });
+    },
     async publishResults(req: Request, res: Response): Promise<void> {
       const sessionId = routeIdSchema.parse(getRouteParam(req.params.sessionId));
       const payload = labSessionResultsSchema.parse(req.body);

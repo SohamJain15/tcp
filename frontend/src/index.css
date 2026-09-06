@@ -321,3 +321,35 @@
     .nav-tab-active { animation: none; }
   }
 }
+
+@layer utilities {
+  /**
+   * Applied to <body> by useAttemptProctoring for exactly as long as an attempt is open.
+   *
+   * These are the mobile gestures a proctored paper has to give up: pull-to-refresh would reload
+   * the attempt out from under the student, and the iOS long-press callout is a copy path around
+   * the clipboard block. Selection is off outside the editor for the same reason the desktop hook
+   * cancels `selectstart` — question text is not draggable out of the page.
+   */
+  body.attempt-locked {
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* Monaco owns its own selection; blocking it there would break editing entirely. */
+  body.attempt-locked .monaco-editor,
+  body.attempt-locked .monaco-editor * {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+  }
+
+  /* Inputs must stay selectable so a student can correct a typed answer. */
+  body.attempt-locked input,
+  body.attempt-locked textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}

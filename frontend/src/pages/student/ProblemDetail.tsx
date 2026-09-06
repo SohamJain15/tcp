@@ -27,6 +27,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
+import { ResizableStackGroup, ResizableStackHandle, ResizableStackPane } from "@/components/ResizableStack";
 import { DifficultyBadge, StatusBadge } from "@/components/Badges";
 import { FailedTestCasePanel, shouldShowFailedTest } from "@/components/FailedTestCasePanel";
 import { SubmissionDistributionChart } from "@/components/charts";
@@ -228,70 +229,6 @@ function PodiumCard({ entry, label }: { entry: ProblemLeaderboardItem; label: st
   );
 }
 
-/**
- * The workspace is a desktop IDE — a horizontal resizable split that is unusable below ~1024px
- * (a ~150px statement column beside a ~225px editor, neither collapsible). On a narrow screen
- * these three wrappers collapse that split into a single stacked, scrollable column. Children
- * pass through untouched, so this stays a thin layout switch rather than a second copy of the
- * page, and the inner editor/console split (which owns a panel ref) is left completely alone.
- */
-function WorkspaceGroup({
-  stack,
-  className,
-  autoSaveId,
-  children,
-}: {
-  stack: boolean;
-  className?: string;
-  autoSaveId?: string;
-  children: ReactNode;
-}) {
-  if (stack) {
-    return <div className="flex w-full flex-col gap-3 p-2">{children}</div>;
-  }
-  return (
-    <ResizablePanelGroup
-      direction="horizontal"
-      className={className}
-      autoSaveId={autoSaveId}
-      storage={typeof window === "undefined" ? undefined : window.sessionStorage}
-    >
-      {children}
-    </ResizablePanelGroup>
-  );
-}
-
-function WorkspacePane({
-  stack,
-  stackClassName,
-  defaultSize,
-  minSize,
-  className,
-  children,
-}: {
-  stack: boolean;
-  stackClassName?: string;
-  defaultSize?: number;
-  minSize?: number;
-  className?: string;
-  children: ReactNode;
-}) {
-  if (stack) {
-    return <div className={stackClassName}>{children}</div>;
-  }
-  return (
-    <ResizablePanel defaultSize={defaultSize} minSize={minSize} className={className}>
-      {children}
-    </ResizablePanel>
-  );
-}
-
-function WorkspaceHandle({ stack }: { stack: boolean }) {
-  if (stack) {
-    return null;
-  }
-  return <ResizableHandle withHandle className="bg-border" />;
-}
 
 export default function ProblemDetail() {
   const { id = "" } = useParams();
@@ -688,8 +625,13 @@ export default function ProblemDetail() {
       )}
 
       <div className={cn("w-full", isNarrow ? "" : "min-h-0 flex-1 overflow-hidden")}>
-        <WorkspaceGroup stack={isNarrow} className="h-full overflow-hidden" autoSaveId="problem-workspace-h">
-          <WorkspacePane stack={isNarrow} defaultSize={40} minSize={25} className="h-full">
+        <ResizableStackGroup
+          stack={isNarrow}
+          className="h-full overflow-hidden"
+          stackClassName="flex w-full flex-col gap-3 p-2"
+          autoSaveId="problem-workspace-h"
+        >
+          <ResizableStackPane stack={isNarrow} defaultSize={40} minSize={25} className="h-full">
             <div className="relative w-full lg:h-full">
               <div className="p-3 lg:absolute lg:inset-0 lg:overflow-y-auto">
                 <Card className="p-4 shadow-card">
@@ -877,13 +819,13 @@ export default function ProblemDetail() {
                 </Card>
               </div>
             </div>
-          </WorkspacePane>
+          </ResizableStackPane>
 
-          <WorkspaceHandle stack={isNarrow} />
+          <ResizableStackHandle stack={isNarrow} className="bg-border" />
 
           {/* On mobile the workspace gets a fixed viewport height so its inner editor/console
               split — left untouched — has a height to lay out within. */}
-          <WorkspacePane
+          <ResizableStackPane
             stack={isNarrow}
             stackClassName="h-[78vh] w-full"
             defaultSize={60}
@@ -1265,8 +1207,8 @@ export default function ProblemDetail() {
                 </ResizablePanel>
               </ResizablePanelGroup>
             </div>
-          </WorkspacePane>
-        </WorkspaceGroup>
+          </ResizableStackPane>
+        </ResizableStackGroup>
       </div>
     </div>
   );

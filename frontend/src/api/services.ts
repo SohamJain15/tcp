@@ -11,8 +11,16 @@ import type {
   FacultyClassTestAttempt,
   FacultyClassTestAttemptDetail,
   FacultyLab,
+  FacultyAdmissionRow,
+  FacultyAttendanceSession,
+  LabAdmissionsResponse,
+  LabAdmissionStatus,
+  StudentAttendanceSession,
+  FacultyLabResponseDetail,
+  FacultyLabResponseRow,
   FacultyLabSession,
   FacultyLabSessionAttempt,
+  FacultyLabSessionAttemptDetail,
   LabSessionResult,
   LabSqlPreviewResponse,
   LabSqlRunResponse,
@@ -602,6 +610,20 @@ export const labApi = {
     payload: { schemaSql: string; solutionSql: string; ordered: boolean; studentSql?: string },
     pathname?: string,
   ) => apiRequest<LabSqlPreviewResponse>("/api/labs/sql-preview", { method: "POST", body: payload, pathname }),
+  listResponses: (labId: string, experimentId?: string, pathname?: string) =>
+    apiRequest<{ items: FacultyLabResponseRow[] }>(
+      `/api/labs/${encodeURIComponent(labId)}/responses${
+        experimentId ? `?experimentId=${encodeURIComponent(experimentId)}` : ""
+      }`,
+      { pathname },
+    ),
+  getResponse: (labId: string, experimentId: string, studentEmail: string, pathname?: string) =>
+    apiRequest<{ response: FacultyLabResponseDetail }>(
+      `/api/labs/${encodeURIComponent(labId)}/responses/${encodeURIComponent(experimentId)}?student=${encodeURIComponent(
+        studentEmail,
+      )}`,
+      { pathname },
+    ),
 
   // student
   listMine: (pathname?: string) =>
@@ -651,6 +673,72 @@ export const labApi = {
     }),
 };
 
+export const labAttendanceApi = {
+  // faculty
+  list: (pathname?: string) =>
+    apiRequest<{ items: FacultyAttendanceSession[] }>("/api/lab-attendance", { pathname }),
+  get: (sessionId: string, pathname?: string) =>
+    apiRequest<{ session: FacultyAttendanceSession }>(`/api/lab-attendance/${encodeURIComponent(sessionId)}`, {
+      pathname,
+    }),
+  open: (payload: Record<string, unknown>, pathname?: string) =>
+    apiRequest<{ session: FacultyAttendanceSession }>("/api/lab-attendance", {
+      method: "POST",
+      body: payload,
+      pathname,
+    }),
+  update: (sessionId: string, payload: Record<string, unknown>, pathname?: string) =>
+    apiRequest<{ session: FacultyAttendanceSession }>(`/api/lab-attendance/${encodeURIComponent(sessionId)}`, {
+      method: "PATCH",
+      body: payload,
+      pathname,
+    }),
+  getJoinCode: (sessionId: string, pathname?: string) =>
+    apiRequest<{ code: string; expiresAt: string; stepSeconds: number }>(
+      `/api/lab-attendance/${encodeURIComponent(sessionId)}/join-code`,
+      { pathname },
+    ),
+  listAdmissions: (sessionId: string, pathname?: string) =>
+    apiRequest<LabAdmissionsResponse>(`/api/lab-attendance/${encodeURIComponent(sessionId)}/admissions`, { pathname }),
+  decideAdmission: (
+    sessionId: string,
+    admissionId: string,
+    payload: { status: "ADMITTED" | "DENIED" | "REVOKED"; reason?: string | null },
+    pathname?: string,
+  ) =>
+    apiRequest<{ admission: FacultyAdmissionRow }>(
+      `/api/lab-attendance/${encodeURIComponent(sessionId)}/admissions/${encodeURIComponent(admissionId)}`,
+      { method: "PATCH", body: payload, pathname },
+    ),
+  decideAdmissionsBulk: (
+    sessionId: string,
+    payload: { admissionIds: string[]; status: "ADMITTED" | "DENIED" },
+    pathname?: string,
+  ) =>
+    apiRequest<{ updated: number }>(`/api/lab-attendance/${encodeURIComponent(sessionId)}/admissions/bulk`, {
+      method: "POST",
+      body: payload,
+      pathname,
+    }),
+
+  // student
+  getMine: (pathname?: string) =>
+    apiRequest<{
+      session: StudentAttendanceSession | null;
+      admission: { status: LabAdmissionStatus; denialReason: string | null } | null;
+    }>("/api/lab-attendance/mine", { pathname }),
+  getMineById: (sessionId: string, pathname?: string) =>
+    apiRequest<{
+      session: StudentAttendanceSession | null;
+      admission: { status: LabAdmissionStatus; denialReason: string | null } | null;
+    }>(`/api/lab-attendance/mine/${encodeURIComponent(sessionId)}`, { pathname }),
+  join: (sessionId: string, joinCode: string | undefined, pathname?: string) =>
+    apiRequest<{ admission: { status: LabAdmissionStatus; denialReason: string | null } }>(
+      `/api/lab-attendance/mine/${encodeURIComponent(sessionId)}/join`,
+      { method: "POST", body: joinCode ? { joinCode } : {}, pathname },
+    ),
+};
+
 export const labSessionApi = {
   // faculty
   list: (pathname?: string) =>
@@ -667,6 +755,11 @@ export const labSessionApi = {
     }),
   listAttempts: (sessionId: string, pathname?: string) =>
     apiRequest<{ items: FacultyLabSessionAttempt[] }>(`/api/lab-sessions/${encodeURIComponent(sessionId)}/attempts`, { pathname }),
+  getAttemptDetail: (sessionId: string, attemptId: string, pathname?: string) =>
+    apiRequest<{ attempt: FacultyLabSessionAttemptDetail }>(
+      `/api/lab-sessions/${encodeURIComponent(sessionId)}/attempts/${encodeURIComponent(attemptId)}`,
+      { pathname },
+    ),
   publishResults: (sessionId: string, resultsPublished: boolean, pathname?: string) =>
     apiRequest<{ session: FacultyLabSession }>(`/api/lab-sessions/${encodeURIComponent(sessionId)}/results`, {
       method: "PATCH",

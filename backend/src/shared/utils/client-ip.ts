@@ -1,4 +1,7 @@
 import { BlockList, isIP } from "node:net";
+import type { Request } from "express";
+
+import { env } from "../../config/env";
 
 export type IpFamily = "ipv4" | "ipv6";
 
@@ -114,4 +117,108 @@ export function buildTrustedProxyBlockList(entries: readonly string[], warn: War
 export function isTrustedProxyIp(blockList: BlockList, rawIp: unknown): boolean {
   const normalized = normalizeIp(rawIp);
   return normalized ? blockList.check(normalized.ip, normalized.family) : false;
+}
+
+// --- client address resolution, for access decisions -------------------------
+
+/**
+ * `app.ts` sets `trust proxy` to `true`, which makes Express hand back the *leftmost* forwarded
+ * entry as `req.ip` — an address the client chose. That is fine for logging and rate-limit keying,
+ * but it must never be the basis of an access decision: a student could send
+ * `X-Forwarded-For: <teacher-ip>` and walk straight through the lab network gate.
+ *
+ * These helpers instead walk the forwarded chain from the right (nearest proxy) and return the
+ * first hop that is not one of our own trusted proxies. Everything to its left was supplied by the
+ * client and is discarded.
+ */
+
+let cachedTrustedProxies: BlockList | null = null;
+
+function trustedProxies(): BlockList {
+  cachedTrustedProxies ??= buildTrustedProxyBlockList(env.coeTrustedProxyIps);
+  return cachedTrustedProxies;
+}
+
+/**
+ * The pure core of {@link resolveClientIp}, with the trusted-proxy list passed in.
+ *
+ * `chain` is ordered left (claimed origin) → right (nearest proxy). The first hop from the right
+ * that we do not recognise as our own proxy is the furthest address our own infrastructure
+ * actually observed. If every hop is trusted — or the header is absent — we fall back to the
+ * socket address, which cannot be forged.
+ */
+export function resolveClientIpFromChain(
+  chain: readonly string[],
+  remoteAddress: string | null | undefined,
+  trustedEntries: readonly string[],
+): string | null {
+  return resolveFromChain(chain, remoteAddress, buildTrustedProxyBlockList(trustedEntries, () => {}));
+}
+
+function resolveFromChain(
+  chain: readonly string[],
+  remoteAddress: string | null | undefined,
+  blockList: BlockList,
+): string | null {
+  for (let index = chain.length - 1; index >= 0; index -= 1) {
+    const hop = normalizeIp(chain[index]);
+    if (hop && !blockList.check(hop.ip, hop.family)) {
+      return hop.ip;
+    }
+  }
+
+  return normalizeIp(remoteAddress)?.ip ?? null;
+}
+
+/** The real client address, ignoring anything a client could have forged into `X-Forwarded-For`. */
+export function resolveClientIp(req: Request): string | null {
+  return resolveFromChain(Array.isArray(req.ips) ? req.ips : [], req.socket?.remoteAddress, trustedProxies());
+}
+
+/** The network an address belongs to, e.g. "10.20.30.4" → "10.20.30.0/24". */
+export function toNetworkCidr(ip: string, ipv4Prefix = 24, ipv6Prefix = 64): string | null {
+  const normalized = normalizeIp(ip);
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized.family === "ipv4") {
+    const prefix = Math.min(Math.max(ipv4Prefix, 0), 32);
+    const octets = normalized.ip.split(".").map((part) => Number.parseInt(part, 10));
+    const asInt = ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
+    const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+    const network = (asInt & mask) >>> 0;
+    const networkOctets = [network >>> 24, (network >>> 16) & 0xff, (network >>> 8) & 0xff, network & 0xff];
+    return `${networkOctets.join(".")}/${prefix}`;
+  }
+
+  // IPv6: BlockList masks for us, so the address paired with the prefix is a valid subnet
+  // specification. Normalising the host bits away is not required for containment checks.
+  return `${normalized.ip}/${Math.min(Math.max(ipv6Prefix, 0), 128)}`;
+}
+
+/** Whether `candidate` falls inside the `<network>/<prefix>` produced by {@link toNetworkCidr}. */
+export function ipInNetwork(candidate: string | null | undefined, cidr: string | null | undefined): boolean {
+  const normalized = normalizeIp(candidate);
+  if (!normalized || typeof cidr !== "string" || !cidr.includes("/")) {
+    return false;
+  }
+
+  const separatorIndex = cidr.indexOf("/");
+  const network = normalizeIp(cidr.slice(0, separatorIndex));
+  const prefix = Number.parseInt(cidr.slice(separatorIndex + 1), 10);
+
+  // Never match across address families, and fail closed on anything malformed.
+  if (!network || network.family !== normalized.family || !Number.isInteger(prefix)) {
+    return false;
+  }
+
+  const list = new BlockList();
+  list.addSubnet(network.ip, prefix, network.family);
+  return list.check(normalized.ip, normalized.family);
+}
+
+/** Test seam — the trusted-proxy list is read once and cached. */
+export function resetClientIpCacheForTests(): void {
+  cachedTrustedProxies = null;
 }

@@ -68,6 +68,11 @@ export interface LabRecord {
   semester: number | null;
   description: string | null;
   lifecycleState: ProblemLifecycleState;
+  /**
+   * When true this lab can only be opened while a teacher is running a live attendance session for
+   * it — there is no self-paced access at all. Off by default, which is the existing behaviour.
+   */
+  requiresAttendance: boolean;
   experiments: LabExperiment[];
   createdBy: string;
   createdByRole: UserRole;

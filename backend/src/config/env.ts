@@ -40,6 +40,11 @@ const envSchema = z.object({
         message: "Each trusted proxy IP entry must be at most 45 characters",
       },
     ),
+  /**
+   * How wide the lab-network gate treats "the same network" (IPv4 prefix bits). A lab on its own
+   * /24 is the default; a site behind one campus NAT should turn the gate off rather than widen it.
+   */
+  LAB_ATTENDANCE_IP_PREFIX: z.coerce.number().int().min(8).max(32).default(24),
   MONGODB_URI: z.string().min(1).default("mongodb://127.0.0.1:27017"),
   MONGODB_DB_NAME: z.string().min(1).default("Tcet-code-platform"),
   CORS_ORIGIN: z.string().min(1).default("http://localhost:5173"),

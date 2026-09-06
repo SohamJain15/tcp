@@ -4,6 +4,7 @@ import type { HarnessSpec } from "../../execution/harness/contract";
 import { DEFAULT_PROBLEM_MEMORY_LIMIT_MB, DEFAULT_PROBLEM_TIME_LIMIT_SECONDS } from "../../shared/constants/domain";
 import type { ExecutableLanguage } from "../../shared/types/domain";
 import { toDate } from "../../shared/utils/date";
+import type { StudentYear } from "../../shared/utils/student-year";
 import {
   normalizeDepartment,
   normalizeDifficulty,
@@ -250,12 +251,18 @@ function mapAssignedStudent(value: unknown): AssignedStudent | null {
   };
 }
 
+/** Records written before the year filter existed have no `year`, which decodes to "any year". */
+function mapAudienceYear(value: unknown): StudentYear | null {
+  return value === 1 || value === 2 || value === 3 || value === 4 ? value : null;
+}
+
 function mapAudience(value: unknown): ClassTestAudienceFilter {
   const record = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
   return {
     department: normalizeDepartment(record.department),
     division: mapNullableString(record.division),
     semester: mapNullableNumber(record.semester),
+    year: mapAudienceYear(record.year),
     rollFrom: mapNullableNumber(record.rollFrom),
     rollTo: mapNullableNumber(record.rollTo),
   };

@@ -115,3 +115,24 @@ export function createClientErrorRateLimiter() {
     handler: rateLimitHandler,
   });
 }
+
+/**
+ * A lab join code is six digits, so the only thing standing between a guesser and a valid code is
+ * this limiter. Keyed per user, not per IP: a whole lab shares one NAT address, and one student
+ * guessing must not lock the room out.
+ */
+export function createLabJoinRateLimiter() {
+  return rateLimit({
+    windowMs: 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: finalSubmissionKey,
+    skip: () => env.NODE_ENV === "test",
+    handler: (_req, res) => {
+      res.status(429).json({
+        message: "Too many join attempts. Wait a moment and read the current code from the screen.",
+      });
+    },
+  });
+}

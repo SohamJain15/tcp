@@ -5,6 +5,7 @@ import { generateSubmissionProgram } from "../../execution/harness";
 import type { SubmissionQueue } from "../../queue/submission-queue";
 import { DEFAULT_PROBLEM_MEMORY_LIMIT_MB, DEFAULT_PROBLEM_TIME_LIMIT_SECONDS } from "../../shared/constants/domain";
 import { AppError } from "../../shared/errors/app-error";
+import { resolveAssignedStudents, resolveAudienceCandidates } from "./audience";
 import {
   AI_NOT_REACHABLE_MESSAGE,
   EXECUTION_SERVICE_UNAVAILABLE_MESSAGE,
@@ -354,45 +355,11 @@ function normalizeQuestions(questions: CreateClassTestInput["questions"]): Class
 }
 
 export function createClassTestService(dependencies: ClassTestServiceDependencies): ClassTestService {
-  /** Students matching the filter, in roll order so faculty can scan the list like a register. */
-  async function resolveCandidates(filter: ClassTestAudienceFilter): Promise<AudiencePreviewItem[]> {
-    if (filter.department === null) {
-      return [];
-    }
-    const roster = await dependencies.userRepository.listByDepartment(filter.department, "STUDENT");
-    return roster
-      .filter((student) => matchesAudienceFilter(student, filter))
-      .map((student) => ({ ...toAssignedStudent(student), semester: student.semester }))
-      .sort((left, right) => Number(left.rollNumber ?? 0) - Number(right.rollNumber ?? 0));
-  }
+  const resolveCandidates = (filter: ClassTestAudienceFilter) =>
+    resolveAudienceCandidates(dependencies.userRepository, filter);
 
-  /**
-   * Turn the faculty's ticked emails into the frozen assignment list.
-   *
-   * Only students the filter actually returned can be assigned, so a crafted request cannot
-   * pull in someone from another division or department. An empty tick list means "everyone
-   * the filter found" — the common case of assigning a whole class.
-   */
-  async function resolveAssignment(
-    filter: ClassTestAudienceFilter,
-    assignedEmails: string[],
-  ): Promise<AssignedStudent[]> {
-    const candidates = await resolveCandidates(filter);
-    if (candidates.length === 0) {
-      throw new AppError(400, "No students match this department, division and roll range");
-    }
-
-    if (assignedEmails.length === 0) {
-      return candidates.map(({ semester: _semester, ...student }) => student);
-    }
-
-    const wanted = new Set(assignedEmails.map((email) => email.trim().toLowerCase()));
-    const selected = candidates.filter((student) => wanted.has(student.email.toLowerCase()));
-    if (selected.length === 0) {
-      throw new AppError(400, "None of the selected students match this department, division and roll range");
-    }
-    return selected.map(({ semester: _semester, ...student }) => student);
-  }
+  const resolveAssignment = (filter: ClassTestAudienceFilter, assignedEmails: string[]) =>
+    resolveAssignedStudents(dependencies.userRepository, filter, assignedEmails);
 
   return {
     async listForFaculty(user) {

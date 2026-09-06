@@ -11,6 +11,7 @@ import {
 } from "./lab.validator";
 
 const routeIdSchema = z.string().regex(/^[a-z0-9_-]{4,80}$/i);
+const studentEmailSchema = z.string().trim().toLowerCase().email();
 
 function getRouteParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -38,6 +39,20 @@ export function createLabController(labService: LabService) {
       const labId = routeIdSchema.parse(getRouteParam(req.params.labId));
       const payload = updateLabSchema.parse(req.body);
       res.json({ lab: await labService.updateLab(req.user!, labId, payload) });
+    },
+
+    async listResponses(req: Request, res: Response): Promise<void> {
+      const labId = routeIdSchema.parse(getRouteParam(req.params.labId));
+      const experimentId = req.query.experimentId ? routeIdSchema.parse(String(req.query.experimentId)) : undefined;
+      res.json({ items: await labService.listResponses(req.user!, labId, { experimentId }) });
+    },
+
+    async getResponse(req: Request, res: Response): Promise<void> {
+      const labId = routeIdSchema.parse(getRouteParam(req.params.labId));
+      const experimentId = routeIdSchema.parse(getRouteParam(req.params.experimentId));
+      // The student comes in as a query parameter: an email fights routeIdSchema and URL-encoded dots.
+      const studentEmail = studentEmailSchema.parse(req.query.student);
+      res.json({ response: await labService.getResponse(req.user!, labId, experimentId, studentEmail) });
     },
 
     async previewSql(req: Request, res: Response): Promise<void> {
@@ -82,9 +97,11 @@ export function createLabController(labService: LabService) {
 
     async saveCodingDraft(req: Request, res: Response): Promise<void> {
       // The editor persists code in the browser (sessionStorage), so a server draft is not needed;
-      // the endpoint exists so the shared coding workspace's saveDraft call succeeds.
-      labCodingRunSchema.parse(req.body);
-      res.json({ saved: true });
+      // the endpoint exists so the shared coding workspace's saveDraft call succeeds. It still goes
+      // through the service, which checks lab visibility and lab admission.
+      const labId = routeIdSchema.parse(getRouteParam(req.params.labId));
+      const payload = labCodingRunSchema.parse(req.body);
+      res.json(await labService.saveCodingDraft(req.user!, labId, payload));
     },
   };
 }

@@ -14,6 +14,7 @@ import { createSubmissionRouter } from "./modules/submission/submission.routes";
 import { createClassTestRouter } from "./modules/classtest/classtest.routes";
 import { createLabRouter } from "./modules/lab/lab.routes";
 import { createLabSessionRouter } from "./modules/lab/lab-session.routes";
+import { createLabAttendanceRouter } from "./modules/lab/lab-attendance.routes";
 import { createContestRouter } from "./modules/contest/contest.routes";
 import { createAuthRouter, createLegacyUserRouter, createUserRouter } from "./modules/user/user.routes";
 import { createClientErrorRouter } from "./modules/client-error/client-error.routes";
@@ -245,6 +246,7 @@ export function createApp(dependencies: ApplicationDependencies): Express {
   app.use("/api/class-tests", createClassTestRouter(dependencies));
   app.use("/api/labs", createLabRouter(dependencies));
   app.use("/api/lab-sessions", createLabSessionRouter(dependencies));
+  app.use("/api/lab-attendance", createLabAttendanceRouter(dependencies));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

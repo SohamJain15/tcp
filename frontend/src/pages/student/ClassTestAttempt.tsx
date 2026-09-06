@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
+import { Code2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { classTestApi } from "@/api/services";
@@ -12,6 +13,7 @@ import { ContestLockOverlay } from "@/components/ContestLockOverlay";
 import { ContestScreenGuard } from "@/components/ContestScreenGuard";
 import { ContestTimer } from "@/components/ContestTimer";
 import { ContestWatermark } from "@/components/ContestWatermark";
+import { ExpandedWorkspaceOverlay } from "@/components/ExpandedWorkspaceOverlay";
 import { useAttemptProctoring } from "@/hooks/useAttemptProctoring";
 import { useIsHandheld } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
@@ -57,6 +59,10 @@ export default function ClassTestAttempt() {
   const queryClient = useQueryClient();
   const [confirmed, setConfirmed] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
+  // Which coding question is open in the full-viewport workspace, if any. The workspace renders
+  // exactly once — in the overlay — because two mounts would race each other's sessionStorage
+  // drafts in useContestCodeDrafts.
+  const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
   const isHandheld = useIsHandheld();
 
   const testQuery = useQuery({
@@ -138,15 +144,21 @@ export default function ClassTestAttempt() {
     violationCount: test?.violationCount ?? 0,
     recordEvent: recordProctorEvent,
     surfaceLabel: "class test",
-    // A phone cannot hold fullscreen (iOS has none) and fires blur for the soft keyboard, so on
-    // a handheld we drop those two and rely on visibilitychange — leaving the app still counts
-    // and still auto-submits.
-    requireFullscreen: !isHandheld,
+    // Handhelds get the same enforcement, best-effort: Android Chrome grants fullscreen and is
+    // policed exactly like a desktop, while a browser that has no fullscreen for web pages (iOS
+    // Safari) degrades instead of locking an honest student out of a paper they cannot re-enter.
+    // Leaving the app is caught either way by visibilitychange/pagehide and still auto-submits.
+    fullscreenMode: isHandheld ? "best-effort" : "required",
+    // Still off on touch: the soft keyboard fires blur, so scoring it would auto-submit a student
+    // the moment they start typing.
     scoreBlur: !isHandheld,
   });
 
   // Covers every way an attempt can end that is not our own submit click: the violation
   // auto-submit, the shared deadline, or landing here on an already-finished attempt.
+  const expandedCodingQuestion =
+    test?.questions.find((question) => question.id === expandedQuestionId && question.type === "Coding") ?? null;
+
   const attemptStatus = test?.attemptStatus;
   useEffect(() => {
     if (attemptStatus && attemptStatus !== "ACTIVE" && attemptStatus !== "NOT_STARTED") {
@@ -322,7 +334,7 @@ export default function ClassTestAttempt() {
   // The live paper runs as its own full-screen surface — no site chrome, the same shell a contest
   // uses. AppLayout is deliberately absent: a nav bar is an exit route out of a locked exam.
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background">
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-background">
       {watermarkPrimary && <ContestWatermark primary={watermarkPrimary} secondary={test.identity.name ?? undefined} />}
 
       <header className="shrink-0 border-b border-border bg-card">
@@ -344,7 +356,8 @@ export default function ClassTestAttempt() {
         </div>
         {isHandheld && (
           <div className="border-t border-warning/30 bg-warning/10 px-4 py-2 text-xs text-foreground">
-            Mobile-safe proctoring: switching apps or tabs is a violation. Keep this page open until submission.
+            Proctoring is active on mobile: switching apps, leaving this tab or exiting fullscreen is a
+            violation. Keep this page open until submission.
           </div>
         )}
       </header>
@@ -361,6 +374,7 @@ export default function ClassTestAttempt() {
               classTestId={id}
               pathname={pathname}
               attemptIsActive={active}
+              onOpenWorkspace={() => setExpandedQuestionId(question.id)}
             />
           ))}
 
@@ -373,6 +387,58 @@ export default function ClassTestAttempt() {
           </Button>
         </div>
       </main>
+
+      {/* Rendered inside this tree, not a portal: proctoring listeners, the watermark and the
+          answer state above all stay exactly as they are while a question is expanded. */}
+      <ExpandedWorkspaceOverlay
+        open={Boolean(expandedCodingQuestion)}
+        onClose={() => setExpandedQuestionId(null)}
+        title={
+          expandedCodingQuestion
+            ? `Q${test.questions.findIndex((question) => question.id === expandedCodingQuestion.id) + 1}. ${
+                expandedCodingQuestion.problemTitle ?? expandedCodingQuestion.statement
+              }`
+            : ""
+        }
+        headerRight={
+          <>
+            <span className="hidden text-xs text-muted-foreground sm:inline">
+              Violations: {violationCount}/{test.maxViolations}
+            </span>
+            <ContestTimer deadline={test.deadlineAt} className="py-1" onExpire={() => submitMutation.mutate()} />
+          </>
+        }
+      >
+        {expandedCodingQuestion && (
+          <ContestCodingBody
+            key={expandedCodingQuestion.id}
+            contestId={id}
+            questionId={expandedCodingQuestion.id}
+            pathname={pathname}
+            attemptIsActive={active}
+            lockClipboard={active}
+            clipboardSurfaceLabel="class test"
+            onAfterSubmit={() => undefined}
+            autoSaveId="class-test-coding"
+            stackedWorkHeight="100%"
+            question={{
+              id: expandedCodingQuestion.id,
+              title: expandedCodingQuestion.problemTitle ?? expandedCodingQuestion.statement,
+              problemStatement: expandedCodingQuestion.statement,
+              constraints: expandedCodingQuestion.constraints,
+              inputFormat: expandedCodingQuestion.inputFormat,
+              outputFormat: expandedCodingQuestion.outputFormat,
+              sampleTestCases: expandedCodingQuestion.sampleTestCases ?? [],
+              supportedLanguages: expandedCodingQuestion.supportedLanguages as ExecutableLanguage[] | undefined,
+            }}
+            codingApi={{
+              run: (input) => classTestApi.runCodingQuestion(id, input, pathname),
+              submit: (input) => classTestApi.submitCodingQuestion(id, input, pathname),
+              saveDraft: (input) => classTestApi.saveCodingDraft(id, input, pathname),
+            }}
+          />
+        )}
+      </ExpandedWorkspaceOverlay>
     </div>
   );
 }
@@ -382,9 +448,8 @@ function QuestionCard({
   question,
   value,
   onChange,
-  classTestId,
-  pathname,
   attemptIsActive,
+  onOpenWorkspace,
 }: {
   index: number;
   question: StudentClassTestQuestion;
@@ -393,6 +458,8 @@ function QuestionCard({
   classTestId: string;
   pathname: string;
   attemptIsActive: boolean;
+  /** Opens this question's full-viewport workspace; the paper only shows a summary. */
+  onOpenWorkspace: () => void;
 }) {
   return (
     <Card className="profile-card space-y-3 p-5">
@@ -460,34 +527,16 @@ function QuestionCard({
       )}
 
       {question.type === "Coding" && (
-        // The same workspace contests use — editor, console, run and submit — pointed at the
-        // class-test endpoints. The server also enforces the allowed languages. Fixed height on
-        // desktop for the split panes; on a phone the body stacks and flows in the page's own
-        // scroll, so it sizes to content instead.
-        <div className="border border-border lg:h-[70vh]">
-          <ContestCodingBody
-            key={question.id}
-            contestId={classTestId}
-            questionId={question.id}
-            pathname={pathname}
-            attemptIsActive={attemptIsActive}
-            onAfterSubmit={() => undefined}
-            question={{
-              id: question.id,
-              title: question.problemTitle ?? question.statement,
-              problemStatement: question.statement,
-              constraints: question.constraints,
-              inputFormat: question.inputFormat,
-              outputFormat: question.outputFormat,
-              sampleTestCases: question.sampleTestCases ?? [],
-              supportedLanguages: question.supportedLanguages as ExecutableLanguage[] | undefined,
-            }}
-            codingApi={{
-              run: (input) => classTestApi.runCodingQuestion(classTestId, input, pathname),
-              submit: (input) => classTestApi.submitCodingQuestion(classTestId, input, pathname),
-              saveDraft: (input) => classTestApi.saveCodingDraft(classTestId, input, pathname),
-            }}
-          />
+        // The paper is a max-w-3xl column; a full IDE inside it leaves ~360px per pane. The
+        // workspace opens full-viewport instead, without leaving the page or the attempt.
+        <div className="rounded border border-border p-4">
+          <p className="text-sm text-muted-foreground">
+            This is a coding question. It opens in a full-screen workspace with the statement, editor and
+            console — you can close it and come back at any time without losing your code.
+          </p>
+          <Button className="mt-3" variant="secondary" onClick={onOpenWorkspace} disabled={!attemptIsActive}>
+            <Code2 className="mr-2 h-4 w-4" /> Open workspace
+          </Button>
         </div>
       )}
     </Card>

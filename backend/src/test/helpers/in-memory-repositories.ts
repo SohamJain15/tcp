@@ -14,6 +14,11 @@ import type { LabRecord, LabSqlSubmissionRecord } from "../../modules/lab/lab.mo
 import type { LabRepository, LabSqlSubmissionRepository } from "../../modules/lab/lab.repository";
 import type { LabSessionAttemptRecord, LabSessionRecord } from "../../modules/lab/lab-session.model";
 import type { LabSessionAttemptRepository, LabSessionRepository } from "../../modules/lab/lab-session.repository";
+import type { LabAdmissionRecord, LabAttendanceSessionRecord } from "../../modules/lab/lab-attendance.model";
+import type {
+  LabAdmissionRepository,
+  LabAttendanceSessionRepository,
+} from "../../modules/lab/lab-attendance.repository";
 import type { LeaderboardEntry } from "../../modules/leaderboard/leaderboard.model";
 import type { LeaderboardRepository } from "../../modules/leaderboard/leaderboard.repository";
 import type {
@@ -286,6 +291,10 @@ export class InMemorySubmissionRepository implements SubmissionRepository {
         filters.userDepartment ? submission.userDepartment === filters.userDepartment : true,
       )
       .filter((submission) => (filters.contestId ? submission.contestId === filters.contestId : true))
+      .filter((submission) => (filters.labId ? submission.labId === filters.labId : true))
+      .filter((submission) =>
+        filters.labExperimentId ? submission.labExperimentId === filters.labExperimentId : true,
+      )
       .filter((submission) => (filters.status ? submission.status === filters.status : true))
       .filter((submission) => (filters.language ? submission.language === filters.language : true))
       // Production honours sourceType; this stand-in used to ignore it, which hid
@@ -691,6 +700,18 @@ export class InMemoryLabSqlSubmissionRepository implements LabSqlSubmissionRepos
       .map((record) => structuredClone(record));
   }
 
+  async listByLab(labId: string): Promise<LabSqlSubmissionRecord[]> {
+    return Array.from(this.submissions.values())
+      .filter((record) => record.labId === labId)
+      .map((record) => structuredClone(record));
+  }
+
+  async listByExperiment(labId: string, experimentId: string): Promise<LabSqlSubmissionRecord[]> {
+    return Array.from(this.submissions.values())
+      .filter((record) => record.labId === labId && record.experimentId === experimentId)
+      .map((record) => structuredClone(record));
+  }
+
   async save(record: LabSqlSubmissionRecord): Promise<LabSqlSubmissionRecord> {
     this.submissions.set(this.key(record.labId, record.experimentId, record.userEmail), structuredClone(record));
     return structuredClone(record);
@@ -749,5 +770,72 @@ export class InMemoryLabSessionAttemptRepository implements LabSessionAttemptRep
     return Array.from(this.attempts.values())
       .filter((attempt) => attempt.status === "ACTIVE" && attempt.deadlineAt.getTime() <= now.getTime())
       .map((attempt) => structuredClone(attempt));
+  }
+}
+
+export class InMemoryLabAttendanceSessionRepository implements LabAttendanceSessionRepository {
+  private readonly sessions = new Map<string, LabAttendanceSessionRecord>();
+
+  async getById(sessionId: string): Promise<LabAttendanceSessionRecord | null> {
+    const session = this.sessions.get(sessionId);
+    return session ? structuredClone(session) : null;
+  }
+
+  async findOpenByLab(labId: string, now: Date): Promise<LabAttendanceSessionRecord | null> {
+    const session = Array.from(this.sessions.values()).find(
+      (item) => item.labId === labId && item.state === "OPEN" && item.expiresAt.getTime() > now.getTime(),
+    );
+    return session ? structuredClone(session) : null;
+  }
+
+  async findOpenForStudent(email: string, now: Date): Promise<LabAttendanceSessionRecord | null> {
+    const normalized = email.trim().toLowerCase();
+    const session = Array.from(this.sessions.values()).find(
+      (item) =>
+        item.state === "OPEN" &&
+        item.expiresAt.getTime() > now.getTime() &&
+        item.roster.some((student) => student.email.toLowerCase() === normalized),
+    );
+    return session ? structuredClone(session) : null;
+  }
+
+  async listByOwner(email: string): Promise<LabAttendanceSessionRecord[]> {
+    return Array.from(this.sessions.values())
+      .filter((session) => session.openedBy === email || session.managerEmails.includes(email))
+      .map((session) => structuredClone(session));
+  }
+
+  async save(session: LabAttendanceSessionRecord): Promise<LabAttendanceSessionRecord> {
+    this.sessions.set(session.id, structuredClone(session));
+    return structuredClone(session);
+  }
+}
+
+export class InMemoryLabAdmissionRepository implements LabAdmissionRepository {
+  private readonly admissions = new Map<string, LabAdmissionRecord>();
+
+  async getById(admissionId: string): Promise<LabAdmissionRecord | null> {
+    const admission = this.admissions.get(admissionId);
+    return admission ? structuredClone(admission) : null;
+  }
+
+  async getBySessionAndUser(sessionId: string, userEmail: string): Promise<LabAdmissionRecord | null> {
+    const normalized = userEmail.trim().toLowerCase();
+    const admission = Array.from(this.admissions.values()).find(
+      (item) => item.sessionId === sessionId && item.userEmail.toLowerCase() === normalized,
+    );
+    return admission ? structuredClone(admission) : null;
+  }
+
+  async listBySession(sessionId: string): Promise<LabAdmissionRecord[]> {
+    return Array.from(this.admissions.values())
+      .filter((admission) => admission.sessionId === sessionId)
+      .sort((left, right) => left.requestedAt.getTime() - right.requestedAt.getTime())
+      .map((admission) => structuredClone(admission));
+  }
+
+  async save(record: LabAdmissionRecord): Promise<LabAdmissionRecord> {
+    this.admissions.set(record.id, structuredClone(record));
+    return structuredClone(record);
   }
 }

@@ -17,6 +17,10 @@ export interface LabRepository {
 export interface LabSqlSubmissionRepository {
   getByExperimentAndUser(labId: string, experimentId: string, userEmail: string): Promise<LabSqlSubmissionRecord | null>;
   listByLabAndUser(labId: string, userEmail: string): Promise<LabSqlSubmissionRecord[]>;
+  /** Every student's SQL answers for one lab. Faculty read path only — carries submitted queries. */
+  listByLab(labId: string): Promise<LabSqlSubmissionRecord[]>;
+  /** Narrowed to one experiment, for the per-experiment responses view. */
+  listByExperiment(labId: string, experimentId: string): Promise<LabSqlSubmissionRecord[]>;
   save(record: LabSqlSubmissionRecord): Promise<LabSqlSubmissionRecord>;
 }
 
@@ -123,6 +127,7 @@ function mapLabRecord(id: string, data: Record<string, unknown>): LabRecord {
     description: mapNullableString(data.description),
     lifecycleState:
       data.lifecycleState === "Published" || data.lifecycleState === "Archived" ? data.lifecycleState : "Draft",
+    requiresAttendance: data.requiresAttendance === true,
     experiments: Array.isArray(data.experiments)
       ? data.experiments.map(mapExperiment).filter((item): item is LabExperiment => item !== null)
       : [],
@@ -191,6 +196,20 @@ export class MongoLabSqlSubmissionRepository implements LabSqlSubmissionReposito
 
   async listByLabAndUser(labId: string, userEmail: string): Promise<LabSqlSubmissionRecord[]> {
     const documents = await (await getCollection("lab_sql_submissions")).find({ labId, userEmail }).toArray();
+    return documents.map((document) =>
+      mapSqlSubmission(String((document as Record<string, unknown>).id ?? ""), document as Record<string, unknown>),
+    );
+  }
+
+  async listByLab(labId: string): Promise<LabSqlSubmissionRecord[]> {
+    const documents = await (await getCollection("lab_sql_submissions")).find({ labId }).toArray();
+    return documents.map((document) =>
+      mapSqlSubmission(String((document as Record<string, unknown>).id ?? ""), document as Record<string, unknown>),
+    );
+  }
+
+  async listByExperiment(labId: string, experimentId: string): Promise<LabSqlSubmissionRecord[]> {
+    const documents = await (await getCollection("lab_sql_submissions")).find({ labId, experimentId }).toArray();
     return documents.map((document) =>
       mapSqlSubmission(String((document as Record<string, unknown>).id ?? ""), document as Record<string, unknown>),
     );

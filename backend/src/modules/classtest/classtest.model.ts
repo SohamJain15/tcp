@@ -2,6 +2,7 @@ import type { HarnessSpec } from "../../execution/harness/contract";
 import type { UserRole } from "../../shared/types/auth";
 import type { Department, Difficulty, ExecutableLanguage, ProblemLifecycleState } from "../../shared/types/domain";
 import { deriveDivisionFromUid } from "../../shared/utils/uid-department";
+import { matchesStudentYearSemester, type StudentYear } from "../../shared/utils/student-year";
 import type { UserRecord } from "../user/user.model";
 
 /**
@@ -141,6 +142,12 @@ export interface ClassTestAudienceFilter {
   department: Department | null;
   division: string | null;
   semester: number | null;
+  /**
+   * Year of study, as an alternative to a single semester: "3rd year" spans semesters 5 and 6, so
+   * `semester` alone cannot express a lab batch drawn from a whole year. Null matches everyone,
+   * which is what every record written before this field existed decodes to.
+   */
+  year: StudentYear | null;
   rollFrom: number | null;
   rollTo: number | null;
 }
@@ -603,6 +610,11 @@ export function matchesAudienceFilter(student: UserRecord, filter: ClassTestAudi
   }
 
   if (filter.semester !== null && student.semester !== filter.semester) {
+    return false;
+  }
+
+  // Year and semester are ANDed when both are set; the pickers offer one or the other.
+  if (!matchesStudentYearSemester(student.semester, filter.year ?? undefined)) {
     return false;
   }
 

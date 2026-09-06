@@ -4,6 +4,7 @@ import {
   DEFAULT_PROBLEM_MEMORY_LIMIT_MB,
   DEFAULT_PROBLEM_TIME_LIMIT_SECONDS,
   EXECUTABLE_LANGUAGES,
+  PROCTOR_EVENT_TYPES,
 } from "../../shared/constants/domain";
 import { normalizeNumber, tryNormalizeSupportedLanguage } from "../../shared/utils/normalize";
 import type { ExecutableLanguage } from "../../shared/types/domain";
@@ -257,16 +258,7 @@ export const contestCodingDraftSchema = contestCodingSubmissionSchema.extend({
 });
 
 export const contestProctoringEventSchema = z.object({
-  type: z.enum([
-    "TAB_SWITCH",
-    "VISIBILITY_LOSS",
-    "FULLSCREEN_EXIT",
-    "COPY",
-    "CUT",
-    "PASTE",
-    "CONTEXT_MENU",
-    "PRINT_SCREEN",
-  ]),
+  type: z.enum(PROCTOR_EVENT_TYPES),
   details: z.string().trim().optional().transform((value) => (value ? value : null)),
 });
 

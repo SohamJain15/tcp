@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DEPARTMENTS, EXECUTABLE_LANGUAGES } from "../../shared/constants/domain";
+import { DEPARTMENTS, EXECUTABLE_LANGUAGES, PROCTOR_EVENT_TYPES } from "../../shared/constants/domain";
 import type { ExecutableLanguage } from "../../shared/types/domain";
 
 /**
@@ -158,6 +158,11 @@ const audienceSchema = z
     department: z.enum(DEPARTMENTS),
     division: z.string().trim().toUpperCase().regex(/^[A-Z]$/).nullable().default(null),
     semester: z.coerce.number().int().min(1).max(8).nullable().default(null),
+    /** 1-4. Spans both semesters of that year, so a whole-year batch is expressible. */
+    year: z
+      .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)])
+      .nullable()
+      .default(null),
     rollFrom: z.coerce.number().int().min(0).nullable().default(null),
     rollTo: z.coerce.number().int().min(0).nullable().default(null),
   })
@@ -261,16 +266,7 @@ export const classTestAnswerSchema = z.object({
 });
 
 export const classTestProctorEventSchema = z.object({
-  type: z.enum([
-    "TAB_SWITCH",
-    "VISIBILITY_LOSS",
-    "FULLSCREEN_EXIT",
-    "COPY",
-    "CUT",
-    "PASTE",
-    "CONTEXT_MENU",
-    "PRINT_SCREEN",
-  ]),
+  type: z.enum(PROCTOR_EVENT_TYPES),
 });
 
 export const classTestCodingRunSchema = z.object({

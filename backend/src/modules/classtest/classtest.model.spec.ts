@@ -47,6 +47,7 @@ const compADivisionRolls11to20: ClassTestAudienceFilter = {
   department: COMP,
   division: "A",
   semester: null,
+  year: null,
   rollFrom: 11,
   rollTo: 20,
 };
@@ -90,6 +91,7 @@ describe("matchesAudienceFilter", () => {
       department: COMP,
       division: null,
       semester: null,
+      year: null,
       rollFrom: null,
       rollTo: null,
     };

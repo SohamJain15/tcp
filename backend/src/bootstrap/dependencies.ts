@@ -78,6 +78,16 @@ import {
 } from "../modules/lab/lab.repository";
 import { createLabSessionService, type LabSessionService } from "../modules/lab/lab-session.service";
 import {
+  createLabAttendanceService,
+  type LabAttendanceService,
+} from "../modules/lab/lab-attendance.service";
+import {
+  MongoLabAdmissionRepository,
+  MongoLabAttendanceSessionRepository,
+  type LabAdmissionRepository,
+  type LabAttendanceSessionRepository,
+} from "../modules/lab/lab-attendance.repository";
+import {
   MongoLabSessionAttemptRepository,
   MongoLabSessionRepository,
   type LabSessionAttemptRepository,
@@ -107,6 +117,8 @@ export interface RepositoryBundle {
   labSqlSubmissionRepository: LabSqlSubmissionRepository;
   labSessionRepository: LabSessionRepository;
   labSessionAttemptRepository: LabSessionAttemptRepository;
+  labAttendanceSessionRepository: LabAttendanceSessionRepository;
+  labAdmissionRepository: LabAdmissionRepository;
 }
 
 export interface ServiceBundle {
@@ -119,6 +131,7 @@ export interface ServiceBundle {
   classTestService: ClassTestService;
   labService: LabService;
   labSessionService: LabSessionService;
+  labAttendanceService: LabAttendanceService;
   reportService: ReportService;
 }
 
@@ -173,6 +186,9 @@ function createRepositories(overrides?: Partial<RepositoryBundle>): RepositoryBu
     labSessionRepository: overrides?.labSessionRepository ?? new MongoLabSessionRepository(),
     labSessionAttemptRepository:
       overrides?.labSessionAttemptRepository ?? new MongoLabSessionAttemptRepository(),
+    labAttendanceSessionRepository:
+      overrides?.labAttendanceSessionRepository ?? new MongoLabAttendanceSessionRepository(),
+    labAdmissionRepository: overrides?.labAdmissionRepository ?? new MongoLabAdmissionRepository(),
   };
 }
 
@@ -298,11 +314,21 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
   const labService = createLabService({
     labRepository: repositories.labRepository,
     labSqlSubmissionRepository: repositories.labSqlSubmissionRepository,
+    labAttendanceSessionRepository: repositories.labAttendanceSessionRepository,
+    labAdmissionRepository: repositories.labAdmissionRepository,
     submissionRepository: repositories.submissionRepository,
     submissionQueue,
     executionProvider,
     userRepository: repositories.userRepository,
     sqlExecutor,
+    now,
+  });
+
+  const labAttendanceService = createLabAttendanceService({
+    labAttendanceSessionRepository: repositories.labAttendanceSessionRepository,
+    labAdmissionRepository: repositories.labAdmissionRepository,
+    labRepository: repositories.labRepository,
+    userRepository: repositories.userRepository,
     now,
   });
 
@@ -340,6 +366,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     classTestService,
     labService,
     labSessionService,
+    labAttendanceService,
     reportService,
   };
 }

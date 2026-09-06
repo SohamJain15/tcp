@@ -35,6 +35,10 @@ export function createLabRouter(dependencies: ApplicationDependencies): Router {
   router.post("/", requireRole("FACULTY"), asyncHandler(controller.createLab));
   router.post("/sql-preview", requireRole("FACULTY"), sqlExecutionLimiter, asyncHandler(controller.previewSql));
   router.get("/:labId", requireRole("FACULTY"), asyncHandler(controller.getLab));
+  // Student answers. The list carries verdicts and marks only; the per-student detail below is the
+  // single place a submitted query or source file is returned.
+  router.get("/:labId/responses", requireRole("FACULTY"), asyncHandler(controller.listResponses));
+  router.get("/:labId/responses/:experimentId", requireRole("FACULTY"), asyncHandler(controller.getResponse));
   router.patch("/:labId", requireRole("FACULTY"), asyncHandler(controller.updateLab));
 
   return router;

@@ -2,6 +2,7 @@ import type { Collection } from "mongodb";
 
 import { getMongoDatabase } from "../../config/mongodb";
 import { toDate } from "../../shared/utils/date";
+import type { StudentYear } from "../../shared/utils/student-year";
 import { normalizeDepartment, normalizeNumber, normalizeRole } from "../../shared/utils/normalize";
 import type { AssignedStudent, ClassTestAudienceFilter } from "../classtest/classtest.model";
 import type { LabExperiment } from "./lab.model";
@@ -55,12 +56,18 @@ function mapAssignedStudents(value: unknown): AssignedStudent[] {
     .filter((item): item is AssignedStudent => item !== null);
 }
 
+/** Records written before the year filter existed have no `year`, which decodes to "any year". */
+function mapAudienceYear(value: unknown): StudentYear | null {
+  return value === 1 || value === 2 || value === 3 || value === 4 ? value : null;
+}
+
 function mapAudience(value: unknown): ClassTestAudienceFilter {
   const record = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
   return {
     department: normalizeDepartment(record.department),
     division: mapNullableString(record.division),
     semester: typeof record.semester === "number" ? record.semester : null,
+    year: mapAudienceYear(record.year),
     rollFrom: typeof record.rollFrom === "number" ? record.rollFrom : null,
     rollTo: typeof record.rollTo === "number" ? record.rollTo : null,
   };

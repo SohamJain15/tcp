@@ -14,6 +14,7 @@ import {
 import { AppLayout } from "@/components/AppLayout";
 import { CrosswordGrid } from "@/components/CrosswordGrid";
 import { ThemedSelect } from "@/components/ThemedSelect";
+import { STUDENT_YEARS } from "@/components/faculty/AudiencePicker";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -277,6 +278,7 @@ export default function CreateClassTest() {
     department: DEPARTMENTS[0],
     division: null,
     semester: null,
+    year: null,
     rollFrom: null,
     rollTo: null,
   });
@@ -687,6 +689,16 @@ export default function CreateClassTest() {
                   setAudience((a) => ({ ...a, division: value === "all" ? null : value }))
                 }
                 options={[{ value: "all", label: "All" }, ...DIVISIONS.map((d) => ({ value: d, label: d }))]}
+              />
+            </div>
+            <div>
+              <Label>Year</Label>
+              <ThemedSelect
+                value={audience.year ? String(audience.year) : "all"}
+                onValueChange={(value) =>
+                  setAudience((a) => ({ ...a, year: value === "all" ? null : Number(value) }))
+                }
+                options={[{ value: "all", label: "All" }, ...STUDENT_YEARS.map((option) => ({ ...option }))]}
               />
             </div>
             <div>

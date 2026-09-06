@@ -1,5 +1,6 @@
 import type { HarnessSpec } from "../../execution/harness/contract";
 import type { UserRole } from "../../shared/types/auth";
+import type { ProctorEventType } from "../../shared/constants/domain";
 import type { Department, Difficulty, ExecutableLanguage } from "../../shared/types/domain";
 import { toIsoString } from "../../shared/utils/date";
 import { buildLanguagePercentileScorer } from "../../shared/utils/language-percentile";
@@ -15,15 +16,8 @@ export type ContestRegistrationStatus = "NOT_OPEN" | "OPEN" | "CLOSED";
 export type ContestAttemptStatus = "NOT_STARTED" | "ACTIVE" | "SUBMITTED" | "AUTO_SUBMITTED" | "DISQUALIFIED";
 export type ContestStudentAttemptStatus = ContestAttemptStatus | "NOT_ATTEMPTED";
 export type ContestQuestionAttemptStatus = "UNATTEMPTED" | "ATTEMPTED" | "SOLVED";
-export type ContestProctoringEventType =
-  | "TAB_SWITCH"
-  | "VISIBILITY_LOSS"
-  | "FULLSCREEN_EXIT"
-  | "COPY"
-  | "CUT"
-  | "PASTE"
-  | "CONTEXT_MENU"
-  | "PRINT_SCREEN";
+/** Sourced from PROCTOR_EVENT_TYPES so the union, the validators and the frontend cannot drift. */
+export type ContestProctoringEventType = ProctorEventType;
 
 export interface ContestTestCase {
   input: string;

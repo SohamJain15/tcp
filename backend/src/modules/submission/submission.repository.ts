@@ -22,6 +22,10 @@ export interface SubmissionListFilters {
   userDepartment?: Department;
   problemId?: string;
   contestId?: string;
+  /** Scopes to one lab's coding submissions; pairs with `sourceType: "lab_coding"`. */
+  labId?: string;
+  /** The experiment within that lab. Stored as `labExperimentId` on the submission. */
+  labExperimentId?: string;
   sourceType?: SubmissionSourceType;
   status?: SubmissionStatus;
   language?: SupportedLanguage;
@@ -131,6 +135,8 @@ function buildFilter(filters: SubmissionListFilters): Filter<Record<string, unkn
   if (filters.userDepartment) filter.userDepartment = filters.userDepartment;
   if (filters.problemId) filter.problemId = filters.problemId;
   if (filters.contestId) filter.contestId = filters.contestId;
+  if (filters.labId) filter.labId = filters.labId;
+  if (filters.labExperimentId) filter.labExperimentId = filters.labExperimentId;
   if (filters.sourceType) filter.sourceType = filters.sourceType;
   if (filters.status) filter.status = filters.status;
   if (filters.language) filter.language = filters.language;

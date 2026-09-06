@@ -35,6 +35,8 @@ export function createLabSessionRouter(dependencies: ApplicationDependencies): R
   router.get("/:sessionId", requireRole("FACULTY"), asyncHandler(controller.get));
   router.patch("/:sessionId", requireRole("FACULTY"), asyncHandler(controller.update));
   router.get("/:sessionId/attempts", requireRole("FACULTY"), asyncHandler(controller.listAttempts));
+  // The drill-down: the only faculty route that returns a student's submitted SQL or source.
+  router.get("/:sessionId/attempts/:attemptId", requireRole("FACULTY"), asyncHandler(controller.getAttemptDetail));
   router.patch("/:sessionId/results", requireRole("FACULTY"), asyncHandler(controller.publishResults));
 
   return router;

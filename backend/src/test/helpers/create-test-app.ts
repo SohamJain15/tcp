@@ -7,6 +7,7 @@ import { createClassTestService } from "../../modules/classtest/classtest.servic
 import { NoopCrosswordClueGenerator } from "../../modules/classtest/ai/crossword-clue-generator";
 import { createLabService } from "../../modules/lab/lab.service";
 import { createLabSessionService } from "../../modules/lab/lab-session.service";
+import { createLabAttendanceService } from "../../modules/lab/lab-attendance.service";
 import { StubSqlExecutor } from "../../execution/sql/stub-sql-executor";
 import { createDepartmentService } from "../../modules/department/department.service";
 import { createReportService } from "../../modules/report/report.service";
@@ -39,6 +40,8 @@ import {
   InMemoryLabSqlSubmissionRepository,
   InMemoryLabSessionRepository,
   InMemoryLabSessionAttemptRepository,
+  InMemoryLabAttendanceSessionRepository,
+  InMemoryLabAdmissionRepository,
   InMemoryLeaderboardRepository,
   InMemoryProblemRepository,
   InMemorySubmissionRepository,
@@ -256,6 +259,8 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
   const labSqlSubmissionRepository = new InMemoryLabSqlSubmissionRepository();
   const labSessionRepository = new InMemoryLabSessionRepository();
   const labSessionAttemptRepository = new InMemoryLabSessionAttemptRepository();
+  const labAttendanceSessionRepository = new InMemoryLabAttendanceSessionRepository();
+  const labAdmissionRepository = new InMemoryLabAdmissionRepository();
   let tick = 0;
 
   const now = () => {
@@ -357,6 +362,8 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
     labService: createLabService({
       labRepository,
       labSqlSubmissionRepository,
+      labAttendanceSessionRepository,
+      labAdmissionRepository,
       submissionRepository,
       submissionQueue,
       executionProvider: new StubExecutionProvider(),
@@ -373,6 +380,13 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       submissionQueue,
       executionProvider: new StubExecutionProvider(),
       sqlExecutor: new StubSqlExecutor(),
+      now,
+    }),
+    labAttendanceService: createLabAttendanceService({
+      labAttendanceSessionRepository,
+      labAdmissionRepository,
+      labRepository,
+      userRepository,
       now,
     }),
     reportService: createReportService({
@@ -416,6 +430,10 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       classTestAttemptRepository,
       classTestFeedbackRepository,
       classTestProctoringRepository,
+      labRepository,
+      labSqlSubmissionRepository,
+      labAttendanceSessionRepository,
+      labAdmissionRepository,
     },
     services: {
       userService: dependencies.userService,

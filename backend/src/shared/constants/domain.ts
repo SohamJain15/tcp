@@ -72,3 +72,29 @@ export const DEFAULT_PAGE_SIZE = 10;
 export const MAX_PAGE_SIZE = 50;
 export const DEFAULT_PROBLEM_TIME_LIMIT_SECONDS = env.DEFAULT_PROBLEM_TIME_LIMIT_SECONDS;
 export const DEFAULT_PROBLEM_MEMORY_LIMIT_MB = env.DEFAULT_PROBLEM_MEMORY_LIMIT_MB;
+
+/**
+ * Every proctoring signal the three attempt surfaces (contest, class test, lab session) can report.
+ *
+ * One list so the frontend union, the three validators and the scored-violation sets cannot drift:
+ * adding a type to only one of them makes the browser's request 400 with no visible cause.
+ *
+ * The last three are *recorded, not scored* — they describe a device doing something a phone does
+ * on its own (rotating, being resized by split-screen, opening picture-in-picture), so faculty can
+ * see them without a student being auto-submitted for putting their phone down.
+ */
+export const PROCTOR_EVENT_TYPES = [
+  "TAB_SWITCH",
+  "VISIBILITY_LOSS",
+  "FULLSCREEN_EXIT",
+  "COPY",
+  "CUT",
+  "PASTE",
+  "CONTEXT_MENU",
+  "PRINT_SCREEN",
+  "ORIENTATION_CHANGE",
+  "RESIZE",
+  "PICTURE_IN_PICTURE",
+] as const;
+
+export type ProctorEventType = (typeof PROCTOR_EVENT_TYPES)[number];

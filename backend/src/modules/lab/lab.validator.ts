@@ -70,6 +70,8 @@ const labBodySchema = z.object({
   semester: z.coerce.number().int().min(1).max(8).nullable().default(null),
   description: z.string().trim().max(2000).nullable().default(null),
   lifecycleState: z.enum(["Draft", "Published", "Archived"]).default("Draft"),
+  /** "This lab is only open while a teacher is running a session for it." */
+  requiresAttendance: z.boolean().default(false),
   experiments: z.array(experimentSchema).min(1, "Add at least one experiment"),
 });
 

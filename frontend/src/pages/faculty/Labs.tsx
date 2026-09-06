@@ -35,7 +35,11 @@ export default function FacultyLabs() {
           </TabsList>
 
           <TabsContent value="regular" className="mt-4 space-y-4">
-            <div className="flex justify-end">
+            <div className="flex flex-wrap justify-end gap-2">
+              {/* The console you keep open on the projector during a lab period. */}
+              <Button asChild size="sm" variant="outline">
+                <Link to="/faculty/lab-attendance">Run a lab session</Link>
+              </Button>
               <Button asChild size="sm">
                 <Link to="/faculty/labs/create">New lab</Link>
               </Button>
@@ -61,9 +65,14 @@ export default function FacultyLabs() {
                     <div className="text-sm text-muted-foreground">
                       {lab.experiments.length} experiment{lab.experiments.length === 1 ? "" : "s"}
                     </div>
-                    <Button asChild size="sm" variant="outline" className="w-fit">
-                      <Link to={`/faculty/labs/${lab.id}/edit`}>Edit</Link>
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button asChild size="sm" variant="outline" className="w-fit">
+                        <Link to={`/faculty/labs/${lab.id}/edit`}>Edit</Link>
+                      </Button>
+                      <Button asChild size="sm" variant="outline" className="w-fit">
+                        <Link to={`/faculty/labs/${lab.id}/responses`}>Responses</Link>
+                      </Button>
+                    </div>
                   </Card>
                 ))}
               </div>

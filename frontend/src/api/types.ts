@@ -1169,6 +1169,12 @@ export interface ContestResultsVisibilityPayload {
 }
 
 export interface ContestProctoringPayload {
+  /**
+   * Mirrors PROCTOR_EVENT_TYPES on the backend. The last three describe something a handheld does
+   * on its own — rotating, being split-screened, opening picture-in-picture — and are recorded for
+   * faculty without being scored. Adding a type here without adding it to the backend validators
+   * makes the request 400 with no visible cause.
+   */
   type:
     | "TAB_SWITCH"
     | "VISIBILITY_LOSS"
@@ -1177,7 +1183,10 @@ export interface ContestProctoringPayload {
     | "CUT"
     | "PASTE"
     | "CONTEXT_MENU"
-    | "PRINT_SCREEN";
+    | "PRINT_SCREEN"
+    | "ORIENTATION_CHANGE"
+    | "RESIZE"
+    | "PICTURE_IN_PICTURE";
   details?: string | null;
 }
 
@@ -1279,6 +1288,8 @@ export interface ClassTestAudienceFilter {
   department: Department;
   division: string | null;
   semester: number | null;
+  /** 1-4, spanning both semesters of that year. Null means any year. */
+  year: number | null;
   rollFrom: number | null;
   rollTo: number | null;
 }
@@ -1699,8 +1710,10 @@ export interface StudentLabSummary {
 
 export interface StudentLabDetail extends StudentLabSummary {
   description: string | null;
+  /** Empty while a live session is running and this student has not been admitted yet. */
   experiments: StudentLabExperiment[];
   progress: { experimentId: string; passed: boolean; awardedPoints: number; status: string }[];
+  attendance?: StudentAttendanceState | null;
 }
 
 /** Faculty-facing lab record (mirrors the backend LabRecord; experiments carry the reference query). */
@@ -1723,6 +1736,63 @@ export interface FacultyLab {
   managerEmails: string[];
 }
 
+/**
+ * A cell of the faculty responses grid. Carries verdicts and marks, never an answer body — the
+ * bodies live on {@link FacultyLabResponseDetail}, behind a per-student request.
+ */
+export interface FacultyLabResponseRow {
+  userEmail: string;
+  userName: string | null;
+  userUid: string | null;
+  rollNumber: string | null;
+  division: string | null;
+  experimentId: string;
+  experimentNumber: number;
+  experimentTitle: string;
+  kind: LabExperimentKind;
+  status: string;
+  passed: boolean;
+  awardedPoints: number;
+  maxPoints: number;
+  attemptCount: number;
+  lastSubmittedAt: string | null;
+}
+
+export interface FacultyLabCodingAttempt {
+  submissionId: string;
+  status: string;
+  language: string;
+  passedCount: number;
+  totalCount: number;
+  runtimeMs: number;
+  memoryKb: number;
+  createdAt: string;
+}
+
+export type FacultyLabResponseDetail =
+  | {
+      kind: "sql";
+      experimentId: string;
+      experimentTitle: string;
+      userEmail: string;
+      studentSql: string | null;
+      status: string;
+      passed: boolean;
+      awardedPoints: number;
+      maxPoints: number;
+      runtimeMs: number;
+      updatedAt: string | null;
+    }
+  | {
+      kind: "coding";
+      experimentId: string;
+      experimentTitle: string;
+      userEmail: string;
+      maxPoints: number;
+      latest: (FacultyLabCodingAttempt & { code: string }) | null;
+      history: FacultyLabCodingAttempt[];
+    };
+
 export interface LabSqlRunResponse {
   ok: boolean;
   result?: SqlResultSet;
@@ -1743,6 +1813,75 @@ export interface LabSqlPreviewResponse {
   expected: SqlResultSet;
   studentResult?: SqlResultSet;
   studentError?: string;
+}
+
+// --- Lab attendance (the live lobby a teacher runs during a lab period) ------
+
+export type LabAdmissionStatus = "PENDING" | "ADMITTED" | "DENIED" | "REVOKED";
+
+export interface LabAttendanceGates {
+  requireAdmission: boolean;
+  requireNetworkMatch: boolean;
+  requireJoinCode: boolean;
+}
+
+/** What a student is told: enough to join, nothing about anyone else in the room. */
+export interface StudentAttendanceSession {
+  id: string;
+  labId: string;
+  labTitle: string;
+  subject: string;
+  batchLabel: string | null;
+  gates: LabAttendanceGates;
+}
+
+export interface StudentAttendanceState {
+  sessionId: string;
+  status: LabAdmissionStatus | null;
+  denialReason: string | null;
+  gates: LabAttendanceGates;
+}
+
+export interface FacultyAttendanceSession {
+  id: string;
+  labId: string;
+  labTitle: string;
+  subject: string;
+  batchLabel: string | null;
+  audience: ClassTestAudienceFilter;
+  roster: AssignedStudent[];
+  gates: LabAttendanceGates;
+  hostIp: string | null;
+  hostIpCidr: string | null;
+  state: "OPEN" | "CLOSED";
+  openedBy: string;
+  managerEmails: string[];
+  openedAt: string;
+  closedAt: string | null;
+  expiresAt: string;
+}
+
+export interface FacultyAdmissionRow {
+  id: string;
+  email: string;
+  name: string | null;
+  uid: string | null;
+  rollNumber: string | null;
+  division: string | null;
+  status: LabAdmissionStatus;
+  requestedAt: string;
+  decidedAt: string | null;
+  requestIp: string | null;
+  denialReason: string | null;
+  /** False marks a device that has left the lab network since it joined. Informational only. */
+  ipMatchesHost: boolean;
+}
+
+export interface LabAdmissionsResponse {
+  pending: FacultyAdmissionRow[];
+  admitted: FacultyAdmissionRow[];
+  denied: FacultyAdmissionRow[];
+  counts: { pending: number; admitted: number; denied: number; roster: number };
 }
 
 // --- Lab Sessions (assignable, scheduled) ------------------------------------
@@ -1768,6 +1907,37 @@ export interface StudentLabSessionDetail extends StudentLabSessionSummary {
   maxViolations: number;
   violationCount: number;
   answers: { experimentId: string; submittedSql: string | null; draftCode: string | null; draftLanguage: string | null }[];
+}
+
+/** One lab-session attempt opened up: what the student wrote, per experiment. */
+export interface FacultyLabSessionAttemptDetail {
+  attemptId: string;
+  sessionId: string;
+  email: string;
+  name: string | null;
+  uid: string | null;
+  rollNumber: string | null;
+  division: string | null;
+  status: string;
+  violationCount: number;
+  suspectedMalpractice: boolean;
+  autoScore: number | null;
+  finalScore: number | null;
+  totalPoints: number;
+  experiments: {
+    experimentId: string;
+    number: number;
+    title: string;
+    kind: LabExperimentKind;
+    awardedPoints: number;
+    maxPoints: number;
+    submittedSql: string | null;
+    code: string | null;
+    language: string | null;
+    status: string | null;
+    passedCount: number;
+    totalCount: number;
+  }[];
 }
 
 export interface FacultyLabSession {

@@ -1,25 +1,22 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
-import { useMutation } from "@tanstack/react-query";
+import type * as MonacoEditor from "monaco-editor";
 import { toast } from "sonner";
 
-import { labApi } from "@/api/services";
-import type { LabSqlRunResponse, LabSqlSubmitResponse, SqlResultSet } from "@/api/types";
+import type { SqlResultSet } from "@/api/types";
 import { Button } from "@/components/ui/button";
+import { useSqlExperiment, type SqlWorkspaceRunner } from "@/hooks/useSqlExperiment";
+import { lockDownContestEditor } from "@/lib/code-editor";
 
 /**
- * The student workspace for a single SQL experiment.
+ * The compact student workspace for a single SQL experiment, used where a full split workspace does
+ * not fit — inside a proctored lab session's question list.
  *
- * "Run" shows the grid the query returns against a freshly seeded sandbox; "Submit" grades it
- * against the reference result. Both are synchronous — the SQL sandbox is fast, so unlike the
- * Judge0 coding path there is nothing to poll.
+ * The full-screen equivalent, with a statement pane and a resizable result console, is
+ * {@link import("@/components/workspace/SqlExperimentBody").SqlExperimentBody}. Both drive the same
+ * `useSqlExperiment` hook, so run/submit behaviour cannot drift between them.
  */
-export interface SqlWorkspaceRunner {
-  run: (sql: string) => Promise<LabSqlRunResponse>;
-  submit: (sql: string) => Promise<LabSqlSubmitResponse | { saved: boolean }>;
-  /** Overrides the Submit button label (e.g. "Save" inside a timed session). */
-  submitLabel?: string;
-}
+export type { SqlWorkspaceRunner } from "@/hooks/useSqlExperiment";
 
 export interface SqlWorkspaceProps {
   labId: string;
@@ -30,50 +27,33 @@ export interface SqlWorkspaceProps {
   onSolved?: () => void;
   /** When set, run/submit go through these instead of the self-paced lab endpoints. */
   runner?: SqlWorkspaceRunner;
+  /** Exam surfaces block the clipboard; a self-paced lab does not. */
+  lockClipboard?: boolean;
+  clipboardSurfaceLabel?: string;
 }
 
-export function SqlWorkspace({ labId, experimentId, schemaSql, pathname, initialSql, onSolved, runner }: SqlWorkspaceProps) {
-  const [sql, setSql] = useState(initialSql ?? "SELECT * FROM ");
-  const [grid, setGrid] = useState<SqlResultSet | null>(null);
-  const [message, setMessage] = useState<{ tone: "ok" | "warn" | "err"; text: string } | null>(null);
+export function SqlWorkspace({
+  labId,
+  experimentId,
+  schemaSql,
+  pathname,
+  initialSql,
+  onSolved,
+  runner,
+  lockClipboard = false,
+  clipboardSurfaceLabel = "lab session",
+}: SqlWorkspaceProps) {
   const [showSchema, setShowSchema] = useState(false);
+  const editorLockRef = useRef<(() => void) | null>(null);
   const isDark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
-
-  const runMutation = useMutation({
-    mutationFn: () => (runner ? runner.run(sql) : labApi.runSql(labId, experimentId, sql, pathname)),
-    onSuccess: (result) => {
-      if (result.ok && result.result) {
-        setGrid(result.result);
-        setMessage(null);
-      } else {
-        setGrid(null);
-        setMessage({ tone: "err", text: result.timedOut ? "Your query timed out." : result.error ?? "Query failed." });
-      }
-    },
-    onError: (error: Error) => toast.error(error.message || "Could not run the query"),
+  const { sql, setSql, grid, message, run, submit, isRunning, isSubmitting, busy, submitLabel } = useSqlExperiment({
+    labId,
+    experimentId,
+    pathname,
+    initialSql,
+    onSolved,
+    runner,
   });
-
-  const submitMutation = useMutation({
-    mutationFn: () => (runner ? runner.submit(sql) : labApi.submitSql(labId, experimentId, sql, pathname)),
-    onSuccess: (result) => {
-      if ("passed" in result) {
-        setGrid(result.result ?? null);
-        if (result.passed) {
-          setMessage({ tone: "ok", text: `Correct! Awarded ${result.awardedPoints}/${result.maxPoints} marks.` });
-          onSolved?.();
-        } else {
-          setMessage({ tone: "warn", text: result.message ?? "Not quite — your result does not match." });
-        }
-      } else {
-        // Session "Save": stored, graded after the window closes — no verdict shown now.
-        setMessage({ tone: "ok", text: "Saved. Your query will be graded when the session ends." });
-        onSolved?.();
-      }
-    },
-    onError: (error: Error) => toast.error(error.message || "Could not submit"),
-  });
-
-  const busy = runMutation.isPending || submitMutation.isPending;
 
   return (
     <div className="space-y-3">
@@ -98,17 +78,33 @@ export function SqlWorkspace({ labId, experimentId, schemaSql, pathname, initial
           language="sql"
           theme={isDark ? "vs-dark" : "light"}
           value={sql}
+          onMount={(editor: MonacoEditor.editor.IStandaloneCodeEditor, monaco) => {
+            editorLockRef.current?.();
+            // Previously absent: a proctored lab session locked the coding editor's clipboard and
+            // left the SQL editor wide open.
+            editorLockRef.current = lockClipboard
+              ? lockDownContestEditor(editor, monaco, () =>
+                  toast.info(`Copy, cut and paste are disabled during the ${clipboardSurfaceLabel}.`),
+                )
+              : null;
+          }}
           onChange={(value) => setSql(value ?? "")}
-          options={{ minimap: { enabled: false }, fontSize: 14, lineNumbers: "on", scrollBeyondLastLine: false }}
+          options={{
+            minimap: { enabled: false },
+            fontSize: 14,
+            lineNumbers: "on",
+            scrollBeyondLastLine: false,
+            contextmenu: !lockClipboard,
+          }}
         />
       </div>
 
       <div className="flex gap-2">
-        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => runMutation.mutate()}>
-          {runMutation.isPending ? "Running…" : "Run"}
+        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={run}>
+          {isRunning ? "Running…" : "Run"}
         </Button>
-        <Button type="button" size="sm" disabled={busy} onClick={() => submitMutation.mutate()}>
-          {submitMutation.isPending ? "Saving…" : runner?.submitLabel ?? "Submit"}
+        <Button type="button" size="sm" disabled={busy} onClick={submit}>
+          {isSubmitting ? "Saving…" : submitLabel}
         </Button>
       </div>
 

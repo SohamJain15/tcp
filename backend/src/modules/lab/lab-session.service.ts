@@ -8,11 +8,10 @@ import type { SubmissionQueue } from "../../queue/submission-queue";
 import { AppError } from "../../shared/errors/app-error";
 import type { AuthenticatedUser } from "../../shared/types/auth";
 import type { ExecutableLanguage } from "../../shared/types/domain";
+import { resolveAssignedStudents } from "../classtest/audience";
 import {
   computeClassTestEndAt,
   computeClassTestStatus,
-  matchesAudienceFilter,
-  toAssignedStudent,
   type AssignedStudent,
   type ClassTestAudienceFilter,
 } from "../classtest/classtest.model";
@@ -78,6 +77,42 @@ export interface FacultyLabSessionAttempt {
   timeTakenMs: number | null;
 }
 
+/**
+ * One attempt, opened up: what the student actually wrote for each experiment.
+ *
+ * The attempts *list* deliberately carries scores only. This is the one shape that returns a
+ * submitted query or source file, and it is reachable only from the per-attempt faculty route.
+ */
+export interface FacultyLabSessionAttemptDetail {
+  attemptId: string;
+  sessionId: string;
+  email: string;
+  name: string | null;
+  uid: string | null;
+  rollNumber: string | null;
+  division: string | null;
+  status: string;
+  violationCount: number;
+  suspectedMalpractice: boolean;
+  autoScore: number | null;
+  finalScore: number | null;
+  totalPoints: number;
+  experiments: {
+    experimentId: string;
+    number: number;
+    title: string;
+    kind: "sql" | "coding";
+    awardedPoints: number;
+    maxPoints: number;
+    submittedSql: string | null;
+    code: string | null;
+    language: string | null;
+    status: string | null;
+    passedCount: number;
+    totalCount: number;
+  }[];
+}
+
 export interface LabSessionService {
   // faculty
   listForFaculty(user: AuthenticatedUser): Promise<LabSessionRecord[]>;
@@ -85,6 +120,11 @@ export interface LabSessionService {
   createSession(user: AuthenticatedUser, input: CreateLabSessionInput): Promise<LabSessionRecord>;
   updateSession(user: AuthenticatedUser, sessionId: string, input: UpdateLabSessionInput): Promise<LabSessionRecord>;
   listAttempts(user: AuthenticatedUser, sessionId: string): Promise<FacultyLabSessionAttempt[]>;
+  getAttemptDetail(
+    user: AuthenticatedUser,
+    sessionId: string,
+    attemptId: string,
+  ): Promise<FacultyLabSessionAttemptDetail>;
   publishResults(user: AuthenticatedUser, sessionId: string, published: boolean): Promise<LabSessionRecord>;
   // student
   listAssigned(user: AuthenticatedUser): Promise<StudentLabSessionSummary[]>;
@@ -125,30 +165,8 @@ function ensureFacultyCanManage(user: AuthenticatedUser, session: LabSessionReco
 }
 
 export function createLabSessionService(dependencies: LabSessionServiceDependencies): LabSessionService {
-  async function resolveAssignment(
-    filter: ClassTestAudienceFilter,
-    assignedEmails: string[],
-  ): Promise<AssignedStudent[]> {
-    if (filter.department === null) {
-      throw new AppError(400, "Choose a department for this session");
-    }
-    const roster = await dependencies.userRepository.listByDepartment(filter.department, "STUDENT");
-    const candidates = roster
-      .filter((student) => matchesAudienceFilter(student, filter))
-      .map((student) => toAssignedStudent(student));
-    if (candidates.length === 0) {
-      throw new AppError(400, "No students match this department, division and roll range");
-    }
-    if (assignedEmails.length === 0) {
-      return candidates;
-    }
-    const wanted = new Set(assignedEmails.map((email) => email.trim().toLowerCase()));
-    const selected = candidates.filter((student) => wanted.has(student.email.toLowerCase()));
-    if (selected.length === 0) {
-      throw new AppError(400, "None of the selected students match this department, division and roll range");
-    }
-    return selected;
-  }
+  const resolveAssignment = (filter: ClassTestAudienceFilter, assignedEmails: string[]) =>
+    resolveAssignedStudents(dependencies.userRepository, filter, assignedEmails);
 
   function newExperimentState(experiment: LabExperiment): LabSessionExperimentState {
     return {
@@ -413,6 +431,64 @@ export function createLabSessionService(dependencies: LabSessionServiceDependenc
         totalPoints,
         timeTakenMs: attempt.timeTakenMs,
       }));
+    },
+
+    /** The drill-down behind a row of the attempts table. */
+    async getAttemptDetail(user, sessionId, attemptId) {
+      const session = ensureFacultyCanManage(user, await dependencies.labSessionRepository.getById(sessionId));
+      const attempt = await dependencies.labSessionAttemptRepository.getById(attemptId);
+      // Cross-session ids are treated as missing rather than forbidden, matching ensureFacultyCanManage.
+      if (!attempt || attempt.sessionId !== sessionId) {
+        throw new AppError(404, "Attempt not found");
+      }
+
+      const now = dependencies.now();
+      const ended = computeClassTestStatus(session, now) === "Ended";
+      const scored = await ensureAutoScored(session, attempt, now);
+      const stateById = new Map(scored.experimentStates.map((state) => [state.experimentId, state]));
+
+      const experiments = await Promise.all(
+        session.experiments.map(async (experiment) => {
+          const state = stateById.get(experiment.id);
+          let code: string | null = null;
+          if (state?.lastSubmissionId) {
+            const submission = await dependencies.submissionRepository.getById(state.lastSubmissionId);
+            code = submission?.code ?? null;
+          }
+          return {
+            experimentId: experiment.id,
+            number: experiment.number,
+            title: experiment.title,
+            kind: experiment.kind,
+            awardedPoints: state?.awardedPoints ?? 0,
+            maxPoints: experiment.points,
+            submittedSql: state?.submittedSql ?? null,
+            code,
+            language: state?.finalSubmissionLanguage ?? null,
+            status: state?.finalSubmissionStatus ?? null,
+            passedCount: state?.passedCount ?? 0,
+            totalCount: state?.totalCount ?? 0,
+          };
+        }),
+      );
+
+      return {
+        attemptId: scored.id,
+        sessionId,
+        email: scored.userEmail,
+        name: scored.userName,
+        uid: scored.userUid,
+        rollNumber: scored.userRollNumber,
+        division: scored.userDivision,
+        status: scored.status,
+        violationCount: scored.violationCount,
+        suspectedMalpractice: scored.suspectedMalpractice,
+        // Scores stay hidden until the shared window closes, exactly as in listAttempts.
+        autoScore: ended ? scored.autoScore : null,
+        finalScore: ended ? scored.finalScore : null,
+        totalPoints: labSessionTotalPoints(session.experiments),
+        experiments,
+      };
     },
 
     async publishResults(user, sessionId, published) {

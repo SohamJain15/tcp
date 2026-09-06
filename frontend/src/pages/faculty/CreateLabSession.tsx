@@ -14,7 +14,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 const PATHNAME = "/faculty/lab-sessions/create";
-const DIVISIONS = ["A", "B", "C", "D", "E"];
+// Divisions and years now live with the shared picker so the three surfaces cannot drift.
+import { DIVISIONS, STUDENT_YEARS } from "@/components/faculty/AudiencePicker";
 
 /** Pulls the first specific field error the server returned, so the toast isn't a bare "Validation failed". */
 function firstFieldIssue(error: Error): string | null {
@@ -39,6 +40,7 @@ export default function CreateLabSession() {
   const [department, setDepartment] = useState<Department | "">("");
   const [division, setDivision] = useState<string>("ALL");
   const [semester, setSemester] = useState<string>("ALL");
+  const [year, setYear] = useState<string>("ALL");
   const [rollFrom, setRollFrom] = useState("");
   const [rollTo, setRollTo] = useState("");
   const [maxViolations, setMaxViolations] = useState(1);
@@ -53,6 +55,7 @@ export default function CreateLabSession() {
     department: department as Department,
     division: division === "ALL" ? null : division,
     semester: semester === "ALL" ? null : Number(semester),
+    year: year === "ALL" ? null : Number(year),
     rollFrom: rollFrom.trim() === "" ? null : Number(rollFrom),
     rollTo: rollTo.trim() === "" ? null : Number(rollTo),
   });
@@ -169,6 +172,14 @@ export default function CreateLabSession() {
                 value={division}
                 onValueChange={setDivision}
                 options={[{ value: "ALL", label: "All" }, ...DIVISIONS.map((d) => ({ value: d, label: d }))]}
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Year</Label>
+              <ThemedSelect
+                value={year}
+                onValueChange={setYear}
+                options={[{ value: "ALL", label: "All" }, ...STUDENT_YEARS.map((option) => ({ ...option }))]}
               />
             </div>
             <div>

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 
@@ -12,18 +12,30 @@ export function ResizableStackGroup({
   stack,
   direction = "horizontal",
   className,
+  autoSaveId,
+  stackClassName = "flex w-full flex-col gap-3",
   children,
 }: {
   stack: boolean;
   direction?: "horizontal" | "vertical";
   className?: string;
+  /** Remembers the pane split for this workspace, per tab. Omit to leave sizes unsaved. */
+  autoSaveId?: string;
+  stackClassName?: string;
   children: ReactNode;
 }) {
   if (stack) {
-    return <div className="flex w-full flex-col gap-3">{children}</div>;
+    return <div className={stackClassName}>{children}</div>;
   }
   return (
-    <ResizablePanelGroup direction={direction} className={className}>
+    <ResizablePanelGroup
+      direction={direction}
+      className={className}
+      autoSaveId={autoSaveId}
+      // sessionStorage, not localStorage: a split a student dragged for one paper should not
+      // follow them into the next one on a shared lab machine.
+      storage={typeof window === "undefined" ? undefined : window.sessionStorage}
+    >
       {children}
     </ResizablePanelGroup>
   );
@@ -32,6 +44,7 @@ export function ResizableStackGroup({
 export function ResizableStackPane({
   stack,
   stackClassName,
+  stackStyle,
   defaultSize,
   minSize,
   className,
@@ -39,13 +52,19 @@ export function ResizableStackPane({
 }: {
   stack: boolean;
   stackClassName?: string;
+  /** Stacked-only inline style, for a height the caller computes (Tailwind cannot). */
+  stackStyle?: CSSProperties;
   defaultSize?: number;
   minSize?: number;
   className?: string;
   children: ReactNode;
 }) {
   if (stack) {
-    return <div className={stackClassName}>{children}</div>;
+    return (
+      <div className={stackClassName} style={stackStyle}>
+        {children}
+      </div>
+    );
   }
   return (
     <ResizablePanel defaultSize={defaultSize} minSize={minSize} className={className}>
