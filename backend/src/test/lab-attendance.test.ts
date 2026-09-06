@@ -305,6 +305,60 @@ describe("the lab-network gate", () => {
   });
 });
 
+describe("reading a session after it has ended", () => {
+  it("keeps the register, the roster and every decision readable once the session is closed", async () => {
+    const { harness, labId } = await setup();
+    const sessionId = (await openSession(harness, labId, { batchLabel: "Batch 1" })).body.session.id;
+
+    await request(harness.app).post(`/api/lab-attendance/mine/${sessionId}/join`).set(studentHeaders).send({});
+    const pending = await request(harness.app)
+      .get(`/api/lab-attendance/${sessionId}/admissions`)
+      .set(facultyHeaders);
+    await request(harness.app)
+      .patch(`/api/lab-attendance/${sessionId}/admissions/${pending.body.pending[0].id}`)
+      .set(facultyHeaders)
+      .send({ status: "ADMITTED" });
+
+    await request(harness.app)
+      .patch(`/api/lab-attendance/${sessionId}`)
+      .set(facultyHeaders)
+      .send({ state: "CLOSED" });
+
+    // Ending a session stops students joining it; it must not close the record.
+    const after = await request(harness.app)
+      .get(`/api/lab-attendance/${sessionId}/admissions`)
+      .set(facultyHeaders);
+    expect(after.status).toBe(200);
+    expect(after.body.admitted).toHaveLength(1);
+    expect(after.body.admitted[0].email).toBe("student1@tcetmumbai.in");
+    expect(after.body.counts.roster).toBeGreaterThan(0);
+
+    // The frozen roster is what turns "who joined" into "who was absent".
+    const session = await request(harness.app).get(`/api/lab-attendance/${sessionId}`).set(facultyHeaders);
+    expect(session.status).toBe(200);
+    expect(session.body.session.state).toBe("CLOSED");
+    expect(session.body.session.roster.length).toBeGreaterThan(0);
+
+    // And it still appears in the list the history view reads.
+    const list = await request(harness.app).get("/api/lab-attendance").set(facultyHeaders);
+    expect(list.body.items.map((item: { id: string }) => item.id)).toContain(sessionId);
+  });
+
+  it("still refuses a faculty who does not manage the closed session", async () => {
+    const { harness, labId } = await setup();
+    const sessionId = (await openSession(harness, labId)).body.session.id;
+    await request(harness.app)
+      .patch(`/api/lab-attendance/${sessionId}`)
+      .set(facultyHeaders)
+      .send({ state: "CLOSED" });
+
+    const response = await request(harness.app)
+      .get(`/api/lab-attendance/${sessionId}/admissions`)
+      .set(otherFacultyHeaders);
+    expect(response.status).toBe(404);
+  });
+});
+
 describe("the gate on the lab itself", () => {
   async function admittedSetup() {
     const context = await setup();

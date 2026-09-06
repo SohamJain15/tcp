@@ -70,7 +70,7 @@ export default function FacultyLabs() {
                         <Link to={`/faculty/labs/${lab.id}/edit`}>Edit</Link>
                       </Button>
                       <Button asChild size="sm" variant="outline" className="w-fit">
-                        <Link to={`/faculty/labs/${lab.id}/responses`}>Responses</Link>
+                        <Link to={`/faculty/labs/${lab.id}/responses`}>Attendance &amp; marks</Link>
                       </Button>
                     </div>
                   </Card>

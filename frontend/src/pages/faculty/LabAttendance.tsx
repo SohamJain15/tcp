@@ -19,6 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ThemedSelect } from "@/components/ThemedSelect";
+import { isAttendanceSessionLive } from "@/lib/lab-attendance";
 
 const PATHNAME = "/faculty/lab-attendance";
 
@@ -52,7 +53,7 @@ export default function LabAttendance() {
   });
 
   const live = useMemo(
-    () => (sessionsQuery.data?.items ?? []).find((session) => session.state === "OPEN") ?? null,
+    () => (sessionsQuery.data?.items ?? []).find((session) => isAttendanceSessionLive(session)) ?? null,
     [sessionsQuery.data],
   );
 
@@ -129,6 +130,15 @@ export default function LabAttendance() {
   }, [live]);
 
   const labs = labsQuery.data?.items ?? [];
+  // Ending a session only stops students joining it; the register stays readable forever.
+  const past = useMemo(
+    () =>
+      (sessionsQuery.data?.items ?? [])
+        .filter((session) => session.id !== live?.id)
+        .sort((left, right) => new Date(right.openedAt).getTime() - new Date(left.openedAt).getTime())
+        .slice(0, 10),
+    [sessionsQuery.data, live],
+  );
   const pending = admissionsQuery.data?.pending ?? [];
   const admitted = admissionsQuery.data?.admitted ?? [];
   const denied = admissionsQuery.data?.denied ?? [];
@@ -405,6 +415,36 @@ export default function LabAttendance() {
               >
                 {openMutation.isPending ? "Opening…" : "Open session"}
               </Button>
+            </div>
+          </Card>
+        )}
+
+        {past.length > 0 && (
+          <Card className="profile-card space-y-3 p-6">
+            <h2 className="font-display text-lg font-bold">Earlier sessions</h2>
+            <p className="text-sm text-muted-foreground">
+              Registers, submissions and marks for every session you have run.
+            </p>
+            <div className="space-y-2">
+              {past.map((session) => (
+                <Link
+                  key={session.id}
+                  to={`/faculty/labs/${session.labId}/responses`}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded border border-border p-3 transition-colors hover:bg-muted/40"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">
+                      {session.labTitle}
+                      {session.batchLabel ? ` · ${session.batchLabel}` : ""}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(session.openedAt).toLocaleString()} · {session.roster.length} student
+                      {session.roster.length === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-xs text-muted-foreground">View register →</span>
+                </Link>
+              ))}
             </div>
           </Card>
         )}
