@@ -568,14 +568,25 @@ export default function CreateProblem() {
                       <p className="font-semibold">{item.draft.difficulty}</p>
                       <p className="text-xs text-muted-foreground">Difficulty</p>
                     </div>
-                    <div className="rounded-md bg-muted p-2">
-                      <p className="font-semibold">{item.draft.sampleTestCases.length}</p>
-                      <p className="text-xs text-muted-foreground">Samples</p>
-                    </div>
-                    <div className="rounded-md bg-muted p-2">
-                      <p className="font-semibold">{item.draft.hiddenTestCases.length}</p>
-                      <p className="text-xs text-muted-foreground">Hidden</p>
-                    </div>
+                    {item.draft.kind === "sql" ? (
+                      <div className="col-span-2 rounded-md bg-muted p-2">
+                        <p className="font-semibold">
+                          {item.draft.sql?.ordered ? "Ordered" : "Any order"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">Result comparison</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="rounded-md bg-muted p-2">
+                          <p className="font-semibold">{item.draft.sampleTestCases.length}</p>
+                          <p className="text-xs text-muted-foreground">Samples</p>
+                        </div>
+                        <div className="rounded-md bg-muted p-2">
+                          <p className="font-semibold">{item.draft.hiddenTestCases.length}</p>
+                          <p className="text-xs text-muted-foreground">Hidden</p>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 rounded-md border border-border p-3">

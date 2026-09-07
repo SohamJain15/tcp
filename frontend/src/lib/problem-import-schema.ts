@@ -24,8 +24,11 @@ export function toProblemEditorDataFromJsonDraft(draft: ProblemEditorData): Prob
     explanation: draft.explanation,
     timeLimitSeconds: draft.timeLimitSeconds,
     memoryLimitMb: draft.memoryLimitMb,
-    sampleTestCases: draft.sampleTestCases,
-    hiddenTestCases: draft.hiddenTestCases,
+    // A SQL draft comes back from the server with no test-case fields at all — its schema does not
+    // declare them — so these must be normalized here rather than trusted. Everything downstream
+    // reads `.length` off them.
+    sampleTestCases: draft.sampleTestCases ?? [],
+    hiddenTestCases: draft.hiddenTestCases ?? [],
     lifecycleState: "Draft",
   };
 }

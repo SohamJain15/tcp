@@ -129,8 +129,8 @@ describe("Create Problems", () => {
           explanation: "",
           timeLimitSeconds: 1,
           memoryLimitMb: 256,
-          sampleTestCases: [],
-          hiddenTestCases: [],
+          // Deliberately absent, exactly as the server returns them: the SQL draft schema declares
+          // no test-case fields at all. Defaulting them in the mock hid a crash on `.length`.
         },
       ],
     } as never);

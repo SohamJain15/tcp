@@ -156,10 +156,15 @@ Then rebuild/restart the backend so it reads the new environment:
 
 ```bash
 cd /opt/tcp
-npm --prefix backend ci --omit=dev
+npm --prefix backend ci
 npm --prefix backend run build
+npm --prefix backend prune --omit=dev
 sudo systemctl restart tcp-backend
 ```
+
+Install with dev dependencies, not `--omit=dev`: `tsc` is a dev dependency and `npm ci` wipes
+`node_modules` before installing, so omitting them leaves the build with no compiler. Prune after
+the build instead — `dist/` needs only the runtime dependencies.
 
 Use the service name used by the deployment if it is not `tcp-backend`. For Docker, recreate the
 backend container rather than only restarting an old container so environment changes are loaded.
