@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { labApi } from "@/api/services";
 import { classroomApi, newRequestKey, type ScheduleDraft } from "@/api/classrooms";
 import { ClassroomScheduleEditor, newSchedule } from "@/components/ClassroomScheduleEditor";
+import { ClassroomStudentPicker } from "@/components/ClassroomStudentPicker";
 import { DEPARTMENTS, type Department, type SqlResultSet } from "@/api/types";
 import { AppLayout } from "@/components/AppLayout";
 import { SqlResultTable } from "@/components/SqlWorkspace";
@@ -167,6 +168,7 @@ export default function CreateLab() {
   const [department, setDepartment] = useState<Department>(DEPARTMENTS[0]);
   const [semester, setSemester] = useState<string>("1");
   const [batch, setBatch] = useState("");
+  const [selectedStudentEmails, setSelectedStudentEmails] = useState<string[] | null>([]);
   const [requestKey] = useState(newRequestKey);
   const [sessions, setSessions] = useState<ScheduleDraft[]>([]);
   const [description, setDescription] = useState("");
@@ -207,6 +209,7 @@ export default function CreateLab() {
     setDepartment(lab.department);
     setSemester(String(lab.semester));
     setBatch(lab.batch);
+    setSelectedStudentEmails(lab.selectedStudentEmails ?? null);
     setDescription(lab.description ?? "");
     setLifecycleState(lab.lifecycleState);
     if (lab.experiments.length > 0) {
@@ -257,7 +260,7 @@ export default function CreateLab() {
   };
 
   const buildPayload = () => ({
-    requestKey, batch, sessions: isEdit ? [] : sessions,
+    requestKey, batch, selectedStudentEmails, sessions: isEdit ? [] : sessions,
     title,
     subject,
     kind,
@@ -350,7 +353,7 @@ export default function CreateLab() {
               <Label className="text-xs">Department</Label>
               <ThemedSelect
                 value={department}
-                onValueChange={(value) => setDepartment(value as Department)}
+                onValueChange={(value) => { setDepartment(value as Department); setSelectedStudentEmails(current => current === null ? null : []); }}
                 options={DEPARTMENTS.map((dept) => ({ value: dept, label: dept }))}
               />
             </div>
@@ -358,7 +361,7 @@ export default function CreateLab() {
               <Label className="text-xs">Semester</Label>
               <ThemedSelect
                 value={semester}
-                onValueChange={setSemester}
+                onValueChange={(value) => { setSemester(value); setSelectedStudentEmails(current => current === null ? null : []); }}
                 options={[1, 2, 3, 4, 5, 6, 7, 8].map((sem) => ({ value: String(sem), label: `Semester ${sem}` }))}
               />
             </div>
@@ -369,6 +372,8 @@ export default function CreateLab() {
             <Textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={2} />
           </div>
         </Card>
+
+        <Card className="p-5"><ClassroomStudentPicker department={department} semester={Number(semester)} selectedEmails={selectedStudentEmails} onChange={setSelectedStudentEmails} /></Card>
 
         <Card className="space-y-3 p-5">
           <div className="flex items-center justify-between gap-3">
@@ -521,7 +526,7 @@ export default function CreateLab() {
           <Button type="button" variant="outline" onClick={() => navigate("/faculty/labs")}>
             Cancel
           </Button>
-          <Button type="button" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
+          <Button type="button" disabled={saveMutation.isPending || (selectedStudentEmails !== null && selectedStudentEmails.length === 0)} onClick={() => saveMutation.mutate()}>
             {saveMutation.isPending ? "Saving…" : isEdit ? "Save changes" : "Create lab"}
           </Button>
         </div>

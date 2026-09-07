@@ -19,7 +19,16 @@ export const classroomSchema = createLabSchema
     batch: z.string().trim().min(1).max(80),
     department: z.enum(DEPARTMENTS),
     semester: z.number().int().min(1).max(8),
-    lifecycleState: z.enum(["Draft", "Published", "Archived"]).default("Published"),
+    selectedStudentEmails: z
+      .array(z.string().trim().toLowerCase().email())
+      .min(1, "Select at least one student for this batch")
+      .max(500)
+      .transform((emails) => [...new Set(emails)])
+      .nullable()
+      .optional(),
+    lifecycleState: z
+      .enum(["Draft", "Published", "Archived"])
+      .default("Published"),
     experiments: createLabSchema.shape.experiments.max(200),
     sessions: z.array(scheduleSchema).max(100).default([]),
   })

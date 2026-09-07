@@ -116,6 +116,65 @@ function work(overrides: Record<string, unknown> = {}) {
 }
 
 describe("classroom enrollment and scheduling", () => {
+  it("restricts code enrollment to selected batch students and hides the selection from students", async () => {
+    const h = setup();
+    await h.repositories.userRepository.update(other.email, {
+      department: "B.E. Computer Engineering",
+      semester: 4,
+    });
+    const room = await h.service.create(faculty, {
+      ...payload(),
+      selectedStudentEmails: [student.email],
+    });
+    await expect(h.service.join(other, room.joinCode!)).rejects.toThrow(
+      "not selected",
+    );
+    await h.service.join(student, room.joinCode!);
+    await h.service.join(student, room.joinCode!);
+    expect((await h.repository.get(room.id))!.members).toHaveLength(1);
+    expect(
+      (await h.service.detail(student, room.id)).classroom
+        .selectedStudentEmails,
+    ).toBeUndefined();
+  });
+  it("rejects empty or ineligible student selections before creating a classroom", async () => {
+    const h = setup();
+    for (const selectedStudentEmails of [
+      [],
+      [faculty.email],
+      ["unknown@tcetmumbai.in"],
+    ]) {
+      await expect(
+        h.service.create(faculty, { ...payload(), selectedStudentEmails }),
+      ).rejects.toThrow();
+    }
+    await h.repositories.userRepository.update(student.email, { semester: 3 });
+    await expect(
+      h.service.create(faculty, {
+        ...payload(),
+        selectedStudentEmails: [student.email],
+      }),
+    ).rejects.toThrow("department and semester");
+    expect(h.repository.rooms.size).toBe(0);
+  });
+  it("revokes deselected enrollment while preserving attendance snapshots", async () => {
+    const h = await active();
+    await h.repositories.userRepository.update(other.email, {
+      department: "B.E. Computer Engineering",
+      semester: 4,
+    });
+    await h.service.update(faculty, h.room.id, {
+      ...payload(),
+      selectedStudentEmails: [other.email],
+    });
+    const room = (await h.repository.get(h.room.id))!;
+    expect(room.members).toHaveLength(0);
+    expect(JSON.stringify(room.sessions)).toContain(student.email);
+    await expect(h.service.detail(student, room.id)).rejects.toThrow("Join");
+    await expect(h.service.join(student, room.joinCode)).rejects.toThrow(
+      "not selected",
+    );
+  });
   it("creates classroom and schedule atomically and makes retried creation/join idempotent", async () => {
     const h = setup();
     const input = payload();

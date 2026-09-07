@@ -16,6 +16,8 @@ One manual grade exists per classroom/student/experiment, including repeat sessi
 
 ## Endpoints
 
+The classroom editor defaults to explicit batch student selection, with division and roll-range filters. `selectedStudentEmails` restricts code enrollment to validated students in the classroom department and semester; selecting students does not enroll them automatically. An empty selection is rejected. Null (or absent on older classrooms) permits cohort-wide code enrollment. Updating the selection removes deselected memberships while preserving session snapshots, work, and grades. Students cannot read the selection list.
+
 - `GET/POST /api/classrooms`, `POST /join`, `GET/PATCH /:id`
 - `DELETE /:id/members/:email`
 - `POST /:id/sessions`, `PATCH /:id/sessions/:sessionId`

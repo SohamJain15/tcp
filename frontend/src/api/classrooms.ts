@@ -41,6 +41,7 @@ export interface ClassroomSession {
   attendance: Array<ClassroomStudent & { enteredAt: string }>;
 }
 export interface Classroom {
+  selectedStudentEmails?: string[] | null;
   id: string;
   title: string;
   subject: string;

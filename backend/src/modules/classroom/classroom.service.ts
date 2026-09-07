@@ -111,6 +111,26 @@ export function createClassroomService(deps: {
 }) {
   const repo = deps.repository;
   const now = () => deps.now().toISOString();
+  async function validateSelectedStudents(input: {
+    department: ClassroomRecord["department"];
+    semester: number;
+    selectedStudentEmails?: string[] | null;
+  }) {
+    if (!input.selectedStudentEmails) return;
+    const candidates = await deps.userRepository.listByDepartment(
+      input.department,
+      "STUDENT",
+    );
+    const eligible = new Set(
+      candidates
+        .filter((student) => student.semester === input.semester)
+        .map((student) => student.email.toLowerCase()),
+    );
+    if (input.selectedStudentEmails.some((email) => !eligible.has(email)))
+      fail(
+        "Selected students must belong to the classroom's department and semester",
+      );
+  }
   async function room(id: string) {
     return (await repo.get(id)) ?? fail("Classroom not found", 404);
   }
@@ -192,6 +212,9 @@ export function createClassroomService(deps: {
       description: record.description,
       lifecycleState: record.lifecycleState,
       joinCode: faculty ? record.joinCode : undefined,
+      selectedStudentEmails: faculty
+        ? (record.selectedStudentEmails ?? null)
+        : undefined,
       createdAt: record.createdAt,
       experiments: faculty
         ? record.experiments
@@ -250,6 +273,7 @@ export function createClassroomService(deps: {
           r.createdBy === emailOf(user) && r.requestKey === input.requestKey,
       );
       if (prior) return projection(user, prior);
+      await validateSelectedStudents(input);
       const experiments = input.experiments.map((e) => ({
         ...e,
         id: e.id ?? randomUUID(),
@@ -280,8 +304,9 @@ export function createClassroomService(deps: {
     },
     async update(user: AuthenticatedUser, id: string, body: unknown) {
       const input = classroomSchema.parse(body);
-      const updated = await change(id, (record) => {
+      const updated = await change(id, async (record) => {
         teacher(user, record);
+        await validateSelectedStudents(input);
         if (
           record.members.length &&
           (input.department !== record.department ||
@@ -316,6 +341,13 @@ export function createClassroomService(deps: {
           lifecycleState: input.lifecycleState,
           experiments,
         });
+        if (input.selectedStudentEmails !== undefined) {
+          record.selectedStudentEmails = input.selectedStudentEmails;
+          if (record.selectedStudentEmails)
+            record.members = record.members.filter((member) =>
+              record.selectedStudentEmails!.includes(member.email),
+            );
+        }
       });
       return projection(user, updated);
     },
@@ -327,6 +359,14 @@ export function createClassroomService(deps: {
       await change(record.id, async (r) => {
         if (r.lifecycleState !== "Published")
           fail("This classroom is not accepting enrollments", 403);
+        if (
+          r.selectedStudentEmails &&
+          !r.selectedStudentEmails.includes(emailOf(user))
+        )
+          fail(
+            "You are not selected for this lab batch. Contact your teacher.",
+            403,
+          );
         const snapshot = await student(user, r);
         if (!r.members.some((m) => m.email === snapshot.email))
           r.members.push(snapshot);

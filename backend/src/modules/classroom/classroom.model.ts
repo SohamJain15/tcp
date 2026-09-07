@@ -30,6 +30,8 @@ export interface ClassroomGrade {
   updatedAt: string;
 }
 export interface ClassroomRecord {
+  /** Null/absent keeps cohort-wide code enrollment; a list restricts the batch. */
+  selectedStudentEmails?: string[] | null;
   id: string;
   revision: number;
   requestKey: string;
