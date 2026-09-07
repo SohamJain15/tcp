@@ -178,6 +178,7 @@ export interface StudentProblemDetail extends StudentProblemSummary {
   /** SQL problems: the seeded schema, shown the way HackerRank shows table definitions. */
   schemaSql?: string;
   ordered?: boolean;
+  schemaPreview?: SqlTableSnapshot[];
   inputFormat: string;
   outputFormat: string;
   constraints: string[];
@@ -192,6 +193,7 @@ export interface StudentProblemDetail extends StudentProblemSummary {
 export interface ManageProblemSummary {
   id: string;
   title: string;
+  kind: ProblemKind;
   difficulty: Difficulty;
   tags: string[];
   targetDepartment?: Department | null;
@@ -202,6 +204,8 @@ export interface ManageProblemSummary {
 }
 
 export interface ManageProblemDetail extends ManageProblemSummary {
+  /** Faculty see the reference query too — they authored it. */
+  sql?: ProblemSqlSpec;
   slug: string;
   statement: string;
   topic: string;
@@ -1213,10 +1217,21 @@ export interface ContestProctoringPayload {
 export interface SubmissionWritePayload {
   problemId: string;
   code: string;
-  language: ExecutableLanguage;
+  /** "sql" for a SQL problem; the server pairs it against the problem's kind and rejects a mismatch. */
+  language: SubmissionLanguage;
+}
+
+/** The schema half of a SQL problem. Mirrors the backend's `ProblemSqlSpec`. */
+export interface ProblemSqlSpec {
+  schemaSql: string;
+  solutionSql: string;
+  ordered: boolean;
 }
 
 export interface ProblemWritePayload {
+  /** "sql" swaps test cases for a seeded schema and a reference query. */
+  kind: ProblemKind;
+  sql?: ProblemSqlSpec;
   title: string;
   slug: string;
   statement: string;
@@ -1238,6 +1253,8 @@ export interface ProblemWritePayload {
 export type ProblemUpdatePayload = Partial<ProblemWritePayload>;
 
 export interface ProblemEditorData {
+  kind: ProblemKind;
+  sql?: ProblemSqlSpec;
   title: string;
   slug: string;
   difficulty: Difficulty;
@@ -1801,6 +1818,8 @@ export interface StudentLabExperiment {
   sqlMode?: SqlMode;
   schemaSql?: string;
   ordered?: boolean;
+  /** Server-computed at save time, so opening an experiment normally costs no sandbox run. */
+  schemaPreview?: SqlTableSnapshot[];
   /** Script mode: the rubric, in the faculty's own words. Check bodies stay server-side. */
   checkLabels?: string[];
   // coding

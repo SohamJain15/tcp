@@ -95,6 +95,9 @@ function mapExperiment(value: unknown): LabExperiment | null {
       schemaSql: typeof record.schemaSql === "string" ? record.schemaSql : "",
       solutionSql: typeof record.solutionSql === "string" ? record.solutionSql : "",
       ordered: record.ordered === true,
+      schemaPreview: Array.isArray(record.schemaPreview)
+        ? (record.schemaPreview as LabSqlExperiment["schemaPreview"])
+        : undefined,
       checks: Array.isArray(record.checks) ? (record.checks as LabSqlExperiment["checks"]) : undefined,
       facultyMarked: record.facultyMarked === true,
     };

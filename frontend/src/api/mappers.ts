@@ -9,6 +9,7 @@ import type {
   ProblemWritePayload,
   StudentProblemDetail,
   SubmissionStatus,
+  SubmissionLanguage,
   SupportedLanguage,
 } from "@/api/types";
 
@@ -120,7 +121,15 @@ const LANGUAGE_ALIASES: Record<string, SupportedLanguage> = {
   "8086": "assembly8086",
 };
 
-export function toLanguageLabel(language: SupportedLanguage): string {
+/**
+ * Accepts `SubmissionLanguage`, not just `SupportedLanguage`: submissions can be written in SQL,
+ * which is deliberately outside the Judge0 language union but still has to be labelled in every
+ * submission list, dashboard and profile.
+ */
+export function toLanguageLabel(language: SubmissionLanguage | SupportedLanguage): string {
+  if (language === "sql") {
+    return "SQL";
+  }
   return LANGUAGE_LABELS[language] ?? language;
 }
 
@@ -179,6 +188,7 @@ function safeTestCaseArray(value: unknown): ProblemTestCase[] {
 
 export function toEditorDataFromStudentProblem(problem: StudentProblemDetail): ProblemEditorData {
   return {
+    kind: problem.kind ?? "coding",
     title: problem.title ?? "",
     slug: "",
     difficulty: problem.difficulty,
@@ -199,6 +209,9 @@ export function toEditorDataFromStudentProblem(problem: StudentProblemDetail): P
 
 export function toEditorDataFromManageProblem(problem: ManageProblemDetail): ProblemEditorData {
   return {
+    kind: problem.kind ?? "coding",
+    // Carried through so editing a SQL problem keeps its schema instead of blanking it.
+    sql: problem.sql,
     title: problem.title ?? "",
     slug: problem.slug ?? "",
     difficulty: problem.difficulty,
@@ -232,7 +245,20 @@ export function toProblemWritePayload(
   data: ProblemEditorData,
   lifecycleState: ProblemLifecycleState,
 ): ProblemWritePayload {
+  const isSql = data.kind === "sql";
   return {
+    kind: data.kind,
+    // The server rejects a coding problem carrying `sql`, and a SQL problem carries no test cases —
+    // the two halves are mutually exclusive, so send exactly one of them.
+    ...(isSql && data.sql
+      ? {
+          sql: {
+            schemaSql: data.sql.schemaSql.trim(),
+            solutionSql: data.sql.solutionSql.trim(),
+            ordered: data.sql.ordered,
+          },
+        }
+      : {}),
     title: data.title.trim(),
     slug: data.slug.trim() || data.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
     statement: data.statement.trim(),
@@ -247,13 +273,24 @@ export function toProblemWritePayload(
     memoryLimitMb: Number(data.memoryLimitMb),
     lifecycleState,
     targetDepartment: data.targetDepartment ?? null,
-    sampleTestCases: cleanTestCases(data.sampleTestCases),
-    hiddenTestCases: cleanTestCases(data.hiddenTestCases),
+    sampleTestCases: isSql ? [] : cleanTestCases(data.sampleTestCases),
+    hiddenTestCases: isSql ? [] : cleanTestCases(data.hiddenTestCases),
   };
 }
 
 export function toProblemUpdatePayload(data: ProblemEditorData): ProblemUpdatePayload {
+  const isSql = data.kind === "sql";
   return {
+    kind: data.kind,
+    ...(isSql && data.sql
+      ? {
+          sql: {
+            schemaSql: data.sql.schemaSql.trim(),
+            solutionSql: data.sql.solutionSql.trim(),
+            ordered: data.sql.ordered,
+          },
+        }
+      : {}),
     title: data.title.trim(),
     slug: data.slug.trim() || data.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
     statement: data.statement.trim(),
@@ -267,7 +304,7 @@ export function toProblemUpdatePayload(data: ProblemEditorData): ProblemUpdatePa
     timeLimitSeconds: Number(data.timeLimitSeconds),
     memoryLimitMb: Number(data.memoryLimitMb),
     targetDepartment: data.targetDepartment ?? null,
-    sampleTestCases: cleanTestCases(data.sampleTestCases),
-    hiddenTestCases: cleanTestCases(data.hiddenTestCases),
+    sampleTestCases: isSql ? [] : cleanTestCases(data.sampleTestCases),
+    hiddenTestCases: isSql ? [] : cleanTestCases(data.hiddenTestCases),
   };
 }

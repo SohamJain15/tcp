@@ -7,6 +7,11 @@ export type JsonImportFieldError = {
 
 export function toProblemEditorDataFromJsonDraft(draft: ProblemEditorData): ProblemEditorData {
   return {
+    // `kind` and `sql` must survive this whitelist. Dropping them silently turns an imported SQL
+    // problem into a coding one with no test cases, which the server then rejects on save — with
+    // an error that points at test cases rather than at the real cause.
+    kind: draft.kind ?? "coding",
+    sql: draft.sql,
     title: draft.title,
     slug: draft.slug,
     difficulty: draft.difficulty,

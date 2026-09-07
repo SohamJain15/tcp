@@ -4,6 +4,7 @@ import type {
   FacultyLabExperiment,
   SqlResultSet,
   SqlScriptResult,
+  SqlTableSnapshot,
 } from "./types";
 
 /** UUIDs also work on HTTP lab-network origins, where randomUUID may be unavailable. */
@@ -153,6 +154,11 @@ export const classroomApi = {
       method: "POST",
       body: {},
     }),
+  /** The seeded tables for one experiment, so the schema reads as data rather than as DDL. */
+  experimentSchema: (id: string, session: string, experimentId: string) =>
+    apiRequest<{ tables: SqlTableSnapshot[]; error?: string }>(
+      `${base}/${id}/sessions/${session}/experiments/${encodeURIComponent(experimentId)}/schema`,
+    ),
   work: (id: string, session: string, body: unknown) =>
     apiRequest<{ work?: ClassroomWork; saved?: boolean }>(
       `${base}/${id}/sessions/${session}/work`,

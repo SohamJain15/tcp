@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { createPortal } from "react-dom";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import Editor from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
 import { Check, X } from "lucide-react";
@@ -21,6 +22,7 @@ import type {
   SubmissionStatus,
 } from "@/api/types";
 import { StatusBadge } from "@/components/Badges";
+import { SchemaTables } from "@/components/SchemaTables";
 import { SqlResultTable } from "@/components/SqlWorkspace";
 import { SplitWorkspace } from "@/components/workspace/SplitWorkspace";
 import { Badge } from "@/components/ui/badge";
@@ -113,7 +115,10 @@ export function LabWorkspace({
   const output = lastWork?.output ?? null;
   const stale = lastWork !== undefined && lastWork.code !== code;
 
-  return (
+  // Portalled to <body> because AppLayout's <main> carries `animate-fade-in`, whose transform
+  // creates a stacking context — inside it the overlay's z-50 is trapped below the navbar's
+  // sticky z-40, and the navbar bleeds through the top of the workspace.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex h-[100dvh] flex-col bg-background"
       role="dialog"
@@ -138,7 +143,15 @@ export function LabWorkspace({
         <SplitWorkspace
           autoSaveId="lab-workspace"
           stackedWorkHeight="100%"
-          description={<LabDescription experiment={experiment} language={session.language} isScript={isScript} />}
+          description={
+            <LabDescription
+              classroomId={classroomId}
+              sessionId={session.id}
+              experiment={experiment}
+              language={session.language}
+              isScript={isScript}
+            />
+          }
           editor={
             <Card className="flex h-full flex-col overflow-hidden shadow-card">
               <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
@@ -230,15 +243,20 @@ export function LabWorkspace({
           }
         />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
 function LabDescription({
+  classroomId,
+  sessionId,
   experiment,
   language,
   isScript,
 }: {
+  classroomId: string;
+  sessionId: string;
   experiment: FacultyLabExperiment;
   language: string;
   isScript: boolean;
@@ -282,12 +300,7 @@ function LabDescription({
       )}
 
       {experiment.schemaSql ? (
-        <section className="mt-6">
-          <h3 className="mb-1 font-display text-base font-semibold">Schema and seed data</h3>
-          <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded bg-secondary/60 p-3 font-mono-code text-xs">
-            {experiment.schemaSql}
-          </pre>
-        </section>
+        <ExperimentSchema classroomId={classroomId} sessionId={sessionId} experiment={experiment} />
       ) : (
         isScript && (
           <section className="mt-6">
@@ -319,6 +332,43 @@ function LabDescription({
         </section>
       )}
     </Card>
+  );
+}
+
+/**
+ * The experiment's seeded tables.
+ *
+ * Normally free: the server computes the preview when the experiment is saved and ships it with the
+ * experiment, so a whole batch opening the same experiment costs no sandbox runs. Experiments saved
+ * before previews existed carry none, and only those fall back to asking the server to seed one.
+ */
+function ExperimentSchema({
+  classroomId,
+  sessionId,
+  experiment,
+}: {
+  classroomId: string;
+  sessionId: string;
+  experiment: FacultyLabExperiment;
+}) {
+  const stored = experiment.schemaPreview;
+  const preview = useQuery({
+    queryKey: ["classroom-schema", classroomId, sessionId, experiment.id],
+    queryFn: () => classroomApi.experimentSchema(classroomId, sessionId, experiment.id),
+    enabled: stored === undefined,
+    staleTime: Infinity,
+    retry: false,
+  });
+
+  const tables = stored ?? (preview.data?.error ? undefined : preview.data?.tables);
+  return (
+    <SchemaTables
+      tables={tables}
+      schemaSql={experiment.schemaSql ?? ""}
+      isLoading={stored === undefined && preview.isLoading}
+      error={stored === undefined && (preview.isError || Boolean(preview.data?.error))}
+      emptyMessage="This experiment starts with no tables."
+    />
   );
 }
 

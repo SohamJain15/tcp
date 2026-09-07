@@ -1,4 +1,5 @@
 import type { SqlCheck } from "../../execution/sql/sql-checks";
+import type { SqlTableSnapshot } from "../../execution/sql/sql-executor";
 import type { HarnessSpec } from "../../execution/harness/contract";
 import type { UserRole } from "../../shared/types/auth";
 import type { Department, Difficulty, ExecutableLanguage, ProblemLifecycleState } from "../../shared/types/domain";
@@ -71,6 +72,14 @@ export interface LabSqlExperiment extends LabExperimentBase {
   solutionSql: string;
   /** Whether row order is part of the answer (the task required an ORDER BY). */
   ordered: boolean;
+  /**
+   * The tables the seed produces, computed once when the experiment is saved.
+   *
+   * Server-written only — never accepted from a request, so it cannot disagree with `schemaSql`.
+   * Students read this instead of the DDL, and precomputing it means a whole batch opening the same
+   * experiment costs no sandbox runs at all.
+   */
+  schemaPreview?: SqlTableSnapshot[];
   /** Script mode only. Structural conditions the student's finished database must satisfy. The
    *  labels are shown to the student up front, so they double as the rubric. */
   checks?: SqlCheck[];
@@ -142,6 +151,7 @@ export interface StudentLabExperiment {
   sqlMode?: LabSqlMode;
   schemaSql?: string;
   ordered?: boolean;
+  schemaPreview?: SqlTableSnapshot[];
   /** Rubric labels only — a student sees what will be verified, not how it is verified. */
   checkLabels?: string[];
   // coding
@@ -189,6 +199,7 @@ export function toStudentExperiment(experiment: LabExperiment): StudentLabExperi
       sqlMode: experiment.sqlMode ?? "query",
       schemaSql: experiment.schemaSql,
       ordered: experiment.ordered,
+      schemaPreview: experiment.schemaPreview,
       // Labels only. A student should know what is being verified — it is the rubric — but the
       // check bodies (a faculty verification query, an exact table name) stay server-side.
       checkLabels: experiment.checks?.map((check) => check.label),

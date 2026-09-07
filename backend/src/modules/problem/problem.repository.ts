@@ -133,6 +133,9 @@ function mapProblemRecord(problemId: string, data: Record<string, unknown>): Pro
           : normalizeTestCaseList(data.testCases),
     kind: data.kind === "sql" ? "sql" : "coding",
     sql: normalizeSqlSpec(data.sql),
+    schemaPreview: Array.isArray(data.schemaPreview)
+      ? (data.schemaPreview as ProblemRecord["schemaPreview"])
+      : undefined,
     harness: normalizeHarness(data.harness),
     hints: normalizeHints(data.hints),
     hintsLockedAt: toDate(data.hintsLockedAt),

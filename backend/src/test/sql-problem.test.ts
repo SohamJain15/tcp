@@ -58,6 +58,25 @@ describe("SQL practice problems", () => {
     expect(JSON.stringify(detail.body.problem)).not.toContain("ORDER BY id");
   });
 
+  it("stores the seeded-table preview at save time so students never trigger a sandbox run", async () => {
+    const { app } = createTestApp();
+    const created = await createSqlProblem(app);
+    const detail = await request(app).get(`/api/problems/${created.id}`).set(studentHeaders);
+    expect(detail.body.problem.schemaPreview?.length).toBeGreaterThan(0);
+  });
+
+  it("rejects seed SQL smuggled in through an edit, not just through create", async () => {
+    const { app } = createTestApp();
+    const created = await createSqlProblem(app);
+    // `updateProblemSchema` is a `.partial()` of the create schema, which drops its refinement —
+    // without an explicit check an edit could set a seed that `POST` would have refused.
+    const response = await request(app)
+      .patch(`/api/problems/${created.id}`)
+      .set(facultyHeaders)
+      .send({ sql: { schemaSql: "CREATE DATABASE x; USE x;", solutionSql: SOLUTION, ordered: true } });
+    expect(response.status).toBe(400);
+  });
+
   it("rejects a coding problem that carries SQL fields, and a SQL problem with no schema", async () => {
     const { app } = createTestApp();
     const mixed = await request(app)

@@ -6,6 +6,7 @@ import type {
   SqlGradeResult,
   SqlResultSet,
   SqlRunResult,
+  SqlSchemaPreview,
   SqlScriptResult,
   SqlStatementResult,
 } from "./sql-executor";
@@ -111,6 +112,23 @@ export class StubSqlExecutor implements SqlExecutor {
       })),
       timedOut: false,
       runtimeMs: 1,
+    };
+  }
+
+  async previewSchema(input: { schemaSql: string }): Promise<SqlSchemaPreview> {
+    if (input.schemaSql.trim() === "") {
+      return { tables: [] };
+    }
+    return {
+      tables: [
+        {
+          name: "stub_table",
+          columns: [{ name: "result", dataType: "varchar(16)", nullable: true, key: "", extra: "" }],
+          rows: [["stub"]],
+          rowCount: 1,
+          truncated: false,
+        },
+      ],
     };
   }
 }

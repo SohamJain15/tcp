@@ -74,6 +74,20 @@ export function createClassroomRouter(deps: ApplicationDependencies) {
       res.json({ ok: true });
     }),
   );
+  router.get(
+    "/:id/sessions/:sessionId/experiments/:experimentId/schema",
+    createSqlExecutionRateLimiter(),
+    asyncHandler(async (req, res) =>
+      res.json(
+        await service.experimentSchema(
+          req.user!,
+          id(req.params.id),
+          id(req.params.sessionId),
+          String(req.params.experimentId),
+        ),
+      ),
+    ),
+  );
   router.post(
     "/:id/sessions",
     requireRole("FACULTY"),

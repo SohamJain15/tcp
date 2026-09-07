@@ -14,6 +14,7 @@ import type {
   SqlGradeResult,
   SqlResultSet,
   SqlRunResult,
+  SqlSchemaPreview,
   SqlScriptResult,
   SqlStatementResult,
   SqlTableSnapshot,
@@ -25,6 +26,13 @@ const MAX_SCRIPT_STATEMENTS = 100;
 const MAX_SNAPSHOT_TABLES = 20;
 /** Rows shown per table in that snapshot. Kept small: the whole snapshot persists on the work record. */
 const MAX_SNAPSHOT_ROWS = 50;
+/**
+ * A stored schema preview is tighter still. It illustrates what a student is querying rather than
+ * dumping the seed, and unlike a run snapshot it is persisted on the experiment *and* cloned into
+ * every session snapshot, all under one 14 MB document budget.
+ */
+const MAX_PREVIEW_TABLES = 10;
+const MAX_PREVIEW_ROWS = 20;
 
 export interface MysqlSandboxConfig {
   host: string;
@@ -342,7 +350,11 @@ export class MysqlSandboxExecutor implements SqlExecutor {
    * tables" payload. Read as the schema owner so a table the student dropped privileges on, or a
    * view, still reports.
    */
-  private async captureSnapshot(owner: mysql.Connection, database: string): Promise<SqlTableSnapshot[]> {
+  private async captureSnapshot(
+    owner: mysql.Connection,
+    database: string,
+    limits: { maxTables: number; maxRows: number } = { maxTables: MAX_SNAPSHOT_TABLES, maxRows: MAX_SNAPSHOT_ROWS },
+  ): Promise<SqlTableSnapshot[]> {
     const [tableRows] = await owner.query(
       "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME",
       [database],
@@ -367,12 +379,12 @@ export class MysqlSandboxExecutor implements SqlExecutor {
     }
 
     const snapshot: SqlTableSnapshot[] = [];
-    for (const table of tables.slice(0, MAX_SNAPSHOT_TABLES)) {
+    for (const table of tables.slice(0, limits.maxTables)) {
       // Table names come from information_schema, never from user input, so interpolation is safe.
       const [countRows] = await owner.query(`SELECT COUNT(*) AS n FROM \`${table}\``);
       const rowCount = Number((countRows as { n: number }[])[0]?.n ?? 0);
       const [dataRows] = await owner.query({
-        sql: `SELECT * FROM \`${table}\` LIMIT ${MAX_SNAPSHOT_ROWS}`,
+        sql: `SELECT * FROM \`${table}\` LIMIT ${limits.maxRows}`,
         rowsAsArray: true,
       });
       snapshot.push({
@@ -380,10 +392,30 @@ export class MysqlSandboxExecutor implements SqlExecutor {
         columns: columnsByTable.get(table) ?? [],
         rows: Array.isArray(dataRows) ? (dataRows as SqlCell[][]) : [],
         rowCount,
-        truncated: rowCount > MAX_SNAPSHOT_ROWS,
+        truncated: rowCount > limits.maxRows,
       });
     }
     return snapshot;
+  }
+
+  async previewSchema(input: { schemaSql: string }): Promise<SqlSchemaPreview> {
+    if (input.schemaSql.trim() === "") {
+      return { tables: [] };
+    }
+    return this.withRunPermit(() =>
+      // No student SQL runs here, so the restricted user is never created — the seed is applied and
+      // read back by the schema owner, then the whole database is dropped as usual.
+      this.withEphemeralDb({ schemaSql: input.schemaSql, solutionSql: "", ordered: false }, async (names, owner) => ({
+        tables: await this.captureSnapshot(owner, names.db, {
+          maxTables: MAX_PREVIEW_TABLES,
+          maxRows: MAX_PREVIEW_ROWS,
+        }),
+      })),
+    ).catch((error) => {
+      logServerError("SQL schema preview failed", error, { provider: this.provider });
+      const err = error as { sqlMessage?: string; message?: string };
+      return { tables: [], error: err.sqlMessage ?? err.message ?? "The schema could not be prepared." };
+    });
   }
 
   /** Drops `lab_%` databases and `labu_%` users left behind by crashed runs older than `staleMs`. */

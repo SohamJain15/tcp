@@ -491,6 +491,61 @@ describe("attendance and session-scoped work", () => {
     } as (typeof input.experiments)[number];
     await expect(h.service.create(faculty, input)).rejects.toThrow(/check/i);
   });
+  it("returns the seeded tables for an experiment so the schema reads as data, not DDL", async () => {
+    const h = await active();
+    const preview = await h.service.experimentSchema(student, h.room.id, sessionId, "exp1");
+    expect(preview.tables.length).toBeGreaterThan(0);
+    // Faculty see the same preview; a non-member does not.
+    await expect(h.service.experimentSchema(faculty, h.room.id, sessionId, "exp1")).resolves.toBeTruthy();
+    await expect(h.service.experimentSchema(other, h.room.id, sessionId, "exp1")).rejects.toThrow("Join");
+    await expect(h.service.experimentSchema(student, h.room.id, sessionId, "nope")).rejects.toThrow(
+      "not selected",
+    );
+  });
+  it("computes the schema preview once at save time, on the experiment and its session snapshot", async () => {
+    const h = setup();
+    const room = await h.service.create(faculty, payload());
+    const record = (await h.repository.get(room.id))!;
+    const experiment = record.experiments[0];
+    expect(experiment.kind === "sql" && experiment.schemaPreview).toBeTruthy();
+    // The session clones the experiment at scheduling time, so the preview has to be in place
+    // before the clone or the snapshot students actually read would never carry it.
+    const snapshot = record.sessions[0].experiments[0];
+    expect(snapshot.kind === "sql" && snapshot.schemaPreview).toBeTruthy();
+  });
+  it("serves the stored preview without touching the sandbox, and falls back when none is stored", async () => {
+    const h = await active();
+    const previewSchema = vi.spyOn(h.sqlExecutor, "previewSchema");
+    await h.service.experimentSchema(student, h.room.id, sessionId, "exp1");
+    expect(previewSchema).not.toHaveBeenCalled();
+
+    // An experiment saved before previews existed has none; it must still render for students.
+    await h.repository.compareAndSwap(
+      {
+        ...(await h.repository.get(h.room.id))!,
+        sessions: (await h.repository.get(h.room.id))!.sessions.map((session) => ({
+          ...session,
+          // Strip the stored preview to stand in for an experiment saved before previews existed.
+          experiments: session.experiments.map((experiment) => {
+            const copy = { ...experiment };
+            delete (copy as { schemaPreview?: unknown }).schemaPreview;
+            return copy;
+          }),
+        })),
+      },
+      (await h.repository.get(h.room.id))!.revision,
+    );
+    const fallback = await h.service.experimentSchema(student, h.room.id, sessionId, "exp1");
+    expect(previewSchema).toHaveBeenCalledOnce();
+    expect(fallback.tables.length).toBeGreaterThan(0);
+  });
+  it("still saves a classroom when the schema preview cannot be computed", async () => {
+    const h = setup();
+    vi.spyOn(h.sqlExecutor, "previewSchema").mockRejectedValue(new Error("sandbox down"));
+    const room = await h.service.create(faculty, payload());
+    const experiment = (await h.repository.get(room.id))!.experiments[0];
+    expect(experiment.kind === "sql" && experiment.schemaPreview).toBeUndefined();
+  });
   it("counts failed explicit submissions only; preserves drafts, versions, and separate later practice", async () => {
     const h = await active();
     await h.service.work(

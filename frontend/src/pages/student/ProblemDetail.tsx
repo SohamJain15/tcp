@@ -30,6 +30,7 @@ import {
 import { ResizableStackGroup, ResizableStackHandle, ResizableStackPane } from "@/components/ResizableStack";
 import { DifficultyBadge, StatusBadge } from "@/components/Badges";
 import { FailedTestCasePanel, shouldShowFailedTest } from "@/components/FailedTestCasePanel";
+import { SchemaTables } from "@/components/SchemaTables";
 import { SqlResultTable } from "@/components/SqlWorkspace";
 import { SubmissionDistributionChart } from "@/components/charts";
 import { ProblemHintsPanel } from "@/components/ProblemHintsPanel";
@@ -153,11 +154,11 @@ function getSolutionFilename(language: ExecutableLanguage): string {
   return `Solution.${FILE_EXTENSIONS[language] ?? language}`;
 }
 
-function getCodeDraftStorageKey(problemId: string, language: ExecutableLanguage): string {
+function getCodeDraftStorageKey(problemId: string, language: SubmissionLanguage): string {
   return `code_draft_${problemId}_${language}`;
 }
 
-function loadStoredDraft(problemId: string, language: ExecutableLanguage): string | null {
+function loadStoredDraft(problemId: string, language: SubmissionLanguage): string | null {
   if (typeof window === "undefined" || !problemId) {
     return null;
   }
@@ -169,7 +170,7 @@ function loadStoredDraft(problemId: string, language: ExecutableLanguage): strin
   }
 }
 
-function saveStoredDraft(problemId: string, language: ExecutableLanguage, code: string): void {
+function saveStoredDraft(problemId: string, language: SubmissionLanguage, code: string): void {
   if (typeof window === "undefined" || !problemId) {
     return;
   }
@@ -292,50 +293,6 @@ export default function ProblemDetail() {
   }, [id]);
 
   useEffect(() => {
-    if (!id) {
-      return;
-    }
-
-    const storedDraft = loadStoredDraft(id, language);
-    if (storedDraft === null) {
-      return;
-    }
-
-    setDraftsByLanguage((currentDrafts) => {
-      if (currentDrafts[language] === storedDraft) {
-        return currentDrafts;
-      }
-
-      return {
-        ...currentDrafts,
-        [language]: storedDraft,
-      };
-    });
-  }, [id, language]);
-
-  useEffect(() => {
-    if (!id) {
-      return;
-    }
-
-    if (draftSaveTimeoutRef.current !== null) {
-      window.clearTimeout(draftSaveTimeoutRef.current);
-    }
-
-    draftSaveTimeoutRef.current = window.setTimeout(() => {
-      saveStoredDraft(id, language, code);
-      draftSaveTimeoutRef.current = null;
-    }, CODE_DRAFT_SAVE_DELAY_MS);
-
-    return () => {
-      if (draftSaveTimeoutRef.current !== null) {
-        window.clearTimeout(draftSaveTimeoutRef.current);
-        draftSaveTimeoutRef.current = null;
-      }
-    };
-  }, [id, language, code]);
-
-  useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(Boolean(document.fullscreenElement));
     };
@@ -401,6 +358,50 @@ export default function ProblemDetail() {
   const editorLanguage: SubmissionLanguage = problemEnvelope?.problem.kind === "sql" ? "sql" : language;
   const code =
     draftsByLanguage[editorLanguage] ?? (editorLanguage === "sql" ? "" : getStarterCode(language));
+
+  useEffect(() => {
+    if (!id) {
+      return;
+    }
+
+    const storedDraft = loadStoredDraft(id, editorLanguage);
+    if (storedDraft === null) {
+      return;
+    }
+
+    setDraftsByLanguage((currentDrafts) => {
+      if (currentDrafts[editorLanguage] === storedDraft) {
+        return currentDrafts;
+      }
+
+      return {
+        ...currentDrafts,
+        [editorLanguage]: storedDraft,
+      };
+    });
+  }, [id, editorLanguage]);
+
+  useEffect(() => {
+    if (!id) {
+      return;
+    }
+
+    if (draftSaveTimeoutRef.current !== null) {
+      window.clearTimeout(draftSaveTimeoutRef.current);
+    }
+
+    draftSaveTimeoutRef.current = window.setTimeout(() => {
+      saveStoredDraft(id, editorLanguage, code);
+      draftSaveTimeoutRef.current = null;
+    }, CODE_DRAFT_SAVE_DELAY_MS);
+
+    return () => {
+      if (draftSaveTimeoutRef.current !== null) {
+        window.clearTimeout(draftSaveTimeoutRef.current);
+        draftSaveTimeoutRef.current = null;
+      }
+    };
+  }, [id, editorLanguage, code]);
 
   const { data: submissionsData } = useQuery({
     queryKey: ["student-problem-submissions", id],
@@ -687,18 +688,20 @@ export default function ProblemDetail() {
                   <p className="text-muted-foreground">{problem.statement}</p>
                 </div>
                 {isSql && problem.schemaSql && (
-                  <div>
-                    <h3 className="mb-1 font-display text-base font-semibold">Schema</h3>
-                    <p className="mb-2 text-xs text-muted-foreground">
-                      These tables are created and populated for you before your query runs.
-                      {problem.ordered
-                        ? " Row order is part of the answer."
-                        : " Row order does not matter."}
-                    </p>
-                    <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded bg-secondary p-3 font-mono-code text-xs">
-                      {problem.schemaSql}
-                    </pre>
-                  </div>
+                  <SchemaTables
+                    tables={problem.schemaPreview}
+                    schemaSql={problem.schemaSql}
+                    error={problem.schemaPreview === undefined}
+                    heading="Tables you can query"
+                    emptyMessage="This problem starts with no tables."
+                    footer={
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {problem.ordered
+                          ? "Row order is part of the answer."
+                          : "Row order does not matter."}
+                      </p>
+                    }
+                  />
                 )}
                 <div>
                   <h3 className="mb-1 font-display text-base font-semibold">

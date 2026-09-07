@@ -2,13 +2,14 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Save, Send, Plus, Trash2, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 
-import type { Difficulty, ProblemEditorData } from "@/api/types";
+import type { Difficulty, ProblemEditorData, ProblemKind } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ThemedSelect } from "@/components/ThemedSelect";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type EditableCase = {
   input: string;
@@ -17,7 +18,18 @@ type EditableCase = {
   hidden: boolean;
 };
 
+const DEFAULT_SQL = {
+  schemaSql: "CREATE TABLE students (id INT, name VARCHAR(50));\nINSERT INTO students VALUES (1,'Ada'),(2,'Alan');",
+  solutionSql: "SELECT id, name FROM students ORDER BY id;",
+  ordered: false,
+};
+
 type ProblemEditorFormProps = {
+  /**
+   * "sql" swaps the test-case editor for a seeded schema and a reference query, and hides the
+   * Judge0 time/memory limits — the SQL path ignores them, so offering them would be a lie.
+   */
+  kind?: ProblemKind;
   heading: string;
   description: string;
   submitLabel: string;
@@ -56,6 +68,7 @@ function normalizeCases(sampleTestCases: ProblemEditorData["sampleTestCases"] = 
 }
 
 export function ProblemEditorForm({
+  kind = "coding",
   heading,
   description,
   submitLabel,
@@ -84,6 +97,8 @@ export function ProblemEditorForm({
   const [testCases, setTestCases] = useState<EditableCase[]>(
     normalizeCases(initialProblem?.sampleTestCases, initialProblem?.hiddenTestCases),
   );
+  const [sql, setSql] = useState(initialProblem?.sql ?? DEFAULT_SQL);
+  const isSql = kind === "sql";
 
   const disabled = isSubmitting || isSavingDraft;
 
@@ -105,6 +120,8 @@ export function ProblemEditorForm({
       }));
 
     return {
+      kind,
+      ...(isSql ? { sql } : {}),
       title,
       slug,
       difficulty,
@@ -141,6 +158,9 @@ export function ProblemEditorForm({
     timeLimit,
     memoryLimit,
     testCases,
+    kind,
+    isSql,
+    sql,
     initialProblem?.lifecycleState,
   ]);
 
@@ -165,6 +185,19 @@ export function ProblemEditorForm({
     if (parsedData.statement.trim().length < 10) {
       toast.error("Problem statement must be at least 10 characters");
       return false;
+    }
+
+    if (isSql) {
+      // A SQL problem is specified entirely by its seed and its reference query; it has no cases.
+      if (!parsedData.sql?.schemaSql.trim()) {
+        toast.error("Provide the schema and seed data");
+        return false;
+      }
+      if (!parsedData.sql?.solutionSql.trim()) {
+        toast.error("Provide the reference (solution) query");
+        return false;
+      }
+      return true;
     }
 
     if (parsedData.sampleTestCases.filter((testCase) => testCase.input.trim().length > 0).length === 0) {
@@ -261,11 +294,11 @@ export function ProblemEditorForm({
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <div>
-            <Label>Input Format</Label>
+            <Label>{isSql ? "What your query receives" : "Input Format"}</Label>
             <Textarea value={inputFormat} onChange={(event) => setInputFormat(event.target.value)} rows={4} className="mt-1.5" />
           </div>
           <div>
-            <Label>Output Format</Label>
+            <Label>{isSql ? "What your query must return" : "Output Format"}</Label>
             <Textarea value={outputFormat} onChange={(event) => setOutputFormat(event.target.value)} rows={4} className="mt-1.5" />
           </div>
         </div>
@@ -285,84 +318,129 @@ export function ProblemEditorForm({
         </div>
       </Card>
 
-      <Card className="space-y-5 p-6 shadow-card">
-        <div className="flex items-center justify-between border-b border-border pb-2">
-          <h2 className="font-display text-lg font-bold">Test Cases</h2>
-          <div className="flex gap-2">
-            <Button type="button" size="sm" variant="outline" onClick={() => addCase(false)} disabled={disabled}>
-              <Plus className="mr-1 h-3.5 w-3.5" /> Sample
-            </Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => addCase(true)} disabled={disabled}>
-              <Plus className="mr-1 h-3.5 w-3.5" /> Hidden
-            </Button>
+      {isSql ? (
+        <Card className="space-y-5 p-6 shadow-card">
+          <h2 className="border-b border-border pb-2 font-display text-lg font-bold">
+            Schema and reference query
+          </h2>
+          <div>
+            <Label htmlFor="problem-schema-sql">Schema + seed SQL (shown to students)</Label>
+            <Textarea
+              id="problem-schema-sql"
+              value={sql.schemaSql}
+              onChange={(event) => setSql((current) => ({ ...current, schemaSql: event.target.value }))}
+              rows={6}
+              className="mt-1.5 font-mono-code text-xs"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Seeded into a fresh database before each student query. Do not include CREATE DATABASE
+              or USE — every student already gets their own database.
+            </p>
           </div>
-        </div>
-        <div className="space-y-4">
-          {testCases.map((testCase, index) => (
-            <div key={`${index}-${testCase.hidden ? "hidden" : "sample"}`} className="rounded-lg border border-border p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider">
-                  {testCase.hidden ? <EyeOff className="h-3.5 w-3.5 text-accent" /> : <Eye className="h-3.5 w-3.5 text-success" />}
-                  {testCase.hidden ? "Hidden" : "Sample"} Case {index + 1}
-                </span>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7 text-destructive"
-                  onClick={() => removeCase(index)}
-                  disabled={testCases.length === 1 || disabled}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <div>
-                  <Label className="text-xs">Input</Label>
-                  <Textarea
-                    value={testCase.input}
-                    onChange={(event) => updateCase(index, "input", event.target.value)}
-                    rows={3}
-                    className="mt-1 font-mono-code text-xs"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Expected Output</Label>
-                  <Textarea
-                    value={testCase.output}
-                    onChange={(event) => updateCase(index, "output", event.target.value)}
-                    rows={3}
-                    className="mt-1 font-mono-code text-xs"
-                  />
-                </div>
-              </div>
-              <div className="mt-3">
-                <Label className="text-xs">Explanation (optional)</Label>
-                <Textarea
-                  value={testCase.explanation}
-                  onChange={(event) => updateCase(index, "explanation", event.target.value)}
-                  rows={2}
-                  className="mt-1 text-xs"
-                />
-              </div>
+          <div>
+            <Label htmlFor="problem-solution-sql">Reference (solution) query — hidden from students</Label>
+            <Textarea
+              id="problem-solution-sql"
+              value={sql.solutionSql}
+              onChange={(event) => setSql((current) => ({ ...current, solutionSql: event.target.value }))}
+              rows={4}
+              className="mt-1.5 font-mono-code text-xs"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              The expected grid is derived by running this. Column names are ignored when comparing,
+              so a student may alias freely.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={sql.ordered}
+              onCheckedChange={(checked) => setSql((current) => ({ ...current, ordered: checked === true }))}
+            />
+            Row order matters (the task requires an ORDER BY)
+          </label>
+        </Card>
+      ) : (
+        <>
+        <Card className="space-y-5 p-6 shadow-card">
+          <div className="flex items-center justify-between border-b border-border pb-2">
+            <h2 className="font-display text-lg font-bold">Test Cases</h2>
+            <div className="flex gap-2">
+              <Button type="button" size="sm" variant="outline" onClick={() => addCase(false)} disabled={disabled}>
+                <Plus className="mr-1 h-3.5 w-3.5" /> Sample
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => addCase(true)} disabled={disabled}>
+                <Plus className="mr-1 h-3.5 w-3.5" /> Hidden
+              </Button>
             </div>
-          ))}
-        </div>
-      </Card>
+          </div>
+          <div className="space-y-4">
+            {testCases.map((testCase, index) => (
+              <div key={`${index}-${testCase.hidden ? "hidden" : "sample"}`} className="rounded-lg border border-border p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider">
+                    {testCase.hidden ? <EyeOff className="h-3.5 w-3.5 text-accent" /> : <Eye className="h-3.5 w-3.5 text-success" />}
+                    {testCase.hidden ? "Hidden" : "Sample"} Case {index + 1}
+                  </span>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 text-destructive"
+                    onClick={() => removeCase(index)}
+                    disabled={testCases.length === 1 || disabled}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <Label className="text-xs">Input</Label>
+                    <Textarea
+                      value={testCase.input}
+                      onChange={(event) => updateCase(index, "input", event.target.value)}
+                      rows={3}
+                      className="mt-1 font-mono-code text-xs"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Expected Output</Label>
+                    <Textarea
+                      value={testCase.output}
+                      onChange={(event) => updateCase(index, "output", event.target.value)}
+                      rows={3}
+                      className="mt-1 font-mono-code text-xs"
+                    />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <Label className="text-xs">Explanation (optional)</Label>
+                  <Textarea
+                    value={testCase.explanation}
+                    onChange={(event) => updateCase(index, "explanation", event.target.value)}
+                    rows={2}
+                    className="mt-1 text-xs"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
 
-      <Card className="space-y-5 p-6 shadow-card">
-        <h2 className="border-b border-border pb-2 font-display text-lg font-bold">Limits</h2>
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <Label>Time Limit (seconds)</Label>
-            <Input value={timeLimit} onChange={(event) => setTimeLimit(event.target.value)} type="number" className="mt-1.5" />
+        <Card className="space-y-5 p-6 shadow-card">
+          <h2 className="border-b border-border pb-2 font-display text-lg font-bold">Limits</h2>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <Label>Time Limit (seconds)</Label>
+              <Input value={timeLimit} onChange={(event) => setTimeLimit(event.target.value)} type="number" className="mt-1.5" />
+            </div>
+            <div>
+              <Label>Memory Limit (MB)</Label>
+              <Input value={memoryLimit} onChange={(event) => setMemoryLimit(event.target.value)} type="number" className="mt-1.5" />
+            </div>
           </div>
-          <div>
-            <Label>Memory Limit (MB)</Label>
-            <Input value={memoryLimit} onChange={(event) => setMemoryLimit(event.target.value)} type="number" className="mt-1.5" />
-          </div>
-        </div>
-      </Card>
+        </Card>
+        </>
+      )}
     </div>
   );
 }

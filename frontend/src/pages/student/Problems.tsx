@@ -100,6 +100,11 @@ const ProblemRow = memo(function ProblemRow({
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="truncate font-medium">{problem.title}</h3>
                 <DifficultyBadge d={problem.difficulty} />
+                {problem.kind === "sql" && (
+                  <span className="rounded border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+                    SQL
+                  </span>
+                )}
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-1">
                 {visibleTags.map((tag) => (

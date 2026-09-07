@@ -300,6 +300,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       now,
     }),
     problemService: createProblemService({
+    sqlExecutor: new StubSqlExecutor(),
       problemRepository,
       submissionRepository,
       userRepository,

@@ -41,6 +41,7 @@ vi.mock("@/api/classrooms", async (original) => ({
     join: vi.fn(),
     grade: vi.fn(),
     work: vi.fn(),
+    experimentSchema: vi.fn(),
     sessionAction: vi.fn(),
     pdfUrl: () => "/history.pdf",
     csvUrl: () => "/gradebook.csv",
@@ -220,6 +221,73 @@ describe("classroom screens", () => {
         }),
       ),
     );
+  });
+  it("renders the seeded schema as tables rather than as raw DDL", async () => {
+    const entered = structuredClone(detail);
+    entered.classroom.sessions[0].attendance = [
+      { ...entered.classroom.members![0], enteredAt: "2026-09-08T04:31:00Z" },
+    ];
+    entered.classroom.sessions[0].experiments[0].schemaSql =
+      "CREATE TABLE students (id INT, name VARCHAR(50));";
+    vi.mocked(classroomApi.get).mockResolvedValue(entered);
+    vi.mocked(classroomApi.experimentSchema).mockResolvedValue({
+      tables: [
+        {
+          name: "students",
+          columns: [
+            { name: "id", dataType: "int", nullable: false, key: "PRI", extra: "" },
+            { name: "name", dataType: "varchar(50)", nullable: true, key: "", extra: "" },
+          ],
+          rows: [[1, "Ada"]],
+          rowCount: 1,
+          truncated: false,
+        },
+      ],
+    });
+    mount(false);
+    fireEvent.click(await screen.findByRole("button", { name: "Open experiment" }));
+    // The table name and its columns are what a student needs to write the query against.
+    expect(await screen.findByText("students")).toBeInTheDocument();
+    expect(screen.getByText("varchar(50)")).toBeInTheDocument();
+    expect(classroomApi.experimentSchema).toHaveBeenCalledWith("room", "s1", "e1");
+    // The DDL is still reachable, just no longer the primary presentation.
+    expect(screen.getByText("Show the SQL that creates this")).toBeInTheDocument();
+  });
+  it("uses the preview stored on the experiment without asking the server for one", async () => {
+    const entered = structuredClone(detail);
+    entered.classroom.sessions[0].attendance = [
+      { ...entered.classroom.members![0], enteredAt: "2026-09-08T04:31:00Z" },
+    ];
+    const experiment = entered.classroom.sessions[0].experiments[0];
+    experiment.schemaSql = "CREATE TABLE students (id INT);";
+    experiment.schemaPreview = [
+      {
+        name: "students",
+        columns: [{ name: "id", dataType: "int", nullable: false, key: "PRI", extra: "" }],
+        rows: [[1]],
+        rowCount: 1,
+        truncated: false,
+      },
+    ];
+    vi.mocked(classroomApi.get).mockResolvedValue(entered);
+    mount(false);
+    fireEvent.click(await screen.findByRole("button", { name: "Open experiment" }));
+    expect(await screen.findByText("students")).toBeInTheDocument();
+    // The whole point of precomputing: a batch opening this experiment costs no sandbox runs.
+    expect(classroomApi.experimentSchema).not.toHaveBeenCalled();
+  });
+  it("falls back to the raw schema SQL when the table preview cannot be produced", async () => {
+    const entered = structuredClone(detail);
+    entered.classroom.sessions[0].attendance = [
+      { ...entered.classroom.members![0], enteredAt: "2026-09-08T04:31:00Z" },
+    ];
+    entered.classroom.sessions[0].experiments[0].schemaSql = "CREATE TABLE students (id INT);";
+    vi.mocked(classroomApi.get).mockResolvedValue(entered);
+    vi.mocked(classroomApi.experimentSchema).mockRejectedValue(new Error("sandbox down"));
+    mount(false);
+    fireEvent.click(await screen.findByRole("button", { name: "Open experiment" }));
+    expect(await screen.findByText(/table preview is unavailable/)).toBeInTheDocument();
+    expect(screen.getByText("CREATE TABLE students (id INT);")).toBeInTheDocument();
   });
   it("shows a script experiment's rubric, its statements, and the tables it created", async () => {
     const scripted = structuredClone(detail);

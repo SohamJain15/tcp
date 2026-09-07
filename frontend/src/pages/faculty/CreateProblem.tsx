@@ -7,7 +7,7 @@ import { CheckCircle2, ClipboardCopy, Eye, FileJson, Info, Save, Upload } from "
 import { ApiError } from "@/api/client";
 import { toProblemWritePayload } from "@/api/mappers";
 import { problemsApi } from "@/api/services";
-import type { ProblemEditorData } from "@/api/types";
+import type { ProblemEditorData, ProblemKind } from "@/api/types";
 import { AppLayout } from "@/components/AppLayout";
 import { ProblemEditorForm } from "@/components/ProblemEditorForm";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -25,7 +25,7 @@ import {
   type JsonImportFieldError,
 } from "@/lib/problem-import-schema";
 
-const exampleJson = `[
+const CODING_EXAMPLE_JSON = `[
   {
     "title": "Replace with the problem title",
     "slug": "replace-with-url-friendly-problem-slug",
@@ -58,6 +58,37 @@ const exampleJson = `[
         "output": "Replace with hidden output"
       }
     ]
+  }
+]`;
+
+/**
+ * A SQL problem is specified by its seeded schema and its reference query, not by test cases — so
+ * its JSON is a different shape, not the coding one with extra keys.
+ */
+const SQL_EXAMPLE_JSON = `[
+  {
+    "kind": "sql",
+    "title": "Replace with the problem title",
+    "slug": "replace-with-url-friendly-problem-slug",
+    "statement": "Replace with the full problem statement.",
+    "difficulty": "Easy",
+    "topic": "SQL",
+    "constraints": [
+      "Replace with constraint 1"
+    ],
+    "inputFormat": "Describe the tables the query reads.",
+    "outputFormat": "Describe the columns and order the query must return.",
+    "explanation": "Replace with the solution explanation or leave empty.",
+    "timeLimit": 1,
+    "memoryLimit": 256,
+    "tags": [
+      "SQL"
+    ],
+    "sql": {
+      "schemaSql": "CREATE TABLE students (id INT, name VARCHAR(50));\\nINSERT INTO students VALUES (1,'Ada'),(2,'Alan');",
+      "solutionSql": "SELECT id, name FROM students ORDER BY id;",
+      "ordered": true
+    }
   }
 ]`;
 
@@ -139,24 +170,49 @@ function ProblemDetailDialog({
               <h3 className="font-display text-base font-bold">Explanation</h3>
               <p className="whitespace-pre-wrap text-sm text-muted-foreground">{draft.explanation || "No explanation provided."}</p>
             </section>
-            <Accordion type="multiple" defaultValue={["sample"]}>
-              <AccordionItem value="sample">
-                <AccordionTrigger>Sample test cases ({draft.sampleTestCases.length})</AccordionTrigger>
-                <AccordionContent className="space-y-3">
-                  {draft.sampleTestCases.map((testCase, index) => (
-                    <TestCasePreview key={`sample-${index}`} testCase={testCase} />
-                  ))}
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="hidden">
-                <AccordionTrigger>Hidden test cases ({draft.hiddenTestCases.length})</AccordionTrigger>
-                <AccordionContent className="space-y-3">
-                  {draft.hiddenTestCases.map((testCase, index) => (
-                    <TestCasePreview key={`hidden-${index}`} testCase={testCase} />
-                  ))}
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
+            {/* A SQL problem has no test cases; its seed and reference query are the whole spec. */}
+            {draft.kind === "sql" ? (
+              <Accordion type="multiple" defaultValue={["schema"]}>
+                <AccordionItem value="schema">
+                  <AccordionTrigger>Schema and seed data</AccordionTrigger>
+                  <AccordionContent>
+                    <pre className="overflow-auto rounded-md bg-muted p-3 font-mono-code text-xs">
+                      {draft.sql?.schemaSql}
+                    </pre>
+                  </AccordionContent>
+                </AccordionItem>
+                <AccordionItem value="solution">
+                  <AccordionTrigger>Reference query (hidden from students)</AccordionTrigger>
+                  <AccordionContent>
+                    <pre className="overflow-auto rounded-md bg-muted p-3 font-mono-code text-xs">
+                      {draft.sql?.solutionSql}
+                    </pre>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {draft.sql?.ordered ? "Row order is part of the answer." : "Row order does not matter."}
+                    </p>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            ) : (
+              <Accordion type="multiple" defaultValue={["sample"]}>
+                <AccordionItem value="sample">
+                  <AccordionTrigger>Sample test cases ({draft.sampleTestCases.length})</AccordionTrigger>
+                  <AccordionContent className="space-y-3">
+                    {draft.sampleTestCases.map((testCase, index) => (
+                      <TestCasePreview key={`sample-${index}`} testCase={testCase} />
+                    ))}
+                  </AccordionContent>
+                </AccordionItem>
+                <AccordionItem value="hidden">
+                  <AccordionTrigger>Hidden test cases ({draft.hiddenTestCases.length})</AccordionTrigger>
+                  <AccordionContent className="space-y-3">
+                    {draft.hiddenTestCases.map((testCase, index) => (
+                      <TestCasePreview key={`hidden-${index}`} testCase={testCase} />
+                    ))}
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            )}
           </div>
 
           <aside className="space-y-4 rounded-md border border-border bg-card p-4">
@@ -194,6 +250,10 @@ export default function CreateProblem() {
   const [importedDrafts, setImportedDrafts] = useState<ImportedProblemDraft[]>([]);
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const [jsonStructureCopied, setJsonStructureCopied] = useState(false);
+  // Chosen once for the page, so the form and the JSON template can never disagree about what is
+  // being authored.
+  const [kind, setKind] = useState<ProblemKind>("coding");
+  const exampleJson = kind === "sql" ? SQL_EXAMPLE_JSON : CODING_EXAMPLE_JSON;
 
   const selectedDraft = importedDrafts.find((item) => item.id === selectedDraftId)?.draft ?? null;
   const approvedCount = importedDrafts.filter((item) => item.approved).length;
@@ -234,6 +294,19 @@ export default function CreateProblem() {
         draft: toProblemEditorDataFromJsonDraft(draft),
         approved: false,
       }));
+      // The page is scoped to one problem type, so a batch of the other kind is a paste mistake.
+      // Failing loudly beats importing problems the selected form cannot describe.
+      const mismatched = drafts.filter((item) => item.draft.kind !== kind);
+      if (mismatched.length > 0) {
+        setImportedDrafts([]);
+        setImportErrors([
+          {
+            path: "json",
+            message: `Every problem must match the selected problem type (${kind === "sql" ? "SQL" : "DSA / coding"}).`,
+          },
+        ]);
+        return;
+      }
       setImportedDrafts(drafts);
       setSelectedDraftId(null);
       setImportErrors([]);
@@ -327,6 +400,38 @@ export default function CreateProblem() {
           </p>
         </div>
 
+        <div className="flex flex-wrap items-center gap-4">
+          <span className="text-sm font-semibold">Problem type</span>
+          <div className="flex border-b border-border">
+            {(
+              [
+                { value: "coding", label: "DSA / Coding problem" },
+                { value: "sql", label: "SQL problem" },
+              ] as const
+            ).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  if (option.value === kind) return;
+                  setKind(option.value);
+                  // Drafts describe the other kind and cannot be reviewed under this one.
+                  setImportedDrafts([]);
+                  setSelectedDraftId(null);
+                  setImportErrors([]);
+                }}
+                className={
+                  kind === option.value
+                    ? "border-b-2 border-accent bg-background px-4 py-2 text-sm font-semibold text-accent"
+                    : "border-b-2 border-transparent px-4 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
+                }
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <Tabs defaultValue="json" className="flex flex-1 flex-col">
           <TabsList className="grid w-full max-w-md grid-cols-2">
             <TabsTrigger value="form">Form Builder</TabsTrigger>
@@ -338,6 +443,8 @@ export default function CreateProblem() {
           <TabsContent value="form" className="mt-5 flex-1">
             <Card className="p-6 shadow-card">
               <ProblemEditorForm
+                key={kind}
+                kind={kind}
                 heading="Create New Problem"
                 description="Design a meaningful challenge for your students."
                 submitLabel="Publish"

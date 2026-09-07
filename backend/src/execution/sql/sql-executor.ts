@@ -139,4 +139,18 @@ export interface SqlExecutor {
     context: SqlExperimentContext;
     checks?: SqlCheck[];
   }): Promise<SqlScriptResult>;
+  /**
+   * Seed a schema and return the tables it produced, without running any student SQL.
+   *
+   * This is how a student sees "the students table holds Ada and Alan" instead of a wall of DDL
+   * they have to read like a compiler. It reports the real seeded database rather than a parse of
+   * the SQL text, so what they read is exactly what their query will run against.
+   */
+  previewSchema(input: { schemaSql: string }): Promise<SqlSchemaPreview>;
+}
+
+export interface SqlSchemaPreview {
+  tables: SqlTableSnapshot[];
+  /** Set when the seed itself failed; the caller falls back to showing the raw SQL. */
+  error?: string;
 }

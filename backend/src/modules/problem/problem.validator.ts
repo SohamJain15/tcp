@@ -186,10 +186,29 @@ export const createProblemSchema = problemWriteBaseSchema.superRefine((value, ct
   }
 });
 
-export const updateProblemSchema = problemWriteBaseSchema.partial().refine(
-  (value) => Object.keys(value).length > 0,
-  "At least one field must be provided for update",
-);
+export const updateProblemSchema = problemWriteBaseSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, "At least one field must be provided for update")
+  // `.partial()` drops the create schema's refinement, so without this an edit could smuggle in seed
+  // SQL that `POST` would have rejected — the `CREATE DATABASE; USE;` dump that seeds the wrong
+  // schema and leaves every student query failing with "table doesn't exist".
+  .superRefine((value, ctx) => {
+    if (!value.sql) {
+      return;
+    }
+    const seed = validateSchemaSql(value.sql.schemaSql, 100_000);
+    if (!seed.ok) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: seed.error ?? "Seed SQL is not valid", path: ["sql", "schemaSql"] });
+    }
+    const solution = validateStudentSql(value.sql.solutionSql, 20_000);
+    if (!solution.ok) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Reference query: ${solution.error}`,
+        path: ["sql", "solutionSql"],
+      });
+    }
+  });
 
 export const problemStateSchema = z.object({
   lifecycleState: z.enum(["Draft", "Published", "Archived"]),

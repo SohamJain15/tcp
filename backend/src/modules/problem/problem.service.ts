@@ -19,6 +19,7 @@ import {
   buildProblemLeaderboardPodium,
   type ProblemLeaderboardItem,
 } from "./problem-leaderboard.model";
+import type { SqlExecutor, SqlTableSnapshot } from "../../execution/sql/sql-executor";
 import {
   toManageProblemDetail,
   toManageProblemSummary,
@@ -28,6 +29,7 @@ import {
   type ManageProblemSummaryResponse,
   type ProblemHint,
   type ProblemRecord,
+  type ProblemSqlSpec,
   type StudentProblemDetailResponse,
   type StudentProblemSummaryResponse,
 } from "./problem.model";
@@ -75,7 +77,28 @@ export interface ProblemServiceDependencies {
   userRepository: UserRepository;
   hintRevealRepository: HintRevealRepository;
   hintGenerator: HintGenerator;
+  /** Seeds a SQL problem's schema once at save time so students never pay for the preview. */
+  sqlExecutor: SqlExecutor;
   now: () => Date;
+}
+
+/**
+ * The tables a SQL problem's seed produces. Best-effort: a sandbox outage must not stop a teacher
+ * publishing, so a failed preview simply stores nothing and the student view falls back to the DDL.
+ */
+async function buildSchemaPreview(
+  dependencies: ProblemServiceDependencies,
+  sql: ProblemSqlSpec | undefined,
+): Promise<SqlTableSnapshot[] | undefined> {
+  if (!sql || sql.schemaSql.trim() === "") {
+    return undefined;
+  }
+  try {
+    const preview = await dependencies.sqlExecutor.previewSchema({ schemaSql: sql.schemaSql });
+    return preview.error ? undefined : preview.tables;
+  } catch {
+    return undefined;
+  }
 }
 
 export interface StudentProblemQuery extends PaginationInput {
@@ -473,6 +496,7 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
         acceptanceRate: 0,
         kind: payload.kind,
         sql: payload.sql,
+        schemaPreview: await buildSchemaPreview(dependencies, payload.sql),
         sampleTestCases,
         hiddenTestCases,
         harness,
@@ -497,6 +521,10 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
         ...existingProblem,
         ...rest,
         ...(harnessUpdate !== undefined ? { harness: harnessUpdate ?? undefined } : {}),
+        // Recomputed whenever the seed is touched, so the preview can never drift from the schema.
+        ...(payload.sql !== undefined
+          ? { schemaPreview: await buildSchemaPreview(dependencies, payload.sql) }
+          : {}),
         updatedAt: dependencies.now(),
       };
 

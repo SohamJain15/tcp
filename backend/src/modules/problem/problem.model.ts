@@ -1,4 +1,5 @@
 import { generateStarterCode } from "../../execution/harness";
+import type { SqlTableSnapshot } from "../../execution/sql/sql-executor";
 import type { HarnessSpec } from "../../execution/harness/contract";
 import { EXECUTABLE_LANGUAGES } from "../../shared/constants/domain";
 import type { UserRole } from "../../shared/types/auth";
@@ -59,6 +60,11 @@ export interface ProblemRecord {
   kind?: ProblemKind;
   /** Present only when `kind` is "sql". Replaces the test cases, which SQL problems do not use. */
   sql?: ProblemSqlSpec;
+  /**
+   * The tables the seed produces, computed once when the problem is saved. Server-written only, so
+   * it can never disagree with `sql.schemaSql`, and students read it instead of the DDL.
+   */
+  schemaPreview?: SqlTableSnapshot[];
   sampleTestCases: ProblemTestCase[];
   hiddenTestCases: ProblemTestCase[];
   /**
@@ -136,11 +142,14 @@ export interface StudentProblemDetailResponse extends StudentProblemSummaryRespo
   /** SQL problems: the seed the student is shown. The reference query is never included. */
   schemaSql?: string;
   ordered?: boolean;
+  schemaPreview?: SqlTableSnapshot[];
 }
 
 export interface ManageProblemSummaryResponse {
   id: string;
   title: string;
+  /** Lets a faculty list distinguish a SQL problem from a coding one at a glance. */
+  kind: ProblemKind;
   difficulty: Difficulty;
   tags: string[];
   lifecycleState: ProblemLifecycleState;
@@ -211,7 +220,9 @@ export function toStudentProblemDetail(
     sampleTestCases: problem.sampleTestCases,
     // The seed is the problem statement for a SQL question — the student has to read the table
     // definitions to write the query. The reference query is deliberately not included.
-    ...(problem.sql ? { schemaSql: problem.sql.schemaSql, ordered: problem.sql.ordered } : {}),
+    ...(problem.sql
+      ? { schemaSql: problem.sql.schemaSql, ordered: problem.sql.ordered, schemaPreview: problem.schemaPreview }
+      : {}),
     ...(problem.harness
       ? { harnessEnabled: true, starterCode: buildStarterCode(problem.harness) }
       : {}),
@@ -243,6 +254,7 @@ export function toManageProblemSummary(problem: ProblemRecord): ManageProblemSum
   return {
     id: problem.id,
     title: problem.title,
+    kind: problem.kind ?? "coding",
     difficulty: problem.difficulty,
     tags: problem.tags,
     lifecycleState: problem.lifecycleState,

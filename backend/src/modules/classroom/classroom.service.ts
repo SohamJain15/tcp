@@ -178,6 +178,35 @@ export function createClassroomService(deps: {
     }
     return fail("The classroom changed. Please retry", 409);
   }
+  /**
+   * Attach the seeded-table preview to every SQL experiment.
+   *
+   * The seed is identical for every student and only changes when the faculty edits it, so it is
+   * computed once here rather than on each student's first look at the experiment. Best-effort by
+   * design: a sandbox outage must degrade the preview (the read path falls back to computing one),
+   * never block a teacher from saving their lab.
+   */
+  async function withSchemaPreviews(
+    experiments: LabExperiment[],
+  ): Promise<LabExperiment[]> {
+    return Promise.all(
+      experiments.map(async (experiment) => {
+        if (experiment.kind !== "sql" || experiment.schemaSql.trim() === "") {
+          return experiment;
+        }
+        try {
+          const preview = await deps.sqlExecutor.previewSchema({
+            schemaSql: experiment.schemaSql,
+          });
+          return preview.error
+            ? experiment
+            : { ...experiment, schemaPreview: preview.tables };
+        } catch {
+          return experiment;
+        }
+      }),
+    );
+  }
   function findSession(record: ClassroomRecord, id: string) {
     return (
       record.sessions.find((s) => s.id === id) ?? fail("Session not found", 404)
@@ -274,15 +303,16 @@ export function createClassroomService(deps: {
       );
       if (prior) return projection(user, prior);
       await validateSelectedStudents(input);
-      const experiments = input.experiments.map((e) => ({
+      const identified = input.experiments.map((e) => ({
         ...e,
         id: e.id ?? randomUUID(),
       })) as LabExperiment[];
       if (
-        new Set(experiments.map((e) => e.id)).size !== experiments.length ||
-        new Set(experiments.map((e) => e.number)).size !== experiments.length
+        new Set(identified.map((e) => e.id)).size !== identified.length ||
+        new Set(identified.map((e) => e.number)).size !== identified.length
       )
         fail("Experiment identifiers and numbers must be unique");
+      const experiments = await withSchemaPreviews(identified);
       const sessions = input.sessions.map((s) =>
         buildSession(s, experiments, deps.now().getTime()),
       );
@@ -304,6 +334,18 @@ export function createClassroomService(deps: {
     },
     async update(user: AuthenticatedUser, id: string, body: unknown) {
       const input = classroomSchema.parse(body);
+      const identified = input.experiments.map((e) => ({
+        ...e,
+        id: e.id ?? randomUUID(),
+      })) as LabExperiment[];
+      if (
+        new Set(identified.map((e) => e.id)).size !== identified.length ||
+        new Set(identified.map((e) => e.number)).size !== identified.length
+      )
+        fail("Experiment identifiers and numbers must be unique");
+      // Computed once, outside `change`: that callback re-runs on every compare-and-swap retry, and
+      // re-seeding the sandbox up to twelve times for the same schema would be pure waste.
+      const previewed = await withSchemaPreviews(identified);
       const updated = await change(id, async (record) => {
         teacher(user, record);
         await validateSelectedStudents(input);
@@ -314,15 +356,7 @@ export function createClassroomService(deps: {
             input.batch !== record.batch)
         )
           fail("Cohort and batch cannot change after students join");
-        const experiments = input.experiments.map((e) => ({
-          ...e,
-          id: e.id ?? randomUUID(),
-        })) as LabExperiment[];
-        if (
-          new Set(experiments.map((e) => e.id)).size !== experiments.length ||
-          new Set(experiments.map((e) => e.number)).size !== experiments.length
-        )
-          fail("Experiment identifiers and numbers must be unique");
+        const experiments = previewed;
         const used = new Set(
           record.sessions.flatMap((s) => s.experiments.map((e) => e.id)),
         );
@@ -525,6 +559,37 @@ export function createClassroomService(deps: {
         ];
         r.gradeAudit.push(grade);
       });
+    },
+    /**
+     * The seeded tables for one experiment, rendered instead of the raw DDL.
+     *
+     * A first-year reading `CREATE TABLE students (id INT, name VARCHAR(50)); INSERT INTO ...` has
+     * to run the schema in their head before they can write a query against it. Showing the actual
+     * seeded tables removes that step — and because it reports the real sandbox database rather
+     * than a parse of the SQL text, what they read is exactly what their query will run against.
+     */
+    async experimentSchema(
+      user: AuthenticatedUser,
+      id: string,
+      sessionId: string,
+      experimentId: string,
+    ) {
+      const r = await room(id);
+      user.role === "FACULTY" ? teacher(user, r) : member(user, r);
+      const s = findSession(r, sessionId);
+      const experiment =
+        s.experiments.find((e) => e.id === experimentId) ??
+        fail("Experiment is not selected for this session", 404);
+      if (experiment.kind !== "sql") return fail("This experiment has no schema", 400);
+      // Normally free: the preview was computed when the experiment was saved. Experiments written
+      // before previews existed have none stored, so those fall back to seeding on demand — which
+      // is also what happens if a preview failed to compute at save time.
+      if (experiment.schemaPreview) {
+        return { tables: experiment.schemaPreview };
+      }
+      // No student SQL is involved, so the seed alone decides the result and there is nothing to
+      // withhold — the schema is already shown to students as text.
+      return deps.sqlExecutor.previewSchema({ schemaSql: experiment.schemaSql });
     },
     async work(
       user: AuthenticatedUser,

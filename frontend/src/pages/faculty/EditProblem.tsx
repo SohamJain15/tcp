@@ -67,6 +67,7 @@ export default function EditProblem() {
     <AppLayout>
       <ProblemEditorForm
         key={problem.id}
+        kind={problem.kind ?? "coding"}
         heading="Edit Problem"
         description={`Refine ${problem.title} while keeping the faculty console style, spacing, and publishing flow intact.`}
         submitLabel="Update Problem"
