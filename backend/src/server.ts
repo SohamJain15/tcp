@@ -56,11 +56,6 @@ const attemptFinalizerTimer =
               );
             }
           }),
-          dependencies.labSessionService.finalizeExpiredAttempts().then((summary) => {
-            if (summary.finalizedCount > 0) {
-              console.log(`Finalised ${summary.finalizedCount} expired lab-session attempt(s).`);
-            }
-          }),
         ])
           .catch((error) => {
             logServerError("Attempt finaliser failed", error);

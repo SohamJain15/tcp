@@ -12,9 +12,10 @@ import { createLeaderboardRouter } from "./modules/leaderboard/leaderboard.route
 import { createProblemRouter } from "./modules/problem/problem.routes";
 import { createSubmissionRouter } from "./modules/submission/submission.routes";
 import { createClassTestRouter } from "./modules/classtest/classtest.routes";
-import { createLabRouter } from "./modules/lab/lab.routes";
-import { createLabSessionRouter } from "./modules/lab/lab-session.routes";
-import { createLabAttendanceRouter } from "./modules/lab/lab-attendance.routes";
+import { createClassroomRouter } from "./modules/classroom/classroom.routes";
+import { labSqlPreviewSchema } from "./modules/lab/lab.validator";
+import { requireRole } from "./middleware/require-role";
+import { asyncHandler } from "./shared/middleware/async-handler";
 import { createContestRouter } from "./modules/contest/contest.routes";
 import { createAuthRouter, createLegacyUserRouter, createUserRouter } from "./modules/user/user.routes";
 import { createClientErrorRouter } from "./modules/client-error/client-error.routes";
@@ -244,9 +245,9 @@ export function createApp(dependencies: ApplicationDependencies): Express {
   app.use("/api/department", createDepartmentRouter(dependencies));
   app.use("/api/admin", createAdminRouter(dependencies));
   app.use("/api/class-tests", createClassTestRouter(dependencies));
-  app.use("/api/labs", createLabRouter(dependencies));
-  app.use("/api/lab-sessions", createLabSessionRouter(dependencies));
-  app.use("/api/lab-attendance", createLabAttendanceRouter(dependencies));
+  if (dependencies.classroomService) app.use("/api/classrooms", createClassroomRouter(dependencies));
+  if (dependencies.classroomService) app.post("/api/labs/sql-preview", dependencies.authMiddleware, dependencies.profileCompletionMiddleware, requireRole("FACULTY"),
+    asyncHandler(async (req, res) => res.json(await dependencies.classroomService!.previewSql(req.user!, labSqlPreviewSchema.parse(req.body)))));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

@@ -157,12 +157,14 @@ export class FirestoreSubmissionRepository implements SubmissionRepository {
   }
 
   async save(submission: SubmissionRecord): Promise<SubmissionRecord> {
+    if (submission.sourceType === "lab_coding") throw new Error("Legacy lab submissions have been retired");
     const collection = await getCollection();
     await collection.updateOne({ id: submission.id }, { $set: toSubmissionDocument(submission) }, { upsert: true });
     return submission;
   }
 
   async create(submission: SubmissionRecord): Promise<SubmissionRecord> {
+    if (submission.sourceType === "lab_coding") throw new Error("Legacy lab submissions have been retired");
     const collection = await getCollection();
     await collection.insertOne(toSubmissionDocument(submission));
     return submission;

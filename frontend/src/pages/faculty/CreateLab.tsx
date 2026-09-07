@@ -5,6 +5,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { labApi } from "@/api/services";
+import { classroomApi, newRequestKey, type ScheduleDraft } from "@/api/classrooms";
+import { ClassroomScheduleEditor, newSchedule } from "@/components/ClassroomScheduleEditor";
 import { DEPARTMENTS, type Department, type SqlResultSet } from "@/api/types";
 import { AppLayout } from "@/components/AppLayout";
 import { SqlResultTable } from "@/components/SqlWorkspace";
@@ -56,7 +58,7 @@ function blankExperiment(kind: "sql" | "coding"): ExperimentDraft {
     kind,
     title: "",
     aim: "",
-    points: kind === "coding" ? 20 : 10,
+    points: 100,
     schemaSql: "CREATE TABLE example (id INT, name VARCHAR(50));\nINSERT INTO example VALUES (1, 'Ada');",
     solutionSql: "SELECT * FROM example;",
     ordered: false,
@@ -120,6 +122,7 @@ function parseLabExperiments(source: string): { experiments?: ExperimentDraft[];
       return { error: `Experiment ${index + 1} is not an object` };
     }
     const record = item as Record<string, unknown>;
+    if (record.kind !== "sql" && record.kind !== "coding") return { error: `Experiment ${index + 1} must specify kind sql or coding` };
     const kind = record.kind === "coding" ? "coding" : "sql";
     const base = blankExperiment(kind);
     const cases = (value: unknown): TestCaseDraft[] =>
@@ -161,10 +164,13 @@ export default function CreateLab() {
   const [title, setTitle] = useState("");
   const [subject, setSubject] = useState("");
   const [kind, setKind] = useState<"DSA" | "DBMS">("DBMS");
-  const [department, setDepartment] = useState<Department | "ALL">("ALL");
-  const [semester, setSemester] = useState<string>("ALL");
+  const [department, setDepartment] = useState<Department>(DEPARTMENTS[0]);
+  const [semester, setSemester] = useState<string>("1");
+  const [batch, setBatch] = useState("");
+  const [requestKey] = useState(newRequestKey);
+  const [sessions, setSessions] = useState<ScheduleDraft[]>([]);
   const [description, setDescription] = useState("");
-  const [lifecycleState, setLifecycleState] = useState<"Draft" | "Published" | "Archived">("Draft");
+  const [lifecycleState, setLifecycleState] = useState<"Draft" | "Published" | "Archived">("Published");
   const [experiments, setExperiments] = useState<ExperimentDraft[]>([blankExperiment("sql")]);
   const [showImport, setShowImport] = useState(false);
   const [jsonSource, setJsonSource] = useState("");
@@ -175,6 +181,9 @@ export default function CreateLab() {
       toast.error(error ?? "Could not parse the JSON");
       return;
     }
+    if (parsed.some(e => e.kind !== (kind === "DBMS" ? "sql" : "coding"))) {
+      toast.error("Every experiment must match the classroom kind"); return;
+    }
     setExperiments(parsed);
     setShowImport(false);
     setJsonSource("");
@@ -183,20 +192,21 @@ export default function CreateLab() {
 
   const existing = useQuery({
     queryKey: ["faculty-lab", id],
-    queryFn: () => labApi.get(id!, `/faculty/labs/${id}/edit`),
+    queryFn: () => classroomApi.get(id!),
     enabled: isEdit,
   });
 
   useEffect(() => {
-    const lab = existing.data?.lab;
+    const lab = existing.data?.classroom;
     if (!lab) {
       return;
     }
     setTitle(lab.title);
     setSubject(lab.subject);
     setKind(lab.kind);
-    setDepartment(lab.department ?? "ALL");
-    setSemester(lab.semester ? String(lab.semester) : "ALL");
+    setDepartment(lab.department);
+    setSemester(String(lab.semester));
+    setBatch(lab.batch);
     setDescription(lab.description ?? "");
     setLifecycleState(lab.lifecycleState);
     if (lab.experiments.length > 0) {
@@ -247,31 +257,34 @@ export default function CreateLab() {
   };
 
   const buildPayload = () => ({
+    requestKey, batch, sessions: isEdit ? [] : sessions,
     title,
     subject,
     kind,
-    department: department === "ALL" ? null : department,
-    semester: semester === "ALL" ? null : Number(semester),
+    department,
+    semester: Number(semester),
     description: description.trim() === "" ? null : description,
     lifecycleState,
     experiments: experiments.map((experiment, index) =>
       experiment.kind === "sql"
         ? {
+            id: experiment.key,
             kind: "sql" as const,
             number: index + 1,
             title: experiment.title,
             aim: experiment.aim,
-            points: Number(experiment.points),
+            points: 100,
             schemaSql: experiment.schemaSql,
             solutionSql: experiment.solutionSql,
             ordered: experiment.ordered,
           }
         : {
+            id: experiment.key,
             kind: "coding" as const,
             number: index + 1,
             title: experiment.title,
             aim: experiment.aim,
-            points: Number(experiment.points),
+            points: 100,
             difficulty: experiment.difficulty,
             constraints: experiment.constraints,
             inputFormat: experiment.inputFormat,
@@ -286,10 +299,10 @@ export default function CreateLab() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: () => (isEdit ? labApi.update(id!, buildPayload(), PATHNAME) : labApi.create(buildPayload(), PATHNAME)),
-    onSuccess: () => {
+    mutationFn: () => (isEdit ? classroomApi.update(id!, buildPayload()) : classroomApi.create(buildPayload())),
+    onSuccess: (data) => {
       toast.success(isEdit ? "Lab updated" : "Lab created");
-      navigate("/faculty/labs");
+      navigate(`/faculty/labs/${data.classroom.id}`);
     },
     onError: (error: Error) => toast.error(error.message || "Could not save the lab"),
   });
@@ -297,23 +310,28 @@ export default function CreateLab() {
   return (
     <AppLayout>
       <div className="container max-w-4xl space-y-6 px-3 py-5 sm:px-6 sm:py-8">
-        <h1 className="font-display text-3xl font-bold">{isEdit ? "Edit lab" : "Create lab"}</h1>
+        <h1 className="font-display text-3xl font-bold">{isEdit ? "Edit classroom" : "Create a batch classroom"}</h1>
 
         <Card className="space-y-4 p-5">
           <div className="grid gap-3 md:grid-cols-2">
             <div>
-              <Label className="text-xs">Title</Label>
-              <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="DBMS Practical Lab" />
+              <Label className="text-xs" htmlFor="classroom-title">Title</Label>
+              <Input id="classroom-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="DBMS Practical Lab" />
             </div>
             <div>
-              <Label className="text-xs">Subject</Label>
-              <Input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Database Management Systems Lab" />
+              <Label className="text-xs" htmlFor="classroom-subject">Subject</Label>
+              <Input id="classroom-subject" value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Database Management Systems Lab" />
             </div>
             <div>
               <Label className="text-xs">Kind</Label>
               <ThemedSelect
                 value={kind}
-                onValueChange={(value) => setKind(value as "DSA" | "DBMS")}
+                onValueChange={(value) => {
+                  const next = value as "DSA" | "DBMS";
+                  if (next === kind) return;
+                  if (experiments.some(e => e.title.trim() || e.aim.trim())) { toast.error("Remove authored experiments before changing the classroom kind"); return; }
+                  setKind(next); setExperiments([blankExperiment(next === "DBMS" ? "sql" : "coding")]); setSessions([]);
+                }}
                 options={[
                   { value: "DBMS", label: "DBMS (SQL)" },
                   { value: "DSA", label: "DSA (coding)" },
@@ -332,8 +350,8 @@ export default function CreateLab() {
               <Label className="text-xs">Department</Label>
               <ThemedSelect
                 value={department}
-                onValueChange={(value) => setDepartment(value as Department | "ALL")}
-                options={[{ value: "ALL", label: "All departments" }, ...DEPARTMENTS.map((dept) => ({ value: dept, label: dept }))]}
+                onValueChange={(value) => setDepartment(value as Department)}
+                options={DEPARTMENTS.map((dept) => ({ value: dept, label: dept }))}
               />
             </div>
             <div>
@@ -341,10 +359,11 @@ export default function CreateLab() {
               <ThemedSelect
                 value={semester}
                 onValueChange={setSemester}
-                options={[{ value: "ALL", label: "All semesters" }, ...[1, 2, 3, 4, 5, 6, 7, 8].map((sem) => ({ value: String(sem), label: `Semester ${sem}` }))]}
+                options={[1, 2, 3, 4, 5, 6, 7, 8].map((sem) => ({ value: String(sem), label: `Semester ${sem}` }))}
               />
             </div>
           </div>
+          <label className="block space-y-1 text-sm">Batch<Input value={batch} onChange={event => setBatch(event.target.value)} placeholder="e.g. A1" maxLength={80} /></label>
           <div>
             <Label className="text-xs">Description (optional)</Label>
             <Textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={2} />
@@ -402,10 +421,7 @@ export default function CreateLab() {
                   <ThemedSelect
                     value={experiment.kind}
                     onValueChange={(value) => updateExperiment(experiment.key, { kind: value as "sql" | "coding" })}
-                    options={[
-                      { value: "sql", label: "SQL" },
-                      { value: "coding", label: "Coding" },
-                    ]}
+                    options={[{ value: kind === "DBMS" ? "sql" : "coding", label: kind === "DBMS" ? "SQL" : "Coding" }]}
                   />
                   <Button
                     type="button"
@@ -429,8 +445,9 @@ export default function CreateLab() {
                 <Input
                   type="number"
                   className="w-28"
-                  value={experiment.points}
-                  onChange={(event) => updateExperiment(experiment.key, { points: stripZero(event.target.value) })}
+                  value={100}
+                  readOnly
+                  aria-label="Maximum marks (100)"
                 />
               </div>
               <Textarea
@@ -492,15 +509,14 @@ export default function CreateLab() {
           ))}
 
           <div className="flex gap-2">
-            <Button type="button" variant="ghost" onClick={() => setExperiments((current) => [...current, blankExperiment("sql")])}>
-              + SQL experiment
-            </Button>
-            <Button type="button" variant="ghost" onClick={() => setExperiments((current) => [...current, blankExperiment("coding")])}>
-              + Coding experiment
+            <Button type="button" variant="ghost" onClick={() => setExperiments((current) => [...current, blankExperiment(kind === "DBMS" ? "sql" : "coding")])}>
+              + {kind === "DBMS" ? "SQL" : "Coding"} experiment
             </Button>
           </div>
         </div>
 
+        {!isEdit && <Card className="space-y-4 p-5"><h2 className="text-lg font-semibold">Schedule sessions (optional)</h2><p className="text-sm text-muted-foreground">Choose experiments and a language for each date. You can add more sessions later.</p>{sessions.map((session, index) => <ClassroomScheduleEditor key={session.id} value={session} experiments={experiments.map(e => ({ ...e, id: e.key }))} onChange={value => setSessions(current => current.map((s, i) => i === index ? value : s))} onRemove={() => setSessions(current => current.filter(s => s.id !== session.id))} />)}<Button variant="outline" onClick={() => setSessions(current => [...current, newSchedule()])}>Add scheduled session</Button></Card>}
+        {existing.isError && <p role="alert" className="text-destructive">{existing.error.message}</p>}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={() => navigate("/faculty/labs")}>
             Cancel

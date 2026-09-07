@@ -160,8 +160,13 @@ function resolveFromChain(
   remoteAddress: string | null | undefined,
   blockList: BlockList,
 ): string | null {
+  // Forwarded headers are meaningful only when the immediate peer is our proxy.
+  const remote = normalizeIp(remoteAddress);
+  if (!remote) return null;
+  if (!blockList.check(remote.ip, remote.family)) return remote.ip;
   for (let index = chain.length - 1; index >= 0; index -= 1) {
     const hop = normalizeIp(chain[index]);
+    if (!hop) return null;
     if (hop && !blockList.check(hop.ip, hop.family)) {
       return hop.ip;
     }

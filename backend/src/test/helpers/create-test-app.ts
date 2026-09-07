@@ -5,9 +5,6 @@ import { createRequireCompleteProfile } from "../../middleware/require-complete-
 import { createRequireHod } from "../../middleware/require-hod";
 import { createClassTestService } from "../../modules/classtest/classtest.service";
 import { NoopCrosswordClueGenerator } from "../../modules/classtest/ai/crossword-clue-generator";
-import { createLabService } from "../../modules/lab/lab.service";
-import { createLabSessionService } from "../../modules/lab/lab-session.service";
-import { createLabAttendanceService } from "../../modules/lab/lab-attendance.service";
 import { StubSqlExecutor } from "../../execution/sql/stub-sql-executor";
 import { createDepartmentService } from "../../modules/department/department.service";
 import { createReportService } from "../../modules/report/report.service";
@@ -23,6 +20,8 @@ import type { SubmissionQueue } from "../../queue/submission-queue";
 import { createUserService } from "../../modules/user/user.service";
 import { StubExecutionProvider } from "../../execution/stub-execution-provider";
 import type { ApplicationDependencies } from "../../bootstrap/dependencies";
+import { InMemoryClassrooms } from "./in-memory-classrooms";
+import { createClassroomService } from "../../modules/classroom/classroom.service";
 import { normalizeRole } from "../../shared/utils/normalize";
 import {
   InMemoryContestAttemptRepository,
@@ -50,6 +49,7 @@ import {
 import { NoopHintGenerator, type HintGenerator } from "../../modules/problem/ai/hint-generator";
 
 export interface CreateTestAppOptions {
+  classroomNow?: () => Date;
   /** Override the report narrator to exercise the AI path (and its failure modes) deterministically. */
   aiReportGenerator?: AiReportGenerator;
   /** Override the hint generator to exercise hint generation without a local model. */
@@ -359,36 +359,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       crosswordClueGenerator: new NoopCrosswordClueGenerator(),
       now,
     }),
-    labService: createLabService({
-      labRepository,
-      labSqlSubmissionRepository,
-      labAttendanceSessionRepository,
-      labAdmissionRepository,
-      submissionRepository,
-      submissionQueue,
-      executionProvider: new StubExecutionProvider(),
-      userRepository,
-      sqlExecutor: new StubSqlExecutor(),
-      now,
-    }),
-    labSessionService: createLabSessionService({
-      labSessionRepository,
-      labSessionAttemptRepository,
-      labRepository,
-      userRepository,
-      submissionRepository,
-      submissionQueue,
-      executionProvider: new StubExecutionProvider(),
-      sqlExecutor: new StubSqlExecutor(),
-      now,
-    }),
-    labAttendanceService: createLabAttendanceService({
-      labAttendanceSessionRepository,
-      labAdmissionRepository,
-      labRepository,
-      userRepository,
-      now,
-    }),
+    classroomService: createClassroomService({ repository: new InMemoryClassrooms(), userRepository, executionProvider: new StubExecutionProvider(), sqlExecutor: new StubSqlExecutor(), now: options.classroomNow ?? now }),
     reportService: createReportService({
       contestRepository,
       contestAttemptRepository,

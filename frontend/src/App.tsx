@@ -26,16 +26,8 @@ import ClassTestFeedback from "./pages/student/ClassTestFeedback.tsx";
 import FacultyClassTests from "./pages/faculty/ClassTests.tsx";
 import CreateClassTest from "./pages/faculty/CreateClassTest.tsx";
 import ClassTestDetail from "./pages/faculty/ClassTestDetail.tsx";
-import StudentLabs from "./pages/student/Labs.tsx";
-import LabDetail from "./pages/student/LabDetail.tsx";
-import LabResponses from "./pages/faculty/LabResponses.tsx";
-import LabAttendance from "./pages/faculty/LabAttendance.tsx";
-import LabExperiment from "./pages/student/LabExperiment.tsx";
-import LabSessionAttempt from "./pages/student/LabSessionAttempt.tsx";
-import FacultyLabs from "./pages/faculty/Labs.tsx";
+import { ClassroomList, ClassroomPage } from "./pages/Classrooms";
 import CreateLab from "./pages/faculty/CreateLab.tsx";
-import CreateLabSession from "./pages/faculty/CreateLabSession.tsx";
-import LabSessionDetail from "./pages/faculty/LabSessionDetail.tsx";
 import AdminDashboard from "./pages/admin/Dashboard.tsx";
 import AdminDepartment from "./pages/admin/Department.tsx";
 import AdminStudentDetail from "./pages/admin/StudentDetail.tsx";
@@ -107,10 +99,8 @@ const App = () => (
             <Route path="/student/class-tests" element={<RoleRoute allowedRole="STUDENT">{classTestElement(<StudentClassTests />)}</RoleRoute>} />
             <Route path="/student/class-tests/:id/feedback" element={<RoleRoute allowedRole="STUDENT">{classTestElement(<ClassTestFeedback />)}</RoleRoute>} />
             <Route path="/student/class-tests/:id" element={<RoleRoute allowedRole="STUDENT">{classTestElement(<ClassTestAttempt />)}</RoleRoute>} />
-            <Route path="/student/labs" element={<RoleRoute allowedRole="STUDENT">{labElement(<StudentLabs />)}</RoleRoute>} />
-            <Route path="/student/labs/:id" element={<RoleRoute allowedRole="STUDENT">{labElement(<LabDetail />)}</RoleRoute>} />
-            <Route path="/student/labs/:id/experiments/:expId" element={<RoleRoute allowedRole="STUDENT">{labElement(<LabExperiment />)}</RoleRoute>} />
-            <Route path="/student/lab-sessions/:id" element={<RoleRoute allowedRole="STUDENT">{labElement(<LabSessionAttempt />)}</RoleRoute>} />
+            <Route path="/student/labs" element={<RoleRoute allowedRole="STUDENT">{labElement(<ClassroomList />)}</RoleRoute>} />
+            <Route path="/student/labs/:id" element={<RoleRoute allowedRole="STUDENT">{labElement(<ClassroomPage />)}</RoleRoute>} />
             <Route path="/complete-profile" element={<RoleRoute allowedRole={["STUDENT", "FACULTY"]}><CompleteProfile /></RoleRoute>} />
             <Route path="/faculty/dashboard" element={<RoleRoute allowedRole="FACULTY"><FacultyDashboard /></RoleRoute>} />
             <Route path="/faculty/department" element={<RoleRoute allowedRole="FACULTY"><FacultyDepartment /></RoleRoute>} />
@@ -119,13 +109,10 @@ const App = () => (
             <Route path="/faculty/class-tests/create" element={<RoleRoute allowedRole="FACULTY">{classTestElement(<CreateClassTest />)}</RoleRoute>} />
             <Route path="/faculty/class-tests/:id/edit" element={<RoleRoute allowedRole="FACULTY">{classTestElement(<CreateClassTest />)}</RoleRoute>} />
             <Route path="/faculty/class-tests/:id" element={<RoleRoute allowedRole="FACULTY">{classTestElement(<ClassTestDetail />)}</RoleRoute>} />
-            <Route path="/faculty/labs" element={<RoleRoute allowedRole="FACULTY">{labElement(<FacultyLabs />)}</RoleRoute>} />
+            <Route path="/faculty/labs" element={<RoleRoute allowedRole="FACULTY">{labElement(<ClassroomList faculty />)}</RoleRoute>} />
             <Route path="/faculty/labs/create" element={<RoleRoute allowedRole="FACULTY">{labElement(<CreateLab />)}</RoleRoute>} />
             <Route path="/faculty/labs/:id/edit" element={<RoleRoute allowedRole="FACULTY">{labElement(<CreateLab />)}</RoleRoute>} />
-            <Route path="/faculty/labs/:id/responses" element={<RoleRoute allowedRole="FACULTY">{labElement(<LabResponses />)}</RoleRoute>} />
-            <Route path="/faculty/lab-attendance" element={<RoleRoute allowedRole="FACULTY">{labElement(<LabAttendance />)}</RoleRoute>} />
-            <Route path="/faculty/lab-sessions/create" element={<RoleRoute allowedRole="FACULTY">{labElement(<CreateLabSession />)}</RoleRoute>} />
-            <Route path="/faculty/lab-sessions/:id" element={<RoleRoute allowedRole="FACULTY">{labElement(<LabSessionDetail />)}</RoleRoute>} />
+            <Route path="/faculty/labs/:id" element={<RoleRoute allowedRole="FACULTY">{labElement(<ClassroomPage faculty />)}</RoleRoute>} />
             <Route path="/faculty/students/:email" element={<RoleRoute allowedRole="FACULTY"><StudentProfile /></RoleRoute>} />
             <Route path="/faculty/create-problem" element={<RoleRoute allowedRole="FACULTY"><CreateProblem /></RoleRoute>} />
             <Route path="/faculty/create-contest" element={<RoleRoute allowedRole="FACULTY"><CreateContest /></RoleRoute>} />

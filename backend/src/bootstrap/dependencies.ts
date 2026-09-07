@@ -69,18 +69,12 @@ import {
   type AiReportGenerator,
 } from "../modules/report/ai/ollama-client";
 import { env } from "../config/env";
-import { createLabService, type LabService } from "../modules/lab/lab.service";
 import {
   MongoLabRepository,
   MongoLabSqlSubmissionRepository,
   type LabRepository,
   type LabSqlSubmissionRepository,
 } from "../modules/lab/lab.repository";
-import { createLabSessionService, type LabSessionService } from "../modules/lab/lab-session.service";
-import {
-  createLabAttendanceService,
-  type LabAttendanceService,
-} from "../modules/lab/lab-attendance.service";
 import {
   MongoLabAdmissionRepository,
   MongoLabAttendanceSessionRepository,
@@ -96,6 +90,8 @@ import {
 import type { SqlExecutor } from "../execution/sql/sql-executor";
 import { MysqlSandboxExecutor } from "../execution/sql/mysql-sandbox-executor";
 import { StubSqlExecutor } from "../execution/sql/stub-sql-executor";
+import { createClassroomService, type ClassroomService } from "../modules/classroom/classroom.service";
+import { MongoClassroomRepository } from "../modules/classroom/classroom.repository";
 
 export interface RepositoryBundle {
   userRepository: UserRepository;
@@ -129,13 +125,11 @@ export interface ServiceBundle {
   contestService: ContestService;
   departmentService: DepartmentService;
   classTestService: ClassTestService;
-  labService: LabService;
-  labSessionService: LabSessionService;
-  labAttendanceService: LabAttendanceService;
   reportService: ReportService;
 }
 
 export interface ApplicationDependencies extends ServiceBundle {
+  classroomService?: ClassroomService;
   userRepository: UserRepository;
   authMiddleware: RequestHandler;
   profileCompletionMiddleware: RequestHandler;
@@ -311,41 +305,9 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     now,
   });
 
-  const labService = createLabService({
-    labRepository: repositories.labRepository,
-    labSqlSubmissionRepository: repositories.labSqlSubmissionRepository,
-    labAttendanceSessionRepository: repositories.labAttendanceSessionRepository,
-    labAdmissionRepository: repositories.labAdmissionRepository,
-    submissionRepository: repositories.submissionRepository,
-    submissionQueue,
-    executionProvider,
-    userRepository: repositories.userRepository,
-    sqlExecutor,
-    now,
-  });
-
-  const labAttendanceService = createLabAttendanceService({
-    labAttendanceSessionRepository: repositories.labAttendanceSessionRepository,
-    labAdmissionRepository: repositories.labAdmissionRepository,
-    labRepository: repositories.labRepository,
-    userRepository: repositories.userRepository,
-    now,
-  });
-
-  const labSessionService = createLabSessionService({
-    labSessionRepository: repositories.labSessionRepository,
-    labSessionAttemptRepository: repositories.labSessionAttemptRepository,
-    labRepository: repositories.labRepository,
-    userRepository: repositories.userRepository,
-    submissionRepository: repositories.submissionRepository,
-    submissionQueue,
-    executionProvider,
-    sqlExecutor,
-    now,
-  });
-
   return {
     userRepository: repositories.userRepository,
+    classroomService: createClassroomService({ repository: new MongoClassroomRepository(), userRepository: repositories.userRepository, executionProvider, sqlExecutor, now }),
     authMiddleware: overrides.authMiddleware ?? createAuthMiddleware(userService),
     profileCompletionMiddleware: createRequireCompleteProfile(repositories.userRepository),
     hodMiddleware: createRequireHod(repositories.userRepository),
@@ -364,9 +326,6 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     contestService,
     departmentService,
     classTestService,
-    labService,
-    labSessionService,
-    labAttendanceService,
     reportService,
   };
 }

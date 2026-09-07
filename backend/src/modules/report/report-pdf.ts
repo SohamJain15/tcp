@@ -339,7 +339,7 @@ async function readLogoDataUri(): Promise<string> {
   throw new Error("Report logo asset is unavailable");
 }
 
-function getBrowser(): Promise<Browser> {
+export function getReportBrowser(): Promise<Browser> {
   const systemBrowser = [
     "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
     "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
@@ -366,7 +366,7 @@ export function buildContestReportHtml(report: ContestReportResponse, options: R
 export async function renderContestReportPdf(report: ContestReportResponse, options: ReportPdfOptions = {}): Promise<Buffer> {
   if (!report.metrics) throw new Error("Report metrics are unavailable");
   const logoDataUri = await readLogoDataUri();
-  const page = await (await getBrowser()).newPage();
+  const page = await (await getReportBrowser()).newPage();
   try {
     await page.setContent(buildContestReportHtml(report, options), { waitUntil: "load" });
     await page.emulateMedia({ media: "print" });

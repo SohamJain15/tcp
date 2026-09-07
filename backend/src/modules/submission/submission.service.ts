@@ -623,6 +623,10 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
         throw new AppError(404, "Submission not found");
       }
 
+      if (existingSubmission.sourceType === "lab_coding") {
+        throw new AppError(410, "Legacy lab submissions have been retired");
+      }
+
       if (existingSubmission.finalizationAppliedAt && isFinalSubmissionStatus(existingSubmission.status)) {
         const user = await dependencies.userRepository.getByEmail(existingSubmission.userEmail);
         return toSubmissionResponse(existingSubmission, true, {
