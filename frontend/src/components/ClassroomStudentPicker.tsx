@@ -60,7 +60,7 @@ export function ClassroomStudentPicker({
         <p className="mt-1 text-sm text-muted-foreground">
           Find students in {department}, semester {semester}, then select the
           students who belong to this batch. Selected students join using your
-          classroom code.
+          lab workspace code.
         </p>
       </div>
       <label className="flex items-center gap-2 text-sm">
@@ -69,7 +69,7 @@ export function ClassroomStudentPicker({
           checked={selectedEmails !== null}
           onChange={(e) => onChange(e.target.checked ? [] : null)}
         />
-        Restrict this classroom to selected students
+        Restrict this lab workspace to selected students
       </label>
       {selectedEmails !== null ? (
         <>
@@ -199,7 +199,7 @@ export function ClassroomStudentPicker({
           )}
           <p className="text-xs text-muted-foreground">
             Students outside your selection cannot join, even with the code.
-            Removing an enrolled student from the selection revokes classroom
+            Removing an enrolled student from the selection revokes lab workspace
             access; saved session records remain.
           </p>
         </>

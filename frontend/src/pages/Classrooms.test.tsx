@@ -136,7 +136,7 @@ function mount(faculty: boolean, list = false) {
           />
           <Route
             path="/student/labs/joined"
-            element={<div>Joined classroom</div>}
+            element={<div>Joined lab workspace</div>}
           />
         </Routes>
       </MemoryRouter>
@@ -158,18 +158,18 @@ describe("classroom screens", () => {
     fireEvent.click(screen.getByRole("button", { name: "Import from JSON" }));
     fireEvent.change(screen.getByPlaceholderText(/Paste an array/), { target: { value: JSON.stringify([{ kind: "coding", title: "Wrong kind", aim: "Coding" }]) } });
     fireEvent.click(screen.getByRole("button", { name: "Import" }));
-    expect(error).toHaveBeenCalledWith("Every experiment must match the classroom kind");
+    expect(error).toHaveBeenCalledWith("Every experiment must match the lab workspace kind");
     expect(screen.queryByDisplayValue("Wrong kind")).not.toBeInTheDocument();
   });
-  it("joins using a classroom code", async () => {
+  it("joins using a lab workspace code", async () => {
     vi.mocked(classroomApi.list).mockResolvedValue({ items: [] });
     vi.mocked(classroomApi.join).mockResolvedValue({ id: "joined" });
     mount(false, true);
-    fireEvent.change(screen.getByLabelText("Classroom code"), {
+    fireEvent.change(screen.getByLabelText("Lab Workspace Code"), {
       target: { value: "ABC123" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Join classroom" }));
-    expect(await screen.findByText("Joined classroom")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Join Lab Workspace" }));
+    expect(await screen.findByText("Joined lab workspace")).toBeInTheDocument();
     expect(classroomApi.join).toHaveBeenCalledWith("ABC123");
   });
   it("shows the teacher's marks grid and saves marks against the correct student and experiment", async () => {

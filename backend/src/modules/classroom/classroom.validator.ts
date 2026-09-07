@@ -39,7 +39,7 @@ export const classroomSchema = createLabSchema
         context.addIssue({
           code: "custom",
           path: ["experiments", index, "kind"],
-          message: "Experiment type must match the classroom kind",
+          message: "Experiment type must match the lab workspace kind",
         });
         return;
       }

@@ -28,7 +28,7 @@ export class MongoClassroomRepository implements ClassroomRepository {
     if (BSON.calculateObjectSize(record) > 14 * 1024 * 1024)
       throw new AppError(
         400,
-        "This classroom's experiment and session content is too large. Reduce the content or use another classroom.",
+        "This lab workspace's experiment and session content is too large. Reduce the content or use another lab workspace.",
       );
   }
   private ready: Promise<void> | undefined;

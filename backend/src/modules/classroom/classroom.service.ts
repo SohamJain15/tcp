@@ -91,7 +91,7 @@ export function buildSession(
   };
 }
 export function validateSchedule(sessions: ClassroomSession[]) {
-  if (sessions.length > 100) fail("A classroom supports up to 100 sessions");
+  if (sessions.length > 100) fail("A lab workspace supports up to 100 sessions");
   if (new Set(sessions.map((s) => s.id)).size !== sessions.length)
     fail("Duplicate session identifier");
   const ordered = [...sessions].sort(
@@ -99,7 +99,7 @@ export function validateSchedule(sessions: ClassroomSession[]) {
   );
   for (let i = 1; i < ordered.length; i++)
     if (sessionEnd(ordered[i - 1]) > Date.parse(ordered[i].startAt))
-      fail("Classroom sessions cannot overlap");
+      fail("Lab workspace sessions cannot overlap");
 }
 
 export function createClassroomService(deps: {
@@ -128,22 +128,22 @@ export function createClassroomService(deps: {
     );
     if (input.selectedStudentEmails.some((email) => !eligible.has(email)))
       fail(
-        "Selected students must belong to the classroom's department and semester",
+        "Selected students must belong to the lab workspace's department and semester",
       );
   }
   async function room(id: string) {
-    return (await repo.get(id)) ?? fail("Classroom not found", 404);
+    return (await repo.get(id)) ?? fail("Lab workspace not found", 404);
   }
   function teacher(user: AuthenticatedUser, record: ClassroomRecord) {
     if (user.role !== "FACULTY" || record.createdBy !== emailOf(user))
-      fail("You cannot manage this classroom", 403);
+      fail("You cannot manage this lab workspace", 403);
   }
   function member(user: AuthenticatedUser, record: ClassroomRecord) {
     if (
       user.role !== "STUDENT" ||
       !record.members.some((m) => m.email === emailOf(user))
     )
-      fail("Join this classroom first", 403);
+      fail("Join this lab workspace first", 403);
   }
   async function student(
     user: AuthenticatedUser,
@@ -156,7 +156,7 @@ export function createClassroomService(deps: {
       profile.department !== record.department ||
       profile.semester !== record.semester
     )
-      fail("Your department and semester must match this classroom", 403);
+      fail("Your department and semester must match this lab workspace", 403);
     return {
       email: emailOf(user),
       name: profile!.name ?? user.name,
@@ -176,7 +176,7 @@ export function createClassroomService(deps: {
       if (await repo.compareAndSwap(record, revision))
         return { ...record, revision: revision + 1 };
     }
-    return fail("The classroom changed. Please retry", 409);
+    return fail("The lab workspace changed. Please retry", 409);
   }
   /**
    * Attach the seeded-table preview to every SQL experiment.
@@ -404,10 +404,10 @@ export function createClassroomService(deps: {
       const record =
         (await repo.list()).find(
           (r) => r.joinCode === code.trim().toUpperCase(),
-        ) ?? fail("Classroom code not found", 404);
+        ) ?? fail("Lab Workspace Code not found", 404);
       await change(record.id, async (r) => {
         if (r.lifecycleState !== "Published")
-          fail("This classroom is not accepting enrollments", 403);
+          fail("This lab workspace is not accepting enrollments", 403);
         if (
           r.selectedStudentEmails &&
           !r.selectedStudentEmails.includes(emailOf(user))
@@ -500,7 +500,7 @@ export function createClassroomService(deps: {
         teacher(user, r);
         const s = findSession(r, sessionId);
         if (r.lifecycleState !== "Published")
-          fail("Publish the classroom before activating a session");
+          fail("Publish the lab workspace before activating a session");
         if (
           !["Ready", "Active"].includes(sessionStatus(s, deps.now().getTime()))
         )

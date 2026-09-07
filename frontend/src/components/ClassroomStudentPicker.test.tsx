@@ -86,7 +86,7 @@ describe("ClassroomStudentPicker", () => {
     expect(screen.getByTestId("selection")).toHaveTextContent("[]");
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: "Restrict this classroom to selected students",
+        name: "Restrict this lab workspace to selected students",
       }),
     );
     expect(screen.getByTestId("selection")).toHaveTextContent("null");

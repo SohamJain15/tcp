@@ -332,7 +332,7 @@ export default function CreateLab() {
       return;
     }
     if (parsed.some(e => e.kind !== (kind === "DBMS" ? "sql" : "coding"))) {
-      toast.error("Every experiment must match the classroom kind"); return;
+      toast.error("Every experiment must match the lab workspace kind"); return;
     }
     setExperiments(parsed);
     setShowImport(false);
@@ -458,7 +458,7 @@ export default function CreateLab() {
   const saveMutation = useMutation({
     mutationFn: () => (isEdit ? classroomApi.update(id!, buildPayload()) : classroomApi.create(buildPayload())),
     onSuccess: (data) => {
-      toast.success(isEdit ? "Lab updated" : "Lab created");
+      toast.success(isEdit ? "Lab workspace updated" : "Lab workspace created");
       navigate(`/faculty/labs/${data.classroom.id}`);
     },
     onError: (error: Error) => toast.error(error.message || "Could not save the lab"),
@@ -467,7 +467,7 @@ export default function CreateLab() {
   return (
     <AppLayout>
       <div className="container max-w-4xl space-y-6 px-3 py-5 sm:px-6 sm:py-8">
-        <h1 className="font-display text-3xl font-bold">{isEdit ? "Edit classroom" : "Create a batch classroom"}</h1>
+        <h1 className="font-display text-3xl font-bold">{isEdit ? "Edit Lab Workspace" : "Create a Lab Workspace"}</h1>
 
         <Card className="space-y-4 p-5">
           <div className="grid gap-3 md:grid-cols-2">
@@ -486,7 +486,7 @@ export default function CreateLab() {
                 onValueChange={(value) => {
                   const next = value as "DSA" | "DBMS";
                   if (next === kind) return;
-                  if (experiments.some(e => e.title.trim() || e.aim.trim())) { toast.error("Remove authored experiments before changing the classroom kind"); return; }
+                  if (experiments.some(e => e.title.trim() || e.aim.trim())) { toast.error("Remove authored experiments before changing the lab workspace kind"); return; }
                   setKind(next); setExperiments([blankExperiment(next === "DBMS" ? "sql" : "coding")]); setSessions([]);
                 }}
                 options={[
@@ -713,7 +713,7 @@ export default function CreateLab() {
             Cancel
           </Button>
           <Button type="button" disabled={saveMutation.isPending || (selectedStudentEmails !== null && selectedStudentEmails.length === 0)} onClick={() => saveMutation.mutate()}>
-            {saveMutation.isPending ? "Saving…" : isEdit ? "Save changes" : "Create lab"}
+            {saveMutation.isPending ? "Saving…" : isEdit ? "Save changes" : "Create Lab Workspace"}
           </Button>
         </div>
       </div>

@@ -44,16 +44,16 @@ export function ClassroomList({ faculty = false }: { faculty?: boolean }) {
       <div className="container max-w-6xl space-y-6 py-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="font-display text-3xl font-bold">Lab classrooms</h1>
+            <h1 className="font-display text-3xl font-bold">Lab Workspaces</h1>
             <p className="mt-2 text-muted-foreground">
               {faculty
                 ? "Manage batch sessions, attendance, and experiment marks."
-                : "Your batch classrooms, scheduled work, and lab records."}
+                : "Your batch lab workspaces, scheduled work, and lab records."}
             </p>
           </div>
           {faculty && (
             <Button asChild className="bg-accent text-accent-foreground hover:bg-accent/90">
-              <Link to="/faculty/labs/create">Create classroom</Link>
+              <Link to="/faculty/labs/create">Create Lab Workspace</Link>
             </Button>
           )}
         </div>
@@ -67,7 +67,7 @@ export function ClassroomList({ faculty = false }: { faculty?: boolean }) {
               }}
             >
               <label className="space-y-1 text-sm">
-                Classroom code
+                Lab Workspace Code
                 <Input
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
@@ -76,12 +76,12 @@ export function ClassroomList({ faculty = false }: { faculty?: boolean }) {
                 />
               </label>
               <Button className="bg-accent text-accent-foreground hover:bg-accent/90" disabled={!code.trim() || join.isPending}>
-                Join classroom
+                Join Lab Workspace
               </Button>
             </form>
           </Card>
         )}
-        {query.isLoading && <p>Loading classrooms…</p>}
+        {query.isLoading && <p>Loading lab workspaces…</p>}
         {query.isError && (
           <p role="alert" className="text-destructive">
             {query.error.message}
@@ -90,8 +90,8 @@ export function ClassroomList({ faculty = false }: { faculty?: boolean }) {
         {query.data?.items.length === 0 && (
           <Card className="p-8 text-muted-foreground">
             {faculty
-              ? "Create your first batch classroom to get started."
-              : "Join a classroom using the code shared by your teacher."}
+              ? "Create your first batch lab workspace to get started."
+              : "Join a lab workspace using the code shared by your teacher."}
           </Card>
         )}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -179,7 +179,7 @@ export function ClassroomPage({ faculty = false }: { faculty?: boolean }) {
       <AppLayout>
         <div className="container py-8">
           <p role={query.isError ? "alert" : undefined}>
-            {query.isError ? query.error.message : "Loading classroom…"}
+            {query.isError ? query.error.message : "Loading lab workspace…"}
           </p>
         </div>
       </AppLayout>
@@ -196,7 +196,7 @@ export function ClassroomPage({ faculty = false }: { faculty?: boolean }) {
           className="text-sm text-primary"
           to={`/${faculty ? "faculty" : "student"}/labs`}
         >
-          ← Classrooms
+          ← Lab Workspaces
         </Link>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -218,12 +218,12 @@ export function ClassroomPage({ faculty = false }: { faculty?: boolean }) {
                 </code>
               </div>
               <Button asChild variant="outline">
-                <Link to={`/faculty/labs/${id}/edit`}>Edit classroom</Link>
+                <Link to={`/faculty/labs/${id}/edit`}>Edit Lab Workspace</Link>
               </Button>
             </div>
           )}
         </div>
-        <nav className="flex flex-wrap border-b border-border" aria-label="Classroom sections">
+        <nav className="flex flex-wrap border-b border-border" aria-label="Lab workspace sections">
           {["sessions", "marks", ...(faculty ? ["students"] : ["history"])].map(
             (item) => (
               <button
@@ -477,7 +477,7 @@ export function ClassroomPage({ faculty = false }: { faculty?: boolean }) {
                         onClick={() => {
                           if (
                             window.confirm(
-                              `Remove ${student.name} from this classroom? Their session records will be retained.`,
+                              `Remove ${student.name} from this lab workspace? Their session records will be retained.`,
                             )
                           )
                             remove.mutate(student.email);
