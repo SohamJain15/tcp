@@ -17,6 +17,23 @@ export interface ProblemTestCase {
   explanation?: string;
 }
 
+/**
+ * A SQL practice problem, in the LeetCode/HackerRank shape: the schema is seeded, the student
+ * writes one query, and the verdict is a result-grid comparison against the reference query.
+ *
+ * The same sandbox and comparison the DBMS lab uses (`execution/sql/`) — column *names* are
+ * ignored, so an alias is not a wrong answer, and `ordered` decides whether row order counts.
+ */
+export interface ProblemSqlSpec {
+  /** DDL + seed data. Shown to the student, the way HackerRank shows the table definitions. */
+  schemaSql: string;
+  /** The reference query. Never sent to a student; the expected grid is derived from it. */
+  solutionSql: string;
+  ordered: boolean;
+}
+
+export type ProblemKind = "coding" | "sql";
+
 export interface ProblemRecord {
   id: string;
   title: string;
@@ -38,6 +55,10 @@ export interface ProblemRecord {
   totalSubmissions: number;
   acceptedSubmissions: number;
   acceptanceRate: number;
+  /** Absent on every problem authored before SQL problems existed, which are all coding. */
+  kind?: ProblemKind;
+  /** Present only when `kind` is "sql". Replaces the test cases, which SQL problems do not use. */
+  sql?: ProblemSqlSpec;
   sampleTestCases: ProblemTestCase[];
   hiddenTestCases: ProblemTestCase[];
   /**
@@ -79,6 +100,7 @@ export interface ProblemHint {
 export interface StudentProblemSummaryResponse {
   id: string;
   title: string;
+  kind: ProblemKind;
   difficulty: Difficulty;
   tags: string[];
   userStatus: StudentProblemStatus;
@@ -109,6 +131,11 @@ export interface StudentProblemDetailResponse extends StudentProblemSummaryRespo
   starterCode?: Partial<Record<ExecutableLanguage, string>>;
   /** Whether this problem uses the metadata-driven harness. */
   harnessEnabled?: boolean;
+  /** "sql" switches the workspace to a single SQL editor and a result grid. */
+  kind: ProblemKind;
+  /** SQL problems: the seed the student is shown. The reference query is never included. */
+  schemaSql?: string;
+  ordered?: boolean;
 }
 
 export interface ManageProblemSummaryResponse {
@@ -135,6 +162,9 @@ export interface ManageProblemDetailResponse extends ManageProblemSummaryRespons
   targetDepartment: Department | null;
   createdBy: string;
   createdByRole: UserRole;
+  kind: ProblemKind;
+  /** Faculty see the reference query too — they authored it. */
+  sql?: ProblemSqlSpec;
   sampleTestCases: ProblemTestCase[];
   hiddenTestCases: ProblemTestCase[];
   harness?: HarnessSpec;
@@ -148,6 +178,7 @@ export function toStudentProblemSummary(
   return {
     id: problem.id,
     title: problem.title,
+    kind: problem.kind ?? "coding",
     difficulty: problem.difficulty,
     tags: problem.tags,
     userStatus,
@@ -178,6 +209,9 @@ export function toStudentProblemDetail(
       hidden: false as const,
     })),
     sampleTestCases: problem.sampleTestCases,
+    // The seed is the problem statement for a SQL question — the student has to read the table
+    // definitions to write the query. The reference query is deliberately not included.
+    ...(problem.sql ? { schemaSql: problem.sql.schemaSql, ordered: problem.sql.ordered } : {}),
     ...(problem.harness
       ? { harnessEnabled: true, starterCode: buildStarterCode(problem.harness) }
       : {}),
@@ -233,6 +267,8 @@ export function toManageProblemDetail(problem: ProblemRecord): ManageProblemDeta
     targetDepartment: problem.targetDepartment,
     createdBy: problem.createdBy,
     createdByRole: problem.createdByRole,
+    kind: problem.kind ?? "coding",
+    sql: problem.sql,
     sampleTestCases: problem.sampleTestCases,
     hiddenTestCases: problem.hiddenTestCases,
     harness: problem.harness,

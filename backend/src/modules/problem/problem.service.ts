@@ -430,7 +430,9 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
       let harness = payload.harness ?? undefined;
       let sampleTestCases = payload.sampleTestCases;
       let hiddenTestCases = payload.hiddenTestCases;
-      if (!harness) {
+      // A SQL problem has no test cases and never runs on Judge0, so harness inference has nothing
+      // to look at and would only misfire.
+      if (!harness && payload.kind !== "sql") {
         const inferred = inferHarness({
           title: payload.title,
           tags: payload.tags,
@@ -469,6 +471,8 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
         totalSubmissions: 0,
         acceptedSubmissions: 0,
         acceptanceRate: 0,
+        kind: payload.kind,
+        sql: payload.sql,
         sampleTestCases,
         hiddenTestCases,
         harness,

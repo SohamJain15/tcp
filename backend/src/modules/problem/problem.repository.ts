@@ -11,7 +11,7 @@ import {
 } from "../../shared/utils/normalize";
 import type { HarnessSpec } from "../../execution/harness/contract";
 import { harnessSpecSchema } from "../../execution/harness/schema";
-import type { ProblemHint, ProblemRecord, ProblemTestCase } from "./problem.model";
+import type { ProblemHint, ProblemRecord, ProblemSqlSpec, ProblemTestCase } from "./problem.model";
 
 export interface ProblemRepository {
   getById(problemId: string): Promise<ProblemRecord | null>;
@@ -131,12 +131,26 @@ function mapProblemRecord(problemId: string, data: Record<string, unknown>): Pro
         : hiddenFromExamples.length > 0
           ? hiddenFromExamples
           : normalizeTestCaseList(data.testCases),
+    kind: data.kind === "sql" ? "sql" : "coding",
+    sql: normalizeSqlSpec(data.sql),
     harness: normalizeHarness(data.harness),
     hints: normalizeHints(data.hints),
     hintsLockedAt: toDate(data.hintsLockedAt),
     createdAt,
     updatedAt,
   };
+}
+
+/** Absent on every coding problem, and on any SQL document written before the spec was complete. */
+function normalizeSqlSpec(value: unknown): ProblemSqlSpec | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const data = value as Record<string, unknown>;
+  if (typeof data.schemaSql !== "string" || typeof data.solutionSql !== "string") {
+    return undefined;
+  }
+  return { schemaSql: data.schemaSql, solutionSql: data.solutionSql, ordered: data.ordered === true };
 }
 
 /** Absent on every problem created before hints existed, hence the empty-array default. */

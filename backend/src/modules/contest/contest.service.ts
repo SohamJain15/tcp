@@ -845,7 +845,8 @@ async function autoSubmitPendingCodingDrafts(
       question,
       workingAttempt,
       state.draftCode,
-      state.draftLanguage ?? lastSubmission?.language ?? "cpp",
+      // Contests carry coding questions only, so a SQL submission can never be the last one here.
+      state.draftLanguage ?? (lastSubmission?.language === "sql" ? undefined : lastSubmission?.language) ?? "cpp",
       attempt.userEmail,
       now,
       dependencies,

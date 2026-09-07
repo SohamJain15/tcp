@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { StubExecutionProvider } from "../execution/stub-execution-provider";
 import { createSubmissionService } from "../modules/submission/submission.service";
 import type { SubmissionQueue } from "../queue/submission-queue";
+import { StubSqlExecutor } from "../execution/sql/stub-sql-executor";
 import {
   InMemoryContestAttemptRepository,
   InMemoryClassTestRepository,
@@ -137,6 +138,7 @@ describe("submission recovery", () => {
     };
 
     const service = createSubmissionService({
+    sqlExecutor: new StubSqlExecutor(),
       problemRepository: new InMemoryProblemRepository(),
       contestRepository: new InMemoryContestRepository(),
       contestAttemptRepository: new InMemoryContestAttemptRepository(),

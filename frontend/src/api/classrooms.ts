@@ -1,5 +1,10 @@
 import { apiRequest, getApiBaseUrl } from "./client";
-import type { Department, FacultyLabExperiment, SqlResultSet } from "./types";
+import type {
+  Department,
+  FacultyLabExperiment,
+  SqlResultSet,
+  SqlScriptResult,
+} from "./types";
 
 /** UUIDs also work on HTTP lab-network origins, where randomUUID may be unavailable. */
 export function newRequestKey(): string {
@@ -64,6 +69,8 @@ export interface WorkOutput {
   stdout: string;
   stderr: string;
   table?: SqlResultSet;
+  /** Script experiments only: per-statement outcomes, the resulting tables, and the checks. */
+  script?: SqlScriptResult;
   truncated: boolean;
   runtimeMs: number;
 }

@@ -2,6 +2,7 @@ import type { Department, ExecutableLanguage } from "../../shared/types/domain";
 import { toIsoString } from "../../shared/utils/date";
 import { buildLanguagePercentileScorer } from "../../shared/utils/language-percentile";
 import type { SubmissionAnalyticsRecord } from "../submission/submission.repository";
+import type { SubmissionLanguage } from "../submission/submission.model";
 
 /**
  * Relative pull of runtime and memory in the per-problem optimization score.
@@ -26,7 +27,7 @@ export interface ProblemLeaderboardItem {
   userName: string | null;
   userUid: string | null;
   userDepartment: Department | null;
-  language: ExecutableLanguage;
+  language: SubmissionLanguage;
   runtimeMs: number;
   memoryKb: number;
   /** Efficiency against others solving this problem in the same language, 0-1. */
@@ -161,7 +162,7 @@ export function buildProblemLeaderboard(
 export function buildProblemLeaderboardPodium(
   ranked: readonly ProblemLeaderboardItem[],
 ): ProblemLeaderboardPodium {
-  const seenLanguages = new Set<ExecutableLanguage>();
+  const seenLanguages = new Set<SubmissionLanguage>();
 
   return {
     overall: ranked.slice(0, 3),

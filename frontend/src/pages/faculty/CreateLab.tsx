@@ -8,7 +8,16 @@ import { labApi } from "@/api/services";
 import { classroomApi, newRequestKey, type ScheduleDraft } from "@/api/classrooms";
 import { ClassroomScheduleEditor, newSchedule } from "@/components/ClassroomScheduleEditor";
 import { ClassroomStudentPicker } from "@/components/ClassroomStudentPicker";
-import { DEPARTMENTS, type Department, type SqlResultSet } from "@/api/types";
+import {
+  DEPARTMENTS,
+  SQL_CHECK_TYPES,
+  SQL_CONSTRAINT_KINDS,
+  type Department,
+  type SqlCheck,
+  type SqlCheckType,
+  type SqlMode,
+  type SqlResultSet,
+} from "@/api/types";
 import { AppLayout } from "@/components/AppLayout";
 import { SqlResultTable } from "@/components/SqlWorkspace";
 import { ThemedSelect } from "@/components/ThemedSelect";
@@ -38,6 +47,9 @@ interface ExperimentDraft {
   schemaSql: string;
   solutionSql: string;
   ordered: boolean;
+  sqlMode: SqlMode;
+  checks: SqlCheck[];
+  facultyMarked: boolean;
   preview?: SqlResultSet;
   // coding
   difficulty: "Easy" | "Medium" | "Hard";
@@ -63,6 +75,9 @@ function blankExperiment(kind: "sql" | "coding"): ExperimentDraft {
     schemaSql: "CREATE TABLE example (id INT, name VARCHAR(50));\nINSERT INTO example VALUES (1, 'Ada');",
     solutionSql: "SELECT * FROM example;",
     ordered: false,
+    sqlMode: "query",
+    checks: [],
+    facultyMarked: false,
     difficulty: "Easy",
     supportedLanguages: ["python"],
     constraints: "",
@@ -80,12 +95,27 @@ const stripZero = (value: string) => Number(value.replace(/^0+(?=\d)/, ""));
 const LAB_EXPERIMENTS_EXAMPLE_JSON = `[
   {
     "kind": "sql",
+    "sqlMode": "query",
     "title": "List all students",
     "aim": "Select every student ordered by id.",
     "points": 10,
     "schemaSql": "CREATE TABLE students (id INT, name VARCHAR(50));\\nINSERT INTO students VALUES (1,'Ada'),(2,'Alan');",
     "solutionSql": "SELECT id, name FROM students ORDER BY id;",
     "ordered": true
+  },
+  {
+    "kind": "sql",
+    "sqlMode": "script",
+    "title": "Create a set of tables and apply constraints",
+    "aim": "Create at least three related tables using PRIMARY KEY, FOREIGN KEY, UNIQUE and NOT NULL, then insert sample rows.",
+    "points": 20,
+    "schemaSql": "",
+    "checks": [
+      { "type": "tableCount", "label": "At least 3 tables created", "min": 3 },
+      { "type": "hasConstraint", "label": "A primary key is defined", "anyTable": true, "constraint": "PRIMARY KEY" },
+      { "type": "hasConstraint", "label": "A foreign key links two tables", "anyTable": true, "constraint": "FOREIGN KEY" },
+      { "type": "rowCount", "label": "Sample rows inserted", "anyTable": true, "min": 3 }
+    ]
   },
   {
     "kind": "coding",
@@ -104,7 +134,56 @@ const LAB_EXPERIMENTS_EXAMPLE_JSON = `[
   }
 ]`;
 
-/** Parses a JSON array of experiments into editable drafts. Lenient — fills sensible defaults. */
+const SQL_KEYS = new Set([
+  "kind",
+  "sqlMode",
+  "title",
+  "aim",
+  "points",
+  "schemaSql",
+  "solutionSql",
+  "ordered",
+  "checks",
+  "facultyMarked",
+]);
+const CODING_KEYS = new Set([
+  "kind",
+  "title",
+  "aim",
+  "points",
+  "difficulty",
+  "supportedLanguages",
+  "constraints",
+  "inputFormat",
+  "outputFormat",
+  "timeLimitSeconds",
+  "memoryLimitMb",
+  "sampleTestCases",
+  "hiddenTestCases",
+]);
+const CHECK_KEYS = new Set([
+  "type",
+  "label",
+  "table",
+  "anyTable",
+  "column",
+  "dataType",
+  "constraint",
+  "min",
+  "max",
+  "sql",
+  "minRows",
+  "maxRows",
+]);
+
+/**
+ * Parses a JSON array of experiments into editable drafts.
+ *
+ * Strict on purpose. A lenient parse silently swapped a misspelled `schemaSQL` for the placeholder
+ * seed, so the lab was published against an `example` table nobody wrote — and the failure only
+ * surfaced later as "table doesn't exist" in a student's workspace, with no way to trace it back.
+ * An unknown key is now a named error at import time.
+ */
 function parseLabExperiments(source: string): { experiments?: ExperimentDraft[]; error?: string } {
   let data: unknown;
   try {
@@ -119,12 +198,27 @@ function parseLabExperiments(source: string): { experiments?: ExperimentDraft[];
   const experiments: ExperimentDraft[] = [];
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index];
-    if (!item || typeof item !== "object") {
-      return { error: `Experiment ${index + 1} is not an object` };
+    const where = `Experiment ${index + 1}`;
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return { error: `${where} is not an object` };
     }
     const record = item as Record<string, unknown>;
-    if (record.kind !== "sql" && record.kind !== "coding") return { error: `Experiment ${index + 1} must specify kind sql or coding` };
-    const kind = record.kind === "coding" ? "coding" : "sql";
+    if (record.kind !== "sql" && record.kind !== "coding") {
+      return { error: `${where} must specify kind sql or coding` };
+    }
+    const kind = record.kind;
+    const allowed = kind === "sql" ? SQL_KEYS : CODING_KEYS;
+    const unknown = Object.keys(record).filter((key) => !allowed.has(key));
+    if (unknown.length > 0) {
+      return { error: `${where}: unknown field${unknown.length === 1 ? "" : "s"} ${unknown.join(", ")}` };
+    }
+    if (typeof record.title !== "string" || record.title.trim() === "") {
+      return { error: `${where} needs a title` };
+    }
+    if (typeof record.aim !== "string" || record.aim.trim() === "") {
+      return { error: `${where} needs an aim` };
+    }
+
     const base = blankExperiment(kind);
     const cases = (value: unknown): TestCaseDraft[] =>
       Array.isArray(value)
@@ -133,13 +227,67 @@ function parseLabExperiments(source: string): { experiments?: ExperimentDraft[];
             return { input: String(testCase.input ?? ""), output: String(testCase.output ?? "") };
           })
         : [emptyCase()];
+
+    const checks: SqlCheck[] = [];
+    if (kind === "sql" && record.checks !== undefined) {
+      if (!Array.isArray(record.checks)) {
+        return { error: `${where}: "checks" must be an array` };
+      }
+      for (let position = 0; position < record.checks.length; position += 1) {
+        const entry = record.checks[position] as Record<string, unknown>;
+        const at = `${where}, check ${position + 1}`;
+        if (!entry || typeof entry !== "object") {
+          return { error: `${at} is not an object` };
+        }
+        if (!SQL_CHECK_TYPES.includes(entry.type as SqlCheckType)) {
+          return { error: `${at}: unknown type "${String(entry.type)}"` };
+        }
+        if (typeof entry.label !== "string" || entry.label.trim() === "") {
+          return { error: `${at} needs a label — students see it as the rubric` };
+        }
+        const strayKeys = Object.keys(entry).filter((key) => !CHECK_KEYS.has(key));
+        if (strayKeys.length > 0) {
+          return { error: `${at}: unknown field${strayKeys.length === 1 ? "" : "s"} ${strayKeys.join(", ")}` };
+        }
+        checks.push(entry as unknown as SqlCheck);
+      }
+    }
+
+    const sqlMode: SqlMode = record.sqlMode === "script" ? "script" : "query";
+    if (kind === "sql" && record.sqlMode !== undefined && record.sqlMode !== "query" && record.sqlMode !== "script") {
+      return { error: `${where}: "sqlMode" must be "query" or "script"` };
+    }
+    if (kind === "sql" && sqlMode === "query" && checks.length > 0) {
+      return { error: `${where}: checks apply to script experiments — set "sqlMode": "script"` };
+    }
+    if (kind === "sql" && sqlMode === "script" && checks.length === 0 && record.facultyMarked !== true) {
+      return {
+        error: `${where}: a script experiment needs at least one check, or "facultyMarked": true`,
+      };
+    }
+
     experiments.push({
       ...base,
-      title: String(record.title ?? ""),
-      aim: String(record.aim ?? ""),
-      points: Number(record.points ?? base.points),
-      schemaSql: String(record.schemaSql ?? base.schemaSql),
-      solutionSql: String(record.solutionSql ?? base.solutionSql),
+      title: record.title,
+      aim: record.aim,
+      points: record.points === undefined ? base.points : Number(record.points),
+      sqlMode,
+      checks,
+      facultyMarked: record.facultyMarked === true,
+      // Script experiments legitimately start from an empty database, so an omitted seed there
+      // means "empty", not "use the placeholder".
+      schemaSql:
+        record.schemaSql !== undefined
+          ? String(record.schemaSql)
+          : sqlMode === "script"
+            ? ""
+            : base.schemaSql,
+      solutionSql:
+        record.solutionSql !== undefined
+          ? String(record.solutionSql)
+          : sqlMode === "script"
+            ? ""
+            : base.solutionSql,
       ordered: record.ordered === true,
       difficulty: (record.difficulty as ExperimentDraft["difficulty"]) ?? "Easy",
       supportedLanguages: Array.isArray(record.supportedLanguages)
@@ -224,6 +372,9 @@ export default function CreateLab() {
           schemaSql: experiment.schemaSql ?? "",
           solutionSql: experiment.solutionSql ?? "",
           ordered: experiment.ordered ?? false,
+          sqlMode: experiment.sqlMode ?? "query",
+          checks: experiment.checks ?? [],
+          facultyMarked: experiment.facultyMarked ?? false,
           difficulty: experiment.difficulty ?? "Easy",
           supportedLanguages: experiment.supportedLanguages ?? ["python"],
           constraints: experiment.constraints ?? "",
@@ -276,10 +427,13 @@ export default function CreateLab() {
             number: index + 1,
             title: experiment.title,
             aim: experiment.aim,
-            points: 100,
+            points: experiment.points,
+            sqlMode: experiment.sqlMode,
             schemaSql: experiment.schemaSql,
             solutionSql: experiment.solutionSql,
             ordered: experiment.ordered,
+            checks: experiment.sqlMode === "script" ? experiment.checks : [],
+            facultyMarked: experiment.sqlMode === "script" && experiment.facultyMarked,
           }
         : {
             id: experiment.key,
@@ -287,7 +441,7 @@ export default function CreateLab() {
             number: index + 1,
             title: experiment.title,
             aim: experiment.aim,
-            points: 100,
+            points: experiment.points,
             difficulty: experiment.difficulty,
             constraints: experiment.constraints,
             inputFormat: experiment.inputFormat,
@@ -465,7 +619,28 @@ export default function CreateLab() {
               {experiment.kind === "sql" ? (
                 <>
                   <div>
-                    <Label className="text-xs">Schema + seed SQL (shown to students)</Label>
+                    <Label className="text-xs">Experiment type</Label>
+                    <ThemedSelect
+                      value={experiment.sqlMode}
+                      onValueChange={(value) =>
+                        updateExperiment(experiment.key, { sqlMode: value as SqlMode })
+                      }
+                      options={[
+                        { value: "query", label: "Query — write one statement against a seeded schema" },
+                        { value: "script", label: "Application — write a script (DDL / DML / design your own schema)" },
+                      ]}
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {experiment.sqlMode === "query"
+                        ? "Graded by comparing the student's result grid to your reference query."
+                        : "Students run many statements. Because they design their own tables, grading is by the checks below plus your own mark — not by comparing to a reference answer."}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-xs">
+                      Schema + seed SQL (shown to students)
+                      {experiment.sqlMode === "script" && " — leave empty to start them on an empty database"}
+                    </Label>
                     <Textarea
                       className="font-mono-code"
                       rows={4}
@@ -473,38 +648,49 @@ export default function CreateLab() {
                       onChange={(event) => updateExperiment(experiment.key, { schemaSql: event.target.value })}
                     />
                   </div>
-                  <div>
-                    <Label className="text-xs">Reference (solution) query — hidden from students</Label>
-                    <Textarea
-                      className="font-mono-code"
-                      rows={3}
-                      value={experiment.solutionSql}
-                      onChange={(event) => updateExperiment(experiment.key, { solutionSql: event.target.value })}
+                  {experiment.sqlMode === "query" ? (
+                    <>
+                      <div>
+                        <Label className="text-xs">Reference (solution) query — hidden from students</Label>
+                        <Textarea
+                          className="font-mono-code"
+                          rows={3}
+                          value={experiment.solutionSql}
+                          onChange={(event) => updateExperiment(experiment.key, { solutionSql: event.target.value })}
+                        />
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <label className="flex items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={experiment.ordered}
+                            onCheckedChange={(checked) =>
+                              updateExperiment(experiment.key, { ordered: checked === true })
+                            }
+                          />
+                          Row order matters (task uses ORDER BY)
+                        </label>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={previewMutation.isPending}
+                          onClick={() => runPreview(experiment)}
+                        >
+                          {previewMutation.isPending ? "Running…" : "Preview expected result"}
+                        </Button>
+                      </div>
+                      {experiment.preview && (
+                        <div>
+                          <p className="mb-1 text-xs text-muted-foreground">Expected result:</p>
+                          <SqlResultTable result={experiment.preview} />
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <ChecksEditor
+                      experiment={experiment}
+                      onChange={(patch) => updateExperiment(experiment.key, patch)}
                     />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label className="flex items-center gap-2 text-sm">
-                      <Checkbox
-                        checked={experiment.ordered}
-                        onCheckedChange={(checked) => updateExperiment(experiment.key, { ordered: checked === true })}
-                      />
-                      Row order matters (task uses ORDER BY)
-                    </label>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={previewMutation.isPending}
-                      onClick={() => runPreview(experiment)}
-                    >
-                      {previewMutation.isPending ? "Running…" : "Preview expected result"}
-                    </Button>
-                  </div>
-                  {experiment.preview && (
-                    <div>
-                      <p className="mb-1 text-xs text-muted-foreground">Expected result:</p>
-                      <SqlResultTable result={experiment.preview} />
-                    </div>
                   )}
                 </>
               ) : (
@@ -532,6 +718,167 @@ export default function CreateLab() {
         </div>
       </div>
     </AppLayout>
+  );
+}
+
+const CHECK_TYPE_LABELS: Record<SqlCheckType, string> = {
+  tableExists: "A table with this name exists",
+  tableCount: "How many tables were created",
+  hasColumn: "A column exists (optionally of a given type)",
+  hasConstraint: "A constraint is present (PK / FK / UNIQUE / …)",
+  rowCount: "A table holds at least this many rows",
+  queryReturns: "A verification query returns rows",
+};
+
+/**
+ * The rubric editor for an application experiment.
+ *
+ * Every check can be pinned to one table name or left name-agnostic. Name-agnostic is the default
+ * and the important one: students design their own schema, so `students` and `student_tbl` are both
+ * correct answers, and a check that insists on one of them would fail half the class.
+ */
+function ChecksEditor({
+  experiment,
+  onChange,
+}: {
+  experiment: ExperimentDraft;
+  onChange: (patch: Partial<ExperimentDraft>) => void;
+}) {
+  const patchCheck = (index: number, patch: Partial<SqlCheck>) =>
+    onChange({
+      checks: experiment.checks.map((check, position) => (position === index ? { ...check, ...patch } : check)),
+    });
+  const scoped = (check: SqlCheck) => check.table !== undefined && check.anyTable !== true;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Label className="text-xs">Checks — students see these labels as their rubric</Label>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() =>
+            onChange({
+              checks: [
+                ...experiment.checks,
+                { type: "hasConstraint", label: "", anyTable: true, constraint: "PRIMARY KEY" },
+              ],
+            })
+          }
+        >
+          Add check
+        </Button>
+      </div>
+
+      {experiment.checks.length === 0 ? (
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            checked={experiment.facultyMarked}
+            onCheckedChange={(checked) => onChange({ facultyMarked: checked === true })}
+          />
+          No automatic checks — I will mark this experiment myself
+        </label>
+      ) : (
+        experiment.checks.map((check, index) => (
+          <Card key={index} className="space-y-2 p-3">
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1 space-y-2">
+                <ThemedSelect
+                  value={check.type}
+                  onValueChange={(value) => patchCheck(index, { type: value as SqlCheckType })}
+                  options={SQL_CHECK_TYPES.map((type) => ({ value: type, label: CHECK_TYPE_LABELS[type] }))}
+                />
+                <Input
+                  placeholder="Label shown to the student, e.g. “A foreign key links two tables”"
+                  value={check.label}
+                  onChange={(event) => patchCheck(index, { label: event.target.value })}
+                />
+              </div>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label="Remove check"
+                onClick={() => onChange({ checks: experiment.checks.filter((_, position) => position !== index) })}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              {check.type === "hasConstraint" && (
+                <ThemedSelect
+                  value={check.constraint ?? "PRIMARY KEY"}
+                  onValueChange={(value) =>
+                    patchCheck(index, { constraint: value as SqlCheck["constraint"] })
+                  }
+                  options={SQL_CONSTRAINT_KINDS.map((kind) => ({ value: kind, label: kind }))}
+                />
+              )}
+              {(check.type === "hasColumn" || check.type === "hasConstraint") && (
+                <Input
+                  placeholder="Column name (optional)"
+                  value={check.column ?? ""}
+                  onChange={(event) => patchCheck(index, { column: event.target.value || undefined })}
+                />
+              )}
+              {check.type === "hasColumn" && (
+                <Input
+                  placeholder="Data type, e.g. varchar (optional)"
+                  value={check.dataType ?? ""}
+                  onChange={(event) => patchCheck(index, { dataType: event.target.value || undefined })}
+                />
+              )}
+              {(check.type === "tableCount" || check.type === "rowCount") && (
+                <Input
+                  type="number"
+                  min={0}
+                  placeholder="Minimum"
+                  value={check.min ?? ""}
+                  onChange={(event) => patchCheck(index, { min: stripZero(event.target.value) })}
+                />
+              )}
+              {check.type === "tableExists" && (
+                <Input
+                  placeholder="Table name"
+                  value={check.table ?? ""}
+                  onChange={(event) => patchCheck(index, { table: event.target.value })}
+                />
+              )}
+              {check.type === "queryReturns" && (
+                <Textarea
+                  className="font-mono-code sm:col-span-2"
+                  rows={2}
+                  placeholder="SELECT … — run against the student's database"
+                  value={check.sql ?? ""}
+                  onChange={(event) => patchCheck(index, { sql: event.target.value })}
+                />
+              )}
+            </div>
+
+            {["hasColumn", "hasConstraint", "rowCount"].includes(check.type) && (
+              <label className="flex items-center gap-2 text-xs">
+                <Checkbox
+                  checked={!scoped(check)}
+                  onCheckedChange={(checked) =>
+                    patchCheck(index, checked === true ? { anyTable: true, table: undefined } : { anyTable: undefined, table: "" })
+                  }
+                />
+                Any table satisfies this — students may name their tables however they like
+              </label>
+            )}
+            {scoped(check) && ["hasColumn", "hasConstraint", "rowCount"].includes(check.type) && (
+              <Input
+                placeholder="Table this check applies to"
+                value={check.table ?? ""}
+                onChange={(event) => patchCheck(index, { table: event.target.value })}
+              />
+            )}
+          </Card>
+        ))
+      )}
+    </div>
   );
 }
 

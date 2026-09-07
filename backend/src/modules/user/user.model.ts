@@ -2,6 +2,7 @@ import type { UserRole } from "../../shared/types/auth";
 import type { Department, Difficulty, ExecutableLanguage } from "../../shared/types/domain";
 import { toIsoString } from "../../shared/utils/date";
 import type { SubmissionSourceType } from "../submission/submission.model";
+import type { SubmissionLanguage } from "../submission/submission.model";
 
 export interface UserRecord {
   email: string;
@@ -96,7 +97,7 @@ export interface UserProfileAnalyticsSubmissionItem {
   problemTitle: string;
   difficulty: Difficulty;
   status: string;
-  language: ExecutableLanguage;
+  language: SubmissionLanguage;
   createdAt: string;
   runtimeMs: number;
   memoryKb: number;
@@ -169,7 +170,7 @@ export function toUserProfileAnalyticsSubmissionItem(
     problemTitleSnapshot: string;
     problemDifficultySnapshot: Difficulty;
     status: string;
-    language: ExecutableLanguage;
+    language: SubmissionLanguage;
     createdAt: Date;
     runtimeMs: number;
     memoryKb: number;

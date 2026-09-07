@@ -341,6 +341,21 @@ export function createClassroomService(deps: {
           lifecycleState: input.lifecycleState,
           experiments,
         });
+        // A session snapshots its experiments at scheduling time and stays frozen once it starts,
+        // so a live session can never change under a student's feet. But before it starts there is
+        // nothing to protect, and leaving it stale is how a corrected schema silently fails to
+        // reach the students: the session keeps seeding the old tables and every query returns
+        // "table doesn't exist" with no way for anyone to fix it.
+        const nowMs = deps.now().getTime();
+        for (const session of record.sessions) {
+          if (session.activatedAt || Date.parse(session.startAt) <= nowMs) {
+            continue;
+          }
+          session.experiments = session.experiments.map((snapshot) => {
+            const current = experiments.find((e) => e.id === snapshot.id);
+            return current ? (structuredClone(current) as LabExperiment) : snapshot;
+          });
+        }
         if (input.selectedStudentEmails !== undefined) {
           record.selectedStudentEmails = input.selectedStudentEmails;
           if (record.selectedStudentEmails)
@@ -588,7 +603,33 @@ export function createClassroomService(deps: {
       }
       let output: ClassroomOutput;
       try {
-        if (experiment.kind === "sql") {
+        if (experiment.kind === "sql" && experiment.sqlMode === "script") {
+          // Application experiment: many statements, no reference answer. What the student needs
+          // back is what their script built, not a single grid.
+          const result = await deps.sqlExecutor.runScript({
+            studentSql: work.code,
+            context: experiment,
+            checks: experiment.checks,
+          });
+          // The last SELECT is surfaced as `table` too, so every existing history and gradebook
+          // view that only knows about a single grid still renders something meaningful.
+          const lastSelect = [...result.statements].reverse().find((statement) => statement.result);
+          output = {
+            status: result.ok
+              ? "EXECUTED"
+              : result.timedOut
+                ? "TIME_LIMIT_EXCEEDED"
+                : "RUNTIME_ERROR",
+            stdout: "",
+            stderr: result.internalError
+              ? "SQL execution is temporarily unavailable"
+              : (result.error ?? ""),
+            table: lastSelect?.result,
+            script: result,
+            runtimeMs: result.runtimeMs,
+            truncated: result.snapshotTruncated || (lastSelect?.result?.truncated ?? false),
+          };
+        } else if (experiment.kind === "sql") {
           const result = await deps.sqlExecutor.run({
             studentSql: work.code,
             context: experiment,
@@ -641,7 +682,20 @@ export function createClassroomService(deps: {
         }
         if (input.action === "submit") {
           try {
-            if (experiment.kind === "sql") {
+            if (experiment.kind === "sql" && experiment.sqlMode === "script") {
+              // A script experiment has no reference grid, so the verdict is whether the declared
+              // checks held. With no checks the experiment is faculty-marked by definition and the
+              // status stays EXECUTED — the mark is the teacher's either way.
+              const checks = output.script?.checks;
+              output.evaluationStatus =
+                output.status !== "EXECUTED"
+                  ? output.status
+                  : !checks || checks.length === 0
+                    ? undefined
+                    : checks.every((check) => check.passed)
+                      ? "ACCEPTED"
+                      : "WRONG_ANSWER";
+            } else if (experiment.kind === "sql") {
               output.evaluationStatus = (
                 await deps.sqlExecutor.grade({
                   studentSql: work.code,

@@ -20,6 +20,7 @@ import type {
 } from "../contest/contest.model";
 import { buildStudentQuestionTitle, computeAttemptTimeTakenMs } from "../contest/contest.model";
 import type { SubmissionAnalyticsRecord } from "../submission/submission.repository";
+import type { SubmissionLanguage } from "../submission/submission.model";
 
 /**
  * Deterministic contest analytics.
@@ -144,7 +145,7 @@ export interface QuestionMetrics {
 }
 
 export interface LanguageMetrics {
-  language: ExecutableLanguage;
+  language: SubmissionLanguage;
   submissionCount: number;
   acceptedCount: number;
   acceptanceRate: number;
@@ -171,7 +172,7 @@ export interface OptimalSubmission {
   questionTitle: string;
   studentEmail: string;
   studentName: string | null;
-  language: ExecutableLanguage;
+  language: SubmissionLanguage;
   /** Raw measurements, always surfaced alongside percentiles for transparency. */
   runtimeMs: number;
   memoryKb: number;
@@ -627,7 +628,7 @@ export function pickEasiestQuestion(questions: readonly QuestionMetrics[]) {
 export function computeLanguageStats(
   submissions: readonly SubmissionAnalyticsRecord[],
 ): LanguageMetrics[] {
-  const byLanguage = new Map<ExecutableLanguage, SubmissionAnalyticsRecord[]>();
+  const byLanguage = new Map<SubmissionLanguage, SubmissionAnalyticsRecord[]>();
   for (const submission of submissions) {
     const bucket = byLanguage.get(submission.language) ?? [];
     bucket.push(submission);
@@ -940,7 +941,7 @@ export function computeOptimalCode(
 export function pickOptimalPerLanguage(
   candidates: readonly OptimalCandidate[],
 ): OptimalSubmission[] {
-  const byLanguage = new Map<ExecutableLanguage, OptimalCandidate[]>();
+  const byLanguage = new Map<SubmissionLanguage, OptimalCandidate[]>();
   for (const candidate of candidates) {
     const bucket = byLanguage.get(candidate.submission.language) ?? [];
     bucket.push(candidate);

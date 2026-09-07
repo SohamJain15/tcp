@@ -1,8 +1,19 @@
 import type { FailedTestCase } from "../../execution/execution-provider";
+import type { SqlResultSet } from "../../execution/sql/sql-executor";
 import { EXECUTION_SERVICE_UNAVAILABLE_MESSAGE } from "../../shared/errors/public-messages";
 import type { UserRole } from "../../shared/types/auth";
 import type { Department, Difficulty, ExecutableLanguage, SubmissionStatus } from "../../shared/types/domain";
 import { toIsoString } from "../../shared/utils/date";
+
+/**
+ * What a submission was written in.
+ *
+ * Wider than `ExecutableLanguage` by exactly one member: "sql" is a language students submit in but
+ * one Judge0 never sees. SQL problems are graded by the MySQL sandbox and never enter the execution
+ * queue, so keeping "sql" out of `ExecutableLanguage` — which means "Judge0 can run this" — leaves
+ * every provider-facing signature honest.
+ */
+export type SubmissionLanguage = ExecutableLanguage | "sql";
 
 export type { FailedTestCase } from "../../execution/execution-provider";
 
@@ -107,7 +118,7 @@ export interface SubmissionRecord {
    */
   labSessionId?: string | null;
   code: string;
-  language: ExecutableLanguage;
+  language: SubmissionLanguage;
   status: SubmissionStatus;
   runtimeMs: number;
   memoryKb: number;
@@ -115,6 +126,10 @@ export interface SubmissionRecord {
   totalCount: number;
   executionProvider: string;
   ratingAwarded: number;
+  /** SQL problems: the grid the student's query produced. */
+  sqlResult?: SqlResultSet | null;
+  /** SQL problems: the reference grid. `toSubmissionResponse` decides who may see it. */
+  sqlExpected?: SqlResultSet | null;
   stdout: string | null;
   stderr: string | null;
   /** Captured unredacted; `toSubmissionResponse` decides what the requester may see. */
@@ -143,7 +158,7 @@ export interface SubmissionResponse {
   contestId: string | null;
   contestTitle: string | null;
   contestQuestionId: string | null;
-  language: ExecutableLanguage;
+  language: SubmissionLanguage;
   status: SubmissionStatus;
   runtimeMs: number;
   memoryKb: number;
@@ -154,6 +169,9 @@ export interface SubmissionResponse {
   stdout?: string | null;
   stderr?: string | null;
   failedTest: FailedTestCaseView | null;
+  sqlResult?: SqlResultSet | null;
+  /** Withheld wherever a failing test case would be — see `resolveFailedTestVisibility`. */
+  sqlExpected?: SqlResultSet | null;
   createdAt: string;
   updatedAt: string;
   judgedAt: string | null;
@@ -167,7 +185,7 @@ export interface SubmissionUserSnapshot {
 
 export interface SubmissionRunResponse {
   problemId: string;
-  language: ExecutableLanguage;
+  language: SubmissionLanguage;
   status: SubmissionStatus;
   runtimeMs: number;
   memoryKb: number;
@@ -177,6 +195,8 @@ export interface SubmissionRunResponse {
   stdout?: string;
   stderr?: string;
   failedTest: FailedTestCaseView | null;
+  /** SQL problems: the grid to render instead of a stdout blob. */
+  sqlResult?: SqlResultSet | null;
 }
 
 export function toSubmissionResponse(
@@ -211,6 +231,12 @@ export function toSubmissionResponse(
         ? EXECUTION_SERVICE_UNAVAILABLE_MESSAGE
         : submission.stderr,
     failedTest: redactFailedTest(submission.failedTest, resolveFailedTestVisibility(submission.sourceType)),
+    ...(submission.sqlResult ? { sqlResult: submission.sqlResult } : {}),
+    // The expected grid is the answer key. It follows the same rule as a failing test case: full
+    // detail on a practice problem, withheld during a contest or class test.
+    ...(submission.sqlExpected && resolveFailedTestVisibility(submission.sourceType) === "full"
+      ? { sqlExpected: submission.sqlExpected }
+      : {}),
     createdAt: toIsoString(submission.createdAt) ?? new Date(0).toISOString(),
     updatedAt: toIsoString(submission.updatedAt) ?? new Date(0).toISOString(),
     judgedAt: toIsoString(submission.judgedAt),

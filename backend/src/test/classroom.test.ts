@@ -237,6 +237,26 @@ describe("classroom enrollment and scheduling", () => {
       }),
     ).rejects.toThrow("already exists");
   });
+  it("pushes corrected experiment content into a session that has not started yet", async () => {
+    // A teacher who schedules first and fixes the seed afterwards used to be stuck: the session
+    // kept its original snapshot, so every student query failed against the wrong tables with no
+    // way to repair it. Before a session starts there is nothing to protect, so it re-syncs.
+    const h = setup();
+    const room = await h.service.create(faculty, payload());
+    const input = payload();
+    input.experiments[0].title = "Updated source";
+    input.experiments[0].schemaSql = "CREATE TABLE students (id INT, name VARCHAR(50))";
+    await h.service.update(faculty, room.id, input);
+    const session = (await h.repository.get(room.id))!.sessions[0];
+    expect(session.experiments[0].title).toBe("Updated source");
+    expect(session.experiments[0]).toMatchObject({ kind: "sql", schemaSql: expect.stringContaining("name") });
+  });
+  it("rejects seed SQL that would create its tables in another database", async () => {
+    const h = setup();
+    const input = payload();
+    input.experiments[0].schemaSql = "CREATE DATABASE dbms_lab; USE dbms_lab; CREATE TABLE students (id INT);";
+    await expect(h.service.create(faculty, input)).rejects.toThrow(/CREATE DATABASE/);
+  });
 });
 describe("attendance and session-scoped work", () => {
   it("enforces coding language selection and keeps hidden evaluation output out of saved work", async () => {
@@ -385,6 +405,91 @@ describe("attendance and session-scoped work", () => {
     expect(
       (await h.repository.get(room.id))!.sessions[0].attendance,
     ).toHaveLength(1);
+  });
+  it("runs an application experiment as a script and judges it by its declared checks", async () => {
+    const scriptPayload = () => {
+      const input = payload();
+      input.experiments[0] = {
+        ...input.experiments[0],
+        title: "Design a schema",
+        aim: "Create related tables with a primary key and a foreign key.",
+        kind: "sql",
+        sqlMode: "script",
+        // An application experiment starts from an empty database and has no reference answer.
+        schemaSql: "",
+        solutionSql: "",
+        checks: [
+          { type: "tableCount", label: "At least 2 tables created", min: 2 },
+          { type: "hasConstraint", label: "A primary key is defined", anyTable: true, constraint: "PRIMARY KEY" },
+        ],
+      } as (typeof input.experiments)[number];
+      return input;
+    };
+    const h = setup();
+    const room = await h.service.create(faculty, scriptPayload());
+    await h.service.join(student, room.joinCode!);
+    h.setTime(Date.parse(start));
+    await h.service.activate(faculty, room.id, sessionId, "10.20.30.4");
+    await h.service.enter(student, room.id, sessionId, "10.20.30.8");
+
+    const script = "CREATE TABLE dept (id INT PRIMARY KEY);\nCREATE TABLE stud (id INT);\nSELECT * FROM stud;";
+    const run = await h.service.work(student, room.id, sessionId, work({ action: "run", code: script }), "10.20.30.8");
+    // A script reports every statement and the tables it left behind — a CREATE TABLE has no grid,
+    // so without this the student would see nothing at all for most of the syllabus.
+    expect(run.work!.output!.script!.statements).toHaveLength(3);
+    expect(run.work!.output!.script!.snapshot.length).toBeGreaterThan(0);
+    expect(run.work!.output!.status).toBe("EXECUTED");
+
+    const passed = await h.service.work(student, room.id, sessionId, work({ code: script }), "10.20.30.8");
+    expect(passed.work!.output!.evaluationStatus).toBe("ACCEPTED");
+    expect(passed.work!.output!.script!.checks).toHaveLength(2);
+
+    const failed = await h.service.work(
+      student,
+      room.id,
+      sessionId,
+      work({ code: `${script}\n-- wrong_answer` }),
+      "10.20.30.8",
+    );
+    expect(failed.work!.output!.evaluationStatus).toBe("WRONG_ANSWER");
+  });
+  it("leaves a faculty-marked script experiment without an automatic verdict", async () => {
+    const h = setup();
+    const input = payload();
+    input.experiments[0] = {
+      ...input.experiments[0],
+      kind: "sql",
+      sqlMode: "script",
+      schemaSql: "",
+      solutionSql: "",
+      facultyMarked: true,
+    } as (typeof input.experiments)[number];
+    const room = await h.service.create(faculty, input);
+    await h.service.join(student, room.joinCode!);
+    h.setTime(Date.parse(start));
+    await h.service.activate(faculty, room.id, sessionId, "10.20.30.4");
+    await h.service.enter(student, room.id, sessionId, "10.20.30.8");
+    const submitted = await h.service.work(
+      student,
+      room.id,
+      sessionId,
+      work({ code: "CREATE TABLE t (id INT);" }),
+      "10.20.30.8",
+    );
+    expect(submitted.work!.output!.status).toBe("EXECUTED");
+    expect(submitted.work!.output!.evaluationStatus).toBeUndefined();
+  });
+  it("rejects a script experiment that declares neither checks nor faculty marking", async () => {
+    const h = setup();
+    const input = payload();
+    input.experiments[0] = {
+      ...input.experiments[0],
+      kind: "sql",
+      sqlMode: "script",
+      schemaSql: "",
+      solutionSql: "",
+    } as (typeof input.experiments)[number];
+    await expect(h.service.create(faculty, input)).rejects.toThrow(/check/i);
   });
   it("counts failed explicit submissions only; preserves drafts, versions, and separate later practice", async () => {
     const h = await active();

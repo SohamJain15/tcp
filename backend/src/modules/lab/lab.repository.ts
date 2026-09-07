@@ -6,7 +6,7 @@ import { DEFAULT_PROBLEM_MEMORY_LIMIT_MB, DEFAULT_PROBLEM_TIME_LIMIT_SECONDS } f
 import type { ExecutableLanguage } from "../../shared/types/domain";
 import { toDate } from "../../shared/utils/date";
 import { normalizeDepartment, normalizeDifficulty, normalizeNumber, normalizeRole, tryNormalizeSupportedLanguage } from "../../shared/utils/normalize";
-import type { LabExperiment, LabRecord, LabSqlSubmissionRecord, LabTestCase } from "./lab.model";
+import type { LabExperiment, LabRecord, LabSqlExperiment, LabSqlSubmissionRecord, LabTestCase } from "./lab.model";
 
 export interface LabRepository {
   getById(labId: string): Promise<LabRecord | null>;
@@ -90,9 +90,13 @@ function mapExperiment(value: unknown): LabExperiment | null {
     return {
       ...base,
       kind: "sql",
+      // Documents written before script mode existed carry no `sqlMode`; they are query experiments.
+      sqlMode: record.sqlMode === "script" ? "script" : "query",
       schemaSql: typeof record.schemaSql === "string" ? record.schemaSql : "",
       solutionSql: typeof record.solutionSql === "string" ? record.solutionSql : "",
       ordered: record.ordered === true,
+      checks: Array.isArray(record.checks) ? (record.checks as LabSqlExperiment["checks"]) : undefined,
+      facultyMarked: record.facultyMarked === true,
     };
   }
 

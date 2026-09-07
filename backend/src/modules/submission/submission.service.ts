@@ -17,6 +17,7 @@ import { isFinalSubmissionStatus, normalizeDepartment } from "../../shared/utils
 import { paginateArray, type PaginatedResult, type PaginationInput } from "../../shared/utils/pagination";
 import type { ExecutionProvider, ExecutionResult } from "../../execution/execution-provider";
 import type { SubmissionQueue } from "../../queue/submission-queue";
+import type { SqlExecutor, SqlExperimentContext } from "../../execution/sql/sql-executor";
 import { buildLeaderboardEntryFromUser } from "../leaderboard/leaderboard.model";
 import type { LeaderboardRepository } from "../leaderboard/leaderboard.repository";
 import {
@@ -40,6 +41,7 @@ import type {
   SubmissionQueueReceipt,
   SubmissionRecord,
   SubmissionResponse,
+  SubmissionLanguage,
   SubmissionRunResponse,
   SubmissionUserSnapshot,
 } from "./submission.model";
@@ -73,6 +75,8 @@ interface SubmissionServiceDependencies {
   userRepository: UserRepository;
   leaderboardRepository: LeaderboardRepository;
   executionProvider: ExecutionProvider;
+  /** Grades SQL practice problems; shares the sandbox the DBMS lab uses. */
+  sqlExecutor: SqlExecutor;
   submissionQueue: SubmissionQueue;
   now: () => Date;
 }
@@ -86,6 +90,36 @@ export interface SubmissionWriteInput {
   problemId: string;
   code: string;
   language: SubmissionRecord["language"];
+}
+
+/**
+ * The schema + reference query a SQL problem is graded against.
+ *
+ * Also pins the language: without this a client could post Python at a SQL problem and the sandbox
+ * would dutifully try to execute it as a query, reporting a syntax error instead of the real
+ * mistake.
+ */
+function ensureSqlProblem(problem: ProblemRecord, language: SubmissionLanguage): SqlExperimentContext {
+  if (language !== "sql") {
+    throw new AppError(400, "This is a SQL problem. Write your answer as a SQL query.");
+  }
+  if (!problem.sql) {
+    throw new AppError(500, "This SQL problem is missing its schema and reference query.");
+  }
+  return problem.sql;
+}
+
+/**
+ * Narrow a submission language to one Judge0 can run.
+ *
+ * SQL problems never take the Judge0 path — they are graded by the MySQL sandbox — so a "sql"
+ * language arriving at a coding endpoint means the client sent the wrong `kind`, which is a 400.
+ */
+function asExecutableLanguage(language: SubmissionLanguage): ExecutableLanguage {
+  if (language === "sql") {
+    throw new AppError(400, "This problem is not a SQL problem. Choose a programming language.");
+  }
+  return language;
 }
 
 export interface SubmissionListQuery extends PaginationInput {
@@ -190,7 +224,7 @@ function ensureVisibleProblem(problem: ProblemRecord | null, user: Authenticated
  * For metadata-driven problems, reject languages that cannot express the signature
  * up front with a clear 400 (instead of failing later at judge time / 500).
  */
-function ensureLanguageSupported(problem: ProblemRecord, language: SubmissionRecord["language"], code: string): void {
+function ensureLanguageSupported(problem: ProblemRecord, language: ExecutableLanguage, code: string): void {
   if (!problem.harness) {
     return;
   }
@@ -213,7 +247,7 @@ function ensureLanguageSupported(problem: ProblemRecord, language: SubmissionRec
  * run is inconclusive.
  */
 function buildBatchProgram(
-  language: SubmissionRecord["language"],
+  language: ExecutableLanguage,
   code: string,
   harness: HarnessSpec | undefined,
 ): ExecutionRequest["batchProgram"] {
@@ -229,7 +263,7 @@ function buildBatchProgram(
 
 function buildSubmissionRunResponse(
   problemId: string,
-  language: SubmissionRecord["language"],
+  language: SubmissionLanguage,
   result: ExecutionResult,
 ): SubmissionRunResponse {
   return {
@@ -342,6 +376,10 @@ export function calculateUserAggregateSnapshot(submissions: SubmissionRecord[]):
 function resolvePrimaryLanguage(firstAccepted: readonly SubmissionRecord[]): ExecutableLanguage | null {
   const counts = new Map<ExecutableLanguage, number>();
   for (const submission of firstAccepted) {
+    // SQL is not a "primary programming language" for this label, and it has no Judge0 identity.
+    if (submission.language === "sql") {
+      continue;
+    }
     counts.set(submission.language, (counts.get(submission.language) ?? 0) + 1);
   }
 
@@ -536,12 +574,33 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
   return {
     async runSubmission(user, input) {
       const problem = ensureVisibleProblem(await dependencies.problemRepository.getById(input.problemId), user);
-      ensureLanguageSupported(problem, input.language, input.code);
-      const program = generateSubmissionProgram(input.language, input.code, problem.harness);
+
+      if (problem.kind === "sql") {
+        // Run shows the student their grid without judging it — the same "Run" a DBMS lab offers.
+        const sql = ensureSqlProblem(problem, input.language);
+        const run = await dependencies.sqlExecutor.run({ studentSql: input.code, context: sql });
+        return {
+          problemId: problem.id,
+          language: "sql",
+          status: run.ok ? "ACCEPTED" : run.timedOut ? "TIME_LIMIT_EXCEEDED" : "RUNTIME_ERROR",
+          runtimeMs: run.runtimeMs,
+          memoryKb: 0,
+          passedCount: run.ok ? 1 : 0,
+          totalCount: 1,
+          executionProvider: dependencies.sqlExecutor.provider,
+          stderr: run.internalError ? EXECUTION_SERVICE_UNAVAILABLE_MESSAGE : run.error,
+          failedTest: null,
+          sqlResult: run.result ?? null,
+        };
+      }
+
+      const language = asExecutableLanguage(input.language);
+      ensureLanguageSupported(problem, language, input.code);
+      const program = generateSubmissionProgram(language, input.code, problem.harness);
       const result = await dependencies.executionProvider.executeRun({
         code: program.source,
         comparison: program.comparison,
-        language: input.language,
+        language,
         testCases: problem.sampleTestCases,
         sampleCaseCount: problem.sampleTestCases.length,
         problemId: problem.id,
@@ -549,13 +608,16 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
         memoryLimitMb: problem.memoryLimitMb,
       });
 
-      return buildSubmissionRunResponse(problem.id, input.language, result);
+      return buildSubmissionRunResponse(problem.id, language, result);
     },
 
     async createSubmission(user, input) {
       const now = dependencies.now();
       const problem = ensureVisibleProblem(await dependencies.problemRepository.getById(input.problemId), user);
-      ensureLanguageSupported(problem, input.language, input.code);
+      const isSqlProblem = problem.kind === "sql";
+      if (!isSqlProblem) {
+        ensureLanguageSupported(problem, asExecutableLanguage(input.language), input.code);
+      }
 
       await ensureUser(dependencies.userRepository, user, now);
       const submissionUser = await dependencies.userRepository.getByEmail(user.email);
@@ -584,8 +646,9 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
         runtimeMs: 0,
         memoryKb: 0,
         passedCount: 0,
-        totalCount: problem.sampleTestCases.length + problem.hiddenTestCases.length,
-        executionProvider: env.EXECUTION_PROVIDER,
+        // A SQL problem is one comparison, not a run of test cases.
+        totalCount: isSqlProblem ? 1 : problem.sampleTestCases.length + problem.hiddenTestCases.length,
+        executionProvider: isSqlProblem ? dependencies.sqlExecutor.provider : env.EXECUTION_PROVIDER,
         ratingAwarded: 0,
         stdout: null,
         stderr: null,
@@ -597,6 +660,36 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
       };
 
       await dependencies.submissionRepository.create(submission);
+
+      if (isSqlProblem) {
+        // SQL grading is a seeded query and a grid comparison — milliseconds, no compiler, no
+        // container. Putting it through the Judge0 queue would add latency and a second failure
+        // mode for nothing, so it is finalized inline. The record still lands in the same shape,
+        // so history, ratings, aggregates and the client's polling all work unchanged.
+        const sql = ensureSqlProblem(problem, input.language);
+        const graded = await dependencies.sqlExecutor.grade({ studentSql: input.code, context: sql });
+        await finalizeSubmission(dependencies, submission.id, {
+          status: graded.status,
+          runtimeMs: graded.runtimeMs,
+          memoryKb: 0,
+          passedCount: graded.passed ? 1 : 0,
+          totalCount: 1,
+          provider: graded.provider,
+          stderr: graded.status === "INTERNAL_ERROR" ? EXECUTION_SERVICE_UNAVAILABLE_MESSAGE : graded.message,
+        });
+        // The grids are the feedback a SQL problem gives instead of a failing test case, so they
+        // are stored after finalization rather than squeezed into the ExecutionResult shape.
+        const finalized = await dependencies.submissionRepository.getById(submission.id);
+        if (finalized) {
+          await dependencies.submissionRepository.save({
+            ...finalized,
+            sqlResult: graded.studentResult ?? null,
+            sqlExpected: graded.expectedResult ?? null,
+            updatedAt: dependencies.now(),
+          });
+        }
+        return { submission_id: submission.id, status: "queued" };
+      }
 
       try {
         const queueJobId = await dependencies.submissionQueue.enqueue(submission.id);
@@ -626,6 +719,12 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
       if (existingSubmission.sourceType === "lab_coding") {
         throw new AppError(410, "Legacy lab submissions have been retired");
       }
+      // SQL submissions are graded inline against the MySQL sandbox and are never enqueued, so the
+      // queue only ever carries Judge0 languages. Narrowing here keeps every provider call honest.
+      if (existingSubmission.language === "sql") {
+        throw new AppError(500, "SQL submissions are not queued for execution");
+      }
+      const executableLanguage: ExecutableLanguage = existingSubmission.language;
 
       if (existingSubmission.finalizationAppliedAt && isFinalSubmissionStatus(existingSubmission.status)) {
         const user = await dependencies.userRepository.getByEmail(existingSubmission.userEmail);
@@ -665,7 +764,7 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
 
           {
             const program = generateSubmissionProgram(
-              runningSubmission.language,
+              executableLanguage,
               runningSubmission.code,
               question.harness,
             );
@@ -673,11 +772,11 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
               code: program.source,
               comparison: program.comparison,
               batchProgram: buildBatchProgram(
-                runningSubmission.language,
+                executableLanguage,
                 runningSubmission.code,
                 question.harness,
               ),
-              language: runningSubmission.language,
+              language: executableLanguage,
               testCases: [...question.sampleTestCases, ...question.hiddenTestCases],
               sampleCaseCount: question.sampleTestCases.length,
               problemId: `${contest.id}:${question.id}`,
@@ -703,7 +802,7 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
 
           {
             const program = generateSubmissionProgram(
-              runningSubmission.language,
+              executableLanguage,
               runningSubmission.code,
               question.harness,
             );
@@ -711,11 +810,11 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
               code: program.source,
               comparison: program.comparison,
               batchProgram: buildBatchProgram(
-                runningSubmission.language,
+                executableLanguage,
                 runningSubmission.code,
                 question.harness,
               ),
-              language: runningSubmission.language,
+              language: executableLanguage,
               testCases: [...question.sampleTestCases, ...question.hiddenTestCases],
               sampleCaseCount: question.sampleTestCases.length,
               problemId: `${classTest.id}:${question.id}`,
@@ -743,7 +842,7 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
 
           {
             const program = generateSubmissionProgram(
-              runningSubmission.language,
+              executableLanguage,
               runningSubmission.code,
               experiment.harness,
             );
@@ -751,11 +850,11 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
               code: program.source,
               comparison: program.comparison,
               batchProgram: buildBatchProgram(
-                runningSubmission.language,
+                executableLanguage,
                 runningSubmission.code,
                 experiment.harness,
               ),
-              language: runningSubmission.language,
+              language: executableLanguage,
               testCases: [...experiment.sampleTestCases, ...experiment.hiddenTestCases],
               sampleCaseCount: experiment.sampleTestCases.length,
               problemId: `${runningSubmission.labSessionId ?? runningSubmission.labId ?? "lab"}:${experiment.id}`,
@@ -771,7 +870,7 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
 
           {
             const program = generateSubmissionProgram(
-              runningSubmission.language,
+              executableLanguage,
               runningSubmission.code,
               problem.harness,
             );
@@ -779,11 +878,11 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
               code: program.source,
               comparison: program.comparison,
               batchProgram: buildBatchProgram(
-                runningSubmission.language,
+                executableLanguage,
                 runningSubmission.code,
                 problem.harness,
               ),
-              language: runningSubmission.language,
+              language: executableLanguage,
               testCases: [...problem.sampleTestCases, ...problem.hiddenTestCases],
               sampleCaseCount: problem.sampleTestCases.length,
               problemId: problem.id,
@@ -827,7 +926,7 @@ export function createSubmissionService(dependencies: SubmissionServiceDependenc
                   passedCount: finalizedSubmission.passedCount,
                   totalCount: finalizedSubmission.totalCount,
                   lastSubmissionId: finalizedSubmission.id,
-                  finalSubmissionLanguage: finalizedSubmission.language,
+                  finalSubmissionLanguage: asExecutableLanguage(finalizedSubmission.language),
                   finalSubmissionStatus: finalizedSubmission.status,
                   finalRuntimeMs: finalizedSubmission.runtimeMs,
                   finalMemoryKb: finalizedSubmission.memoryKb,

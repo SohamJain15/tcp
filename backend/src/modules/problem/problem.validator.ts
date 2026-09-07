@@ -14,8 +14,9 @@ import {
 } from "../../shared/utils/normalize";
 import type { Department, Difficulty, ProblemLifecycleState } from "../../shared/types/domain";
 import type { HarnessSpec } from "../../execution/harness/contract";
+import { validateSchemaSql, validateStudentSql } from "../../execution/sql/sql-policy";
 import { harnessSpecSchema } from "../../execution/harness/schema";
-import type { ProblemTestCase } from "./problem.model";
+import type { ProblemKind, ProblemSqlSpec, ProblemTestCase } from "./problem.model";
 
 const testCaseSchema = z.object({
   input: z.string().min(1),
@@ -50,6 +51,16 @@ const constraintsSchema = z
   );
 
 const numberSchema = z.union([z.number(), z.string().min(1)]).transform((value) => normalizeNumber(value, 0));
+
+/**
+ * The SQL half of a problem. A SQL problem replaces test cases entirely: the schema is seeded, the
+ * student writes one query, and the grid is compared against the reference query's grid.
+ */
+const problemSqlSchema = z.object({
+  schemaSql: z.string().trim().min(1, "Provide the schema and seed data").max(100_000),
+  solutionSql: z.string().trim().min(1, "Provide the reference (solution) query").max(20_000),
+  ordered: z.boolean().default(false),
+}).strict();
 const departmentSchema = z.enum(DEPARTMENTS);
 
 const problemWriteBaseSchema = z.object({
@@ -73,9 +84,11 @@ const problemWriteBaseSchema = z.object({
   hiddenTestCases: z.array(testCaseSchema).optional(),
   examples: z.array(exampleSchema).optional(),
   harness: harnessSpecSchema.nullable().optional(),
+  kind: z.enum(["coding", "sql"]).default("coding"),
+  sql: problemSqlSchema.optional(),
 });
 
-const problemDraftSchema = z.object({
+const problemDraftCommon = {
   title: z.string().min(3).max(150),
   slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Slug must use lowercase letters, numbers, and hyphens"),
   statement: z.string().min(10),
@@ -88,9 +101,41 @@ const problemDraftSchema = z.object({
   timeLimit: z.number().positive(),
   memoryLimit: z.number().positive(),
   tags: z.array(z.string().min(1)).min(1),
+};
+
+const codingProblemDraftSchema = z.object({
+  ...problemDraftCommon,
+  // Absent means coding, so every existing import payload keeps working unchanged.
+  kind: z.literal("coding").optional(),
   sampleTestCases: z.array(testCaseSchema).min(1),
   hiddenTestCases: z.array(testCaseSchema).min(1),
 }).strict();
+
+const sqlProblemDraftSchema = z.object({
+  ...problemDraftCommon,
+  kind: z.literal("sql"),
+  sql: problemSqlSchema,
+}).strict();
+
+const problemDraftSchema = z
+  .union([sqlProblemDraftSchema, codingProblemDraftSchema])
+  .superRefine((value, ctx) => {
+    if (value.kind !== "sql") {
+      return;
+    }
+    const seed = validateSchemaSql(value.sql.schemaSql, 100_000);
+    if (!seed.ok) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: seed.error ?? "Seed SQL is not valid", path: ["sql", "schemaSql"] });
+    }
+    const solution = validateStudentSql(value.sql.solutionSql, 20_000);
+    if (!solution.ok) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Reference query: ${solution.error}`,
+        path: ["sql", "solutionSql"],
+      });
+    }
+  });
 
 export const problemDraftImportSchema = z.preprocess(
   (value) => (Array.isArray(value) ? value : [value]),
@@ -98,6 +143,39 @@ export const problemDraftImportSchema = z.preprocess(
 );
 
 export const createProblemSchema = problemWriteBaseSchema.superRefine((value, ctx) => {
+  if (value.kind === "sql") {
+    // SQL problems carry no test cases at all — the seeded schema and the reference query are the
+    // whole specification.
+    if (!value.sql) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "A SQL problem needs schemaSql and solutionSql",
+        path: ["sql"],
+      });
+      return;
+    }
+    const seed = validateSchemaSql(value.sql.schemaSql, 100_000);
+    if (!seed.ok) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: seed.error ?? "Seed SQL is not valid", path: ["sql", "schemaSql"] });
+    }
+    const solution = validateStudentSql(value.sql.solutionSql, 20_000);
+    if (!solution.ok) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Reference query: ${solution.error}`,
+        path: ["sql", "solutionSql"],
+      });
+    }
+    return;
+  }
+
+  if (value.sql) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'SQL fields require "kind": "sql"',
+      path: ["sql"],
+    });
+  }
   const sampleTestCases = value.sampleTestCases ?? value.examples?.filter((example) => !example.hidden) ?? [];
   if (sampleTestCases.length === 0) {
     ctx.addIssue({
@@ -187,6 +265,8 @@ export interface CanonicalProblemPayload {
   memoryLimitMb: number;
   lifecycleState: ProblemLifecycleState;
   targetDepartment: Department | null;
+  kind: ProblemKind;
+  sql?: ProblemSqlSpec;
   sampleTestCases: ProblemTestCase[];
   hiddenTestCases: ProblemTestCase[];
   harness?: HarnessSpec | null;
@@ -222,6 +302,8 @@ export function toCanonicalProblemPayload(raw: z.infer<typeof createProblemSchem
     memoryLimitMb: normalizeNumber(raw.memoryLimitMb ?? raw.memoryLimit, DEFAULT_PROBLEM_MEMORY_LIMIT_MB),
     lifecycleState: normalizeProblemLifecycleState(raw.lifecycleState ?? "Draft"),
     targetDepartment: normalizeDepartment(raw.targetDepartment) ?? null,
+    kind: raw.kind,
+    sql: raw.sql,
     sampleTestCases: raw.sampleTestCases ?? exampleSplit.sampleTestCases,
     hiddenTestCases: raw.hiddenTestCases ?? exampleSplit.hiddenTestCases,
     harness: (raw.harness ?? undefined) as HarnessSpec | undefined,

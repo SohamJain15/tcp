@@ -1,6 +1,6 @@
 import type { LabExperiment, LabKind } from "../lab/lab.model";
 import type { Department, ExecutableLanguage } from "../../shared/types/domain";
-import type { SqlResultSet } from "../../execution/sql/sql-executor";
+import type { SqlResultSet, SqlScriptResult } from "../../execution/sql/sql-executor";
 
 export interface ClassroomStudent {
   email: string;
@@ -58,6 +58,12 @@ export interface ClassroomOutput {
   stdout: string;
   stderr: string;
   table?: SqlResultSet;
+  /**
+   * Script-mode payload: per-statement outcomes, the resulting tables, and the check results. It is
+   * persisted on the work record rather than recomputed, so the faculty sees in the gradebook
+   * exactly the database the student built at submission time.
+   */
+  script?: SqlScriptResult;
   truncated: boolean;
   runtimeMs: number;
 }

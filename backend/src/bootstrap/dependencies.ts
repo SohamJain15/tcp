@@ -234,6 +234,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
   });
 
   const submissionService = createSubmissionService({
+    sqlExecutor,
     problemRepository: repositories.problemRepository,
     contestRepository: repositories.contestRepository,
     contestAttemptRepository: repositories.contestAttemptRepository,

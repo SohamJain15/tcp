@@ -309,6 +309,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       now,
     }),
     submissionService: createSubmissionService({
+    sqlExecutor: new StubSqlExecutor(),
       problemRepository,
       contestRepository,
       contestAttemptRepository,

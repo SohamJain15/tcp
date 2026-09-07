@@ -84,6 +84,33 @@ docker compose exec sql-sandbox mysql -uroot -p
 ALTER USER 'tcp_sql_admin'@'%' IDENTIFIED BY 'NEW_HEX_PASSWORD';
 ```
 
+## 1b. Case-insensitive table names (one-time volume reset)
+
+The compose file starts MySQL with `--lower-case-table-names=1`. Students routinely write
+`SELECT * FROM STUDENT` against a schema seeded as `students`, and on Linux MySQL that is a
+dead end: identifiers are case-sensitive by default, so the query fails with "table doesn't
+exist" and the student has no way to see why. Folding identifiers removes the whole class of
+failure.
+
+MySQL only accepts this setting when the data directory is initialized, so an existing sandbox
+must be recreated once:
+
+```bash
+cd /opt/tcp/infrastructure/sql-sandbox
+docker compose down -v
+docker compose up -d
+```
+
+`down -v` deletes the MySQL volume. That is safe here and only here: this instance holds nothing
+but the throwaway `tcp_lab_*` databases each request creates and drops. Never run it against a
+MySQL server that carries application data.
+
+Verify afterwards:
+
+```bash
+docker exec tcp-sql-sandbox mysql -uroot -p"$SQL_SANDBOX_ROOT_PASSWORD" -e "SHOW VARIABLES LIKE 'lower_case_table_names'"
+```
+
 ## 2. Backend production environment
 
 Set these values in the backend environment, never in frontend variables:
@@ -140,10 +167,25 @@ backend container rather than only restarting an old container so environment ch
 ## 3. Security boundary
 
 Students never receive MySQL credentials. They submit SQL to the authenticated backend API. The
-backend enforces a maximum query length, one statement per request, a per-user execution rate
-limit, a bounded number of concurrent sandboxes, result row caps, and rejection of server/file
-system operations such as `GRANT`, `LOAD_FILE`, `INTO OUTFILE`, `CREATE USER`, `DROP DATABASE`,
+backend enforces a maximum query length, a per-user execution rate limit, a bounded number of
+concurrent sandboxes, result row caps, and rejection of server/file system operations such as
+`GRANT`, `LOAD_FILE`, `INTO OUTFILE`, `CREATE USER`, `DROP DATABASE`, `USE`, `DELIMITER`,
 stored-program calls, and system-schema access.
+
+Two policies exist, because the DBMS syllabus is not only "write a SELECT":
+
+- **Query experiments and SQL practice problems** allow exactly one statement per request and are
+  graded by comparing result grids (`validateStudentSql`).
+- **Application experiments** (`sqlMode: "script"` — DDL, DML, constraints, mini-projects) allow
+  many statements and the full table-level surface, because the student owns the whole throwaway
+  database and designs its schema themselves (`validateStudentScript`). The statements that reach
+  *outside* that database stay blocked in both modes, matched on each statement's leading keyword
+  so a student may still name a column `use` or `drop_count`.
+
+Faculty-authored seed SQL is validated too, when the classroom or problem is saved
+(`validateSchemaSql`). A pasted dump beginning `CREATE DATABASE x; USE x;` would seed its tables
+into a schema the student's connection cannot reach, and every query would then fail with
+"table doesn't exist" — undiagnosable from the student's side, so it is rejected at authoring time.
 
 The admin account has broad privileges because it must create/drop databases and users. That is
 acceptable only on this dedicated sandbox instance. Keep port 3306/3307 private, keep the admin

@@ -1,6 +1,7 @@
 import type { ExecutableLanguage } from "../../shared/types/domain";
 import { buildLanguagePercentileScorer } from "../../shared/utils/language-percentile";
 import type { SubmissionAnalyticsRecord } from "./submission.repository";
+import type { SubmissionLanguage } from "./submission.model";
 
 export const PRACTICE_OPTIMIZATION_WEIGHTS = { runtime: 0.6, memory: 0.4 } as const;
 const PERCENTILE_BUCKET_COUNT = 10;
@@ -28,7 +29,7 @@ export interface MetricPercentile {
 export interface SubmissionStatsResponse {
   submissionId: string;
   problemId: string;
-  language: ExecutableLanguage;
+  language: SubmissionLanguage;
   efficiency: {
     score: number;
     beatsPercent: number;

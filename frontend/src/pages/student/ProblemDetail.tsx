@@ -30,6 +30,7 @@ import {
 import { ResizableStackGroup, ResizableStackHandle, ResizableStackPane } from "@/components/ResizableStack";
 import { DifficultyBadge, StatusBadge } from "@/components/Badges";
 import { FailedTestCasePanel, shouldShowFailedTest } from "@/components/FailedTestCasePanel";
+import { SqlResultTable } from "@/components/SqlWorkspace";
 import { SubmissionDistributionChart } from "@/components/charts";
 import { ProblemHintsPanel } from "@/components/ProblemHintsPanel";
 import { cn } from "@/lib/utils";
@@ -47,6 +48,7 @@ import {
 } from "@/api/mappers";
 import type {
   ExecutableLanguage,
+  SubmissionLanguage,
   Submission,
   SubmissionResult,
   SubmissionStatus,
@@ -237,7 +239,7 @@ export default function ProblemDetail() {
   const isNarrow = useIsNarrow();
 
   const [language, setLanguage] = useState<ExecutableLanguage>("cpp");
-  const [draftsByLanguage, setDraftsByLanguage] = useState<Partial<Record<ExecutableLanguage, string>>>({
+  const [draftsByLanguage, setDraftsByLanguage] = useState<Partial<Record<SubmissionLanguage, string>>>({
     cpp: getStarterCode("cpp"),
   });
   const [tab, setTab] = useState<"console" | "subs" | "board">("console");
@@ -255,8 +257,6 @@ export default function ProblemDetail() {
   const editorRef = useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(null);
   const draftSaveTimeoutRef = useRef<number | null>(null);
   const languageRef = useRef<ExecutableLanguage>("cpp");
-  const code = draftsByLanguage[language] ?? getStarterCode(language);
-
   languageRef.current = language;
 
   useEffect(() => {
@@ -396,6 +396,12 @@ export default function ProblemDetail() {
     enabled: Boolean(id),
   });
 
+  // A SQL problem is answered in one language with no starter skeleton; a coding problem keeps a
+  // separate draft per language.
+  const editorLanguage: SubmissionLanguage = problemEnvelope?.problem.kind === "sql" ? "sql" : language;
+  const code =
+    draftsByLanguage[editorLanguage] ?? (editorLanguage === "sql" ? "" : getStarterCode(language));
+
   const { data: submissionsData } = useQuery({
     queryKey: ["student-problem-submissions", id],
     queryFn: () => submissionsApi.list({ problemId: id, pageSize: 25 }),
@@ -509,7 +515,7 @@ export default function ProblemDetail() {
   };
 
   const runMutation = useMutation({
-    mutationFn: () => submissionsApi.run({ problemId: id, code, language }),
+    mutationFn: () => submissionsApi.run({ problemId: id, code, language: editorLanguage }),
     onMutate: () => {
       setTab("console");
     },
@@ -524,7 +530,7 @@ export default function ProblemDetail() {
   });
 
   const submitMutation = useMutation({
-    mutationFn: () => submissionsApi.create({ problemId: id, code, language }),
+    mutationFn: () => submissionsApi.create({ problemId: id, code, language: editorLanguage }),
     onSuccess: (data) => {
       setSubmitResult(null);
       setRunResult(null);
@@ -564,9 +570,12 @@ export default function ProblemDetail() {
 
   const problem = problemEnvelope.problem;
   const testCases = problem.sampleTestCases;
+  // A SQL problem is answered in exactly one language, so there is no picker and no starter
+  // skeleton — the student writes a query against the schema shown in the description.
+  const isSql = problem.kind === "sql";
   // Prefer the harness-generated starter (correct signature) over the generic template.
   const resolveStarter = (lang: ExecutableLanguage): string => problem.starterCode?.[lang] ?? getStarterCode(lang);
-  const currentStarterCode = resolveStarter(language);
+  const currentStarterCode = isSql ? "" : resolveStarter(language);
   const activeResult = runResult;
   const isSubmissionProcessing = pendingSubmissionStatus ? isSubmissionPending(pendingSubmissionStatus) : false;
   const showingRunResult = Boolean(runResult);
@@ -574,6 +583,11 @@ export default function ProblemDetail() {
     ? `${runResult.stdout || ""}${runResult.stderr ? `\n${runResult.stderr}` : ""}`.trim()
     : "";
   const lineCount = code.split("\n").length;
+  // Run shows the student's grid; a wrong submission also shows the reference grid, which the
+  // server withholds outside practice problems.
+  const sqlStudentGrid = isSql ? (runResult?.sqlResult ?? submitResult?.sqlResult ?? null) : null;
+  const sqlExpectedGrid =
+    isSql && submitResult?.status !== "ACCEPTED" && !runResult ? (submitResult?.sqlExpected ?? null) : null;
   const activeResultStatusLabel = activeResult
     ? formatExecutionStatus(activeResult.status, showingRunResult)
     : null;
@@ -672,14 +686,33 @@ export default function ProblemDetail() {
                   <h3 className="mb-1 font-display text-base font-semibold">Description</h3>
                   <p className="text-muted-foreground">{problem.statement}</p>
                 </div>
+                {isSql && problem.schemaSql && (
+                  <div>
+                    <h3 className="mb-1 font-display text-base font-semibold">Schema</h3>
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      These tables are created and populated for you before your query runs.
+                      {problem.ordered
+                        ? " Row order is part of the answer."
+                        : " Row order does not matter."}
+                    </p>
+                    <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded bg-secondary p-3 font-mono-code text-xs">
+                      {problem.schemaSql}
+                    </pre>
+                  </div>
+                )}
                 <div>
-                  <h3 className="mb-1 font-display text-base font-semibold">Input Format</h3>
+                  <h3 className="mb-1 font-display text-base font-semibold">
+                    {isSql ? "What your query receives" : "Input Format"}
+                  </h3>
                   <p className="text-muted-foreground">{problem.inputFormat}</p>
                 </div>
                 <div>
-                  <h3 className="mb-1 font-display text-base font-semibold">Output Format</h3>
+                  <h3 className="mb-1 font-display text-base font-semibold">
+                    {isSql ? "What your query must return" : "Output Format"}
+                  </h3>
                   <p className="text-muted-foreground">{problem.outputFormat}</p>
                 </div>
+                {!isSql && (
                 <div>
                   <h3 className="mb-1 font-display text-base font-semibold">Examples</h3>
                   <div className="space-y-2">
@@ -696,6 +729,7 @@ export default function ProblemDetail() {
                     ))}
                   </div>
                 </div>
+                )}
                 <div>
                   <h3 className="mb-1 font-display text-base font-semibold">Constraints</h3>
                   <ul className="list-disc space-y-1 pl-5 font-mono-code text-xs text-muted-foreground">
@@ -704,6 +738,7 @@ export default function ProblemDetail() {
                     ))}
                   </ul>
                 </div>
+                {!isSql && (
                 <div>
                   <h3 className="mb-1 font-display text-base font-semibold">Sample Test Cases</h3>
                   <div className="space-y-2">
@@ -720,6 +755,7 @@ export default function ProblemDetail() {
                     ))}
                   </div>
                 </div>
+                )}
                       </section>
                     </>
                   )}
@@ -769,9 +805,31 @@ export default function ProblemDetail() {
                           </div>
                           <div className="grid grid-cols-2 gap-2 font-mono-code text-xs">
                             <div className="rounded bg-secondary p-2"><div className="text-muted-foreground">Runtime</div>{selectedSubmission.runtimeMs} ms</div>
-                            <div className="rounded bg-secondary p-2"><div className="text-muted-foreground">Memory</div>{(selectedSubmission.memoryKb / 1024).toFixed(1)} MB</div>
+                            {/* A SQL query runs inside MySQL, which reports no per-query memory. */}
+                            {!isSql && (
+                              <div className="rounded bg-secondary p-2"><div className="text-muted-foreground">Memory</div>{(selectedSubmission.memoryKb / 1024).toFixed(1)} MB</div>
+                            )}
                           </div>
-                          {shouldShowFailedTest(selectedSubmission.failedTest) && (
+                          {/* A SQL problem has no test cases; the two grids are its failure report. */}
+                          {isSql && selectedSubmission.sqlResult && (
+                            <div className="space-y-2">
+                              <div>
+                                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                  Your result
+                                </p>
+                                <SqlResultTable result={selectedSubmission.sqlResult} />
+                              </div>
+                              {selectedSubmission.sqlExpected && selectedSubmission.status !== "ACCEPTED" && (
+                                <div>
+                                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                    Expected result
+                                  </p>
+                                  <SqlResultTable result={selectedSubmission.sqlExpected} />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {!isSql && shouldShowFailedTest(selectedSubmission.failedTest) && (
                             <FailedTestCasePanel failedTest={selectedSubmission.failedTest} />
                           )}
                           {(selectedSubmission.stdout || selectedSubmission.stderr) && (
@@ -844,6 +902,11 @@ export default function ProblemDetail() {
                     <Card className="flex min-h-0 flex-1 flex-col overflow-hidden shadow-card">
                       <div className="flex items-center justify-between border-b border-border bg-secondary/50 px-3 py-2">
                         <div className="flex items-center gap-2">
+                          {isSql ? (
+                            <span className="rounded border border-accent/40 bg-accent/10 px-2 py-1 text-xs font-semibold text-accent">
+                              SQL
+                            </span>
+                          ) : (
                           <ThemedSelect
                             value={language}
                             onValueChange={(value) => {
@@ -862,12 +925,17 @@ export default function ProblemDetail() {
                             triggerClassName="h-8 w-auto min-w-[110px] px-2 text-xs"
                             options={EXECUTABLE_LANGUAGES.map((lang) => ({ value: lang, label: toLanguageLabel(lang) }))}
                           />
+                          )}
                           <div className="flex items-center gap-1.5 rounded border border-border bg-background px-2 py-1 text-xs">
                             <FileCode2 className="h-3 w-3 text-accent" />
-                            <span className="font-mono-code">{getSolutionFilename(language)}</span>
+                            <span className="font-mono-code">
+                              {isSql ? "solution.sql" : getSolutionFilename(language)}
+                            </span>
                           </div>
                         </div>
                         <div className="flex items-center gap-1">
+                          {/* Monaco ships no SQL formatter, so the button would be a no-op here. */}
+                          {!isSql && (
                           <Button
                             variant="ghost"
                             className="h-7 px-2 text-xs"
@@ -875,6 +943,7 @@ export default function ProblemDetail() {
                           >
                             Format
                           </Button>
+                          )}
                           <Button
                             size="icon"
                             variant="ghost"
@@ -882,7 +951,7 @@ export default function ProblemDetail() {
                             onClick={() =>
                               setDraftsByLanguage((currentDrafts) => ({
                                 ...currentDrafts,
-                                [language]: currentStarterCode,
+                                [editorLanguage]: currentStarterCode,
                               }))
                             }
                             aria-label="Reset"
@@ -913,15 +982,15 @@ export default function ProblemDetail() {
                               },
                             });
                           }}
-                          path={`${id}/${language}/${getSolutionFilename(language)}`}
+                          path={`${id}/${editorLanguage}/${isSql ? "solution.sql" : getSolutionFilename(language)}`}
                           height="100%"
-                          language={getMonacoLanguage(language)}
+                          language={getMonacoLanguage(editorLanguage)}
                           theme="vs-dark"
                           value={code}
                           onChange={(nextValue) =>
                             setDraftsByLanguage((currentDrafts) => ({
                               ...currentDrafts,
-                              [language]: nextValue ?? "",
+                              [editorLanguage]: nextValue ?? "",
                             }))
                           }
                           options={{
@@ -951,7 +1020,7 @@ export default function ProblemDetail() {
                       </div>
                       <div className="flex items-center justify-between border-t border-border bg-secondary/50 px-3 py-1.5 font-mono-code text-[11px] text-muted-foreground">
                         <span>Ln {cursorPosition.lineNumber}/{lineCount}, Col {cursorPosition.column}</span>
-                        <span>UTF-8 {"\u2022"} LF {"\u2022"} {toLanguageLabel(language)}</span>
+                        <span>UTF-8 {"\u2022"} LF {"\u2022"} {isSql ? "SQL" : toLanguageLabel(language)}</span>
                       </div>
                     </Card>
 
@@ -1054,6 +1123,30 @@ export default function ProblemDetail() {
                               {(activeResult.memoryKb / 1024).toFixed(1)} MB
                             </div>
                           </div>
+                        </div>
+                      )}
+                      {tab === "console" && isSql && (sqlStudentGrid || sqlExpectedGrid) && (
+                        <div className="space-y-3">
+                          <div>
+                            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                              Your result
+                            </p>
+                            {sqlStudentGrid ? (
+                              <SqlResultTable result={sqlStudentGrid} />
+                            ) : (
+                              <p className="text-xs text-muted-foreground">Your query returned no grid.</p>
+                            )}
+                          </div>
+                          {/* Shown only on a wrong answer: seeing the two grids side by side is how a
+                              student finds the missing WHERE clause or the extra column. */}
+                          {sqlExpectedGrid && (
+                            <div>
+                              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                Expected result
+                              </p>
+                              <SqlResultTable result={sqlExpectedGrid} />
+                            </div>
+                          )}
                         </div>
                       )}
                       {tab === "console" && (

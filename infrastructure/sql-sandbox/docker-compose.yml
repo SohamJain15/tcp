@@ -31,6 +31,14 @@ services:
       TZ: Asia/Kolkata
     command:
       - --default-authentication-plugin=caching_sha2_password
+      # Lab schemas are written by students who type `STUDENT` for a table seeded as `students`.
+      # Case-folding identifiers turns that from a dead end into a working query. This can only be
+      # set when the data directory is initialized, so changing it requires `down -v`.
+      - --lower-case-table-names=1
+      # Application experiments let students design their own schema. MySQL 8 does not require a
+      # primary key by default; pinning it means an upstream default change cannot start rejecting
+      # a student's CREATE TABLE.
+      - --sql-require-primary-key=0
     ports:
       # Loopback-only publication is for a backend running directly on the Linux host.
       # A backend container should use sql-sandbox:3306 instead.

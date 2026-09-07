@@ -31,10 +31,20 @@ const executableLanguageSchema = supportedLanguageSchema.refine(
   "Language is editor-only right now and cannot be executed by the backend",
 ).transform((value) => value as ExecutableLanguage);
 
+/**
+ * "sql" is accepted here but is not an `ExecutableLanguage` — it never reaches Judge0. The service
+ * rejects it on a coding problem and requires it on a SQL one, so the pairing is checked where the
+ * problem is actually known.
+ */
+const submissionLanguageSchema = z.union([
+  z.literal("sql"),
+  executableLanguageSchema,
+]);
+
 export const submissionRequestSchema = z.object({
   problemId: z.string().min(1),
   code: z.string().trim().min(1, "Code cannot be empty"),
-  language: executableLanguageSchema,
+  language: submissionLanguageSchema,
 });
 
 export const submissionQuerySchema = z.object({

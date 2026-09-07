@@ -11,18 +11,16 @@ import {
   type ClassroomSession,
   type ClassroomWork,
   type ScheduleDraft,
-  type WorkOutput,
 } from "@/api/classrooms";
 import { AppLayout } from "@/components/AppLayout";
+import { LabOutput, LabWorkspace } from "@/pages/student/LabWorkspace";
 import {
   ClassroomScheduleEditor,
   newSchedule,
 } from "@/components/ClassroomScheduleEditor";
-import { SqlResultTable } from "@/components/SqlWorkspace";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 
 const date = (iso: string) =>
@@ -54,7 +52,7 @@ export function ClassroomList({ faculty = false }: { faculty?: boolean }) {
             </p>
           </div>
           {faculty && (
-            <Button asChild>
+            <Button asChild className="bg-accent text-accent-foreground hover:bg-accent/90">
               <Link to="/faculty/labs/create">Create classroom</Link>
             </Button>
           )}
@@ -77,7 +75,7 @@ export function ClassroomList({ faculty = false }: { faculty?: boolean }) {
                   maxLength={32}
                 />
               </label>
-              <Button disabled={!code.trim() || join.isPending}>
+              <Button className="bg-accent text-accent-foreground hover:bg-accent/90" disabled={!code.trim() || join.isPending}>
                 Join classroom
               </Button>
             </form>
@@ -225,12 +223,17 @@ export function ClassroomPage({ faculty = false }: { faculty?: boolean }) {
             </div>
           )}
         </div>
-        <nav className="flex flex-wrap gap-2" aria-label="Classroom sections">
+        <nav className="flex flex-wrap border-b border-border" aria-label="Classroom sections">
           {["sessions", "marks", ...(faculty ? ["students"] : ["history"])].map(
             (item) => (
-              <Button
+              <button
                 key={item}
-                variant={tab === item ? "default" : "outline"}
+                type="button"
+                className={
+                  tab === item
+                    ? "border-b-2 border-accent bg-background px-4 py-2 text-sm font-semibold capitalize text-accent"
+                    : "border-b-2 border-transparent px-4 py-2 text-sm font-semibold capitalize text-muted-foreground transition-colors hover:text-foreground"
+                }
                 onClick={() => {
                   setTab(item);
                   setWorkspace(null);
@@ -239,7 +242,7 @@ export function ClassroomPage({ faculty = false }: { faculty?: boolean }) {
                 {item === "marks"
                   ? "Marks / 100"
                   : item[0].toUpperCase() + item.slice(1)}
-              </Button>
+              </button>
             ),
           )}
         </nav>
@@ -270,6 +273,7 @@ export function ClassroomPage({ faculty = false }: { faculty?: boolean }) {
                     Cancel
                   </Button>
                   <Button
+                    className="bg-accent text-accent-foreground hover:bg-accent/90"
                     disabled={
                       saveSchedule.isPending ||
                       !schedule.experimentIds.length ||
@@ -334,6 +338,7 @@ export function ClassroomPage({ faculty = false }: { faculty?: boolean }) {
                       )}
                       {session.computedStatus === "Ready" && (
                         <Button
+                          className="bg-accent text-accent-foreground hover:bg-accent/90"
                           disabled={action.isPending}
                           onClick={() =>
                             action.mutate({
@@ -365,6 +370,7 @@ export function ClassroomPage({ faculty = false }: { faculty?: boolean }) {
                       {session.computedStatus === "Active" &&
                         !session.attendance.length && (
                           <Button
+                            className="bg-accent text-accent-foreground hover:bg-accent/90"
                             disabled={action.isPending}
                             onClick={() =>
                               action.mutate({
@@ -428,7 +434,7 @@ export function ClassroomPage({ faculty = false }: { faculty?: boolean }) {
               </Card>
             ))}
             {workspace && currentSession && (
-              <Workspace
+              <LabWorkspace
                 key={`${workspace.sessionId}:${workspace.experimentId}:${workspace.mode}`}
                 classroomId={id}
                 session={currentSession}
@@ -493,7 +499,7 @@ export function ClassroomPage({ faculty = false }: { faculty?: boolean }) {
                 Official submissions are preserved separately from practice.
                 Select sessions to include in your PDF.
               </p>
-              <Button asChild>
+              <Button asChild className="bg-accent text-accent-foreground hover:bg-accent/90">
                 <a
                   href={classroomApi.pdfUrl(id, selectedPdf)}
                   target="_blank"
@@ -544,37 +550,6 @@ export function ClassroomPage({ faculty = false }: { faculty?: boolean }) {
   );
 }
 
-function Output({ output }: { output: WorkOutput | null }) {
-  if (!output)
-    return (
-      <p className="text-sm text-muted-foreground">
-        Execution pending. Your code is saved.
-      </p>
-    );
-  return (
-    <div className="space-y-2">
-      <p className="text-sm font-semibold">
-        {output.status} · {output.runtimeMs} ms
-      </p>
-      {output.table && <SqlResultTable result={output.table} />}
-      {!output.table && (
-        <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded bg-muted p-3 text-sm">
-          {output.stdout || "No standard output."}
-        </pre>
-      )}
-      {output.stderr && (
-        <pre className="whitespace-pre-wrap text-sm text-destructive">
-          {output.stderr}
-        </pre>
-      )}
-      {output.truncated && (
-        <p className="text-sm text-muted-foreground">
-          Output was truncated when captured.
-        </p>
-      )}
-    </div>
-  );
-}
 function History({
   work,
   session,
@@ -595,10 +570,10 @@ function History({
             {session.experiments.find((e) => e.id === w.experimentId)?.number} ·{" "}
             {w.language} · {date(w.createdAt)} · {w.output?.status ?? "Pending"}
           </summary>
-          <pre className="my-3 max-h-96 overflow-auto whitespace-pre-wrap rounded bg-muted p-3 text-sm">
+          <pre className="my-3 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded bg-secondary/60 p-3 font-mono-code text-xs">
             {w.code}
           </pre>
-          <Output output={w.output} />
+          <LabOutput output={w.output} />
         </details>
       ))}
     </div>
@@ -818,183 +793,5 @@ function Gradebook({
         </table>
       </div>
     </Card>
-  );
-}
-function Workspace({
-  classroomId,
-  session,
-  experimentId,
-  mode,
-  detail,
-  refresh,
-  onClose,
-}: {
-  classroomId: string;
-  session: ClassroomSession;
-  experimentId: string;
-  mode: "official" | "practice";
-  detail: ClassroomDetail;
-  refresh: () => void;
-  onClose: () => void;
-}) {
-  const experiment = session.experiments.find((e) => e.id === experimentId)!;
-  const prior = detail.work
-    .filter(
-      (w) =>
-        w.sessionId === session.id &&
-        w.experimentId === experimentId &&
-        w.mode === mode,
-    )
-    .slice(-1)[0];
-  const draft = detail.drafts.find(
-    (d) =>
-      d.sessionId === session.id &&
-      d.experimentId === experimentId &&
-      d.mode === mode,
-  );
-  const [code, setCode] = useState(
-    draft && (!prior || draft.updatedAt > prior.createdAt)
-      ? draft.code
-      : (prior?.code ?? ""),
-  );
-  const [lastWork, setLastWork] = useState<ClassroomWork | undefined>(prior);
-  useEffect(() => {
-    if (!lastWork || lastWork.output) return;
-    const completed = detail.work.find((work) => work.id === lastWork.id);
-    if (completed?.output) setLastWork(completed);
-  }, [detail.work, lastWork]);
-  const writable =
-    mode === "practice"
-      ? session.computedStatus === "Ended"
-      : session.computedStatus === "Active";
-  const run = useMutation({
-    mutationFn: (action: "run" | "submit" | "draft") =>
-      classroomApi.work(classroomId, session.id, {
-        requestKey: newRequestKey(),
-        experimentId,
-        mode,
-        action,
-        language: session.language,
-        code,
-      }),
-    onSuccess: (response, action) => {
-      if (response.work) setLastWork(response.work);
-      refresh();
-      toast.success(
-        action === "submit"
-          ? mode === "official"
-            ? "Experiment submitted · Performed"
-            : "Practice saved"
-          : action === "draft"
-            ? "Draft saved"
-            : "Execution finished",
-      );
-    },
-    onError: errorToast,
-  });
-  return (
-    <div
-      className="fixed inset-0 z-50 overflow-y-auto bg-background p-4 sm:p-8"
-      role="dialog"
-      aria-modal="true"
-      aria-label={experiment.title}
-    >
-      <div className="mx-auto max-w-6xl space-y-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <Badge variant="secondary">
-              {mode === "official"
-                ? "Official session"
-                : "Practice · does not affect attendance or marks"}
-            </Badge>
-            <h2 className="mt-2 text-2xl font-semibold">
-              {experiment.number}. {experiment.title}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Required language: {session.language}
-            </p>
-          </div>
-          <Button variant="outline" onClick={onClose}>
-            Close workspace
-          </Button>
-        </div>
-        <p className="whitespace-pre-wrap">{experiment.aim}</p>
-        {experiment.schemaSql && (
-          <details>
-            <summary className="cursor-pointer">Schema and seed data</summary>
-            <pre className="overflow-auto whitespace-pre-wrap bg-muted p-3 text-sm">
-              {experiment.schemaSql}
-            </pre>
-          </details>
-        )}
-        {experiment.sampleTestCases?.map((sample, index) => (
-          <details key={index}>
-            <summary className="cursor-pointer">Sample {index + 1}</summary>
-            <pre className="whitespace-pre-wrap bg-muted p-3 text-sm">
-              Input: {sample.input}
-              {"\n"}Expected output: {sample.output}
-            </pre>
-          </details>
-        ))}
-        <label className="block space-y-2">
-          <span className="text-sm font-semibold">
-            Your {session.language === "sql" ? "SQL" : "code"}
-          </span>
-          <Textarea
-            autoFocus
-            spellCheck={false}
-            className="min-h-80 font-mono text-sm"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            disabled={!writable}
-          />
-        </label>
-        {!writable && (
-          <p className="text-destructive">
-            The session has ended. Your saved work remains available in history.
-          </p>
-        )}
-        <div className="flex flex-wrap gap-3">
-          <Button
-            variant="outline"
-            disabled={!writable || run.isPending}
-            onClick={() => run.mutate("draft")}
-          >
-            Save draft
-          </Button>
-          <Button
-            variant="outline"
-            disabled={!writable || !code.trim() || run.isPending}
-            onClick={() => run.mutate("run")}
-          >
-            Run
-          </Button>
-          <Button
-            disabled={!writable || !code.trim() || run.isPending}
-            onClick={() => run.mutate("submit")}
-          >
-            {run.isPending
-              ? "Saving / executing…"
-              : mode === "official"
-                ? "Submit experiment"
-                : "Save practice"}
-          </Button>
-        </div>
-        {lastWork && (
-          <Card className="space-y-3 p-4">
-            <h3 className="font-semibold">
-              Output from {date(lastWork.createdAt)}
-            </h3>
-            {lastWork.code !== code && (
-              <p className="text-sm text-muted-foreground">
-                The editor has changed since this execution. Run again for
-                updated output.
-              </p>
-            )}
-            <Output output={lastWork.output} />
-          </Card>
-        )}
-      </div>
-    </div>
   );
 }

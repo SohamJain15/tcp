@@ -1,9 +1,13 @@
+import { splitSqlStatements } from "./sql-policy";
+import type { SqlCheck } from "./sql-checks";
 import type {
   SqlExecutor,
   SqlExperimentContext,
   SqlGradeResult,
   SqlResultSet,
   SqlRunResult,
+  SqlScriptResult,
+  SqlStatementResult,
 } from "./sql-executor";
 
 /**
@@ -55,6 +59,58 @@ export class StubSqlExecutor implements SqlExecutor {
       studentResult: SAMPLE_RESULT,
       expectedResult: SAMPLE_RESULT,
       message: passed ? undefined : "Your result does not match the expected result.",
+    };
+  }
+
+  /**
+   * Script mode without a database. Every statement is reported as having succeeded, a single
+   * placeholder table stands in for the snapshot, and checks pass unless the script says otherwise
+   * — enough for the classroom flow and the frontend to be exercised end to end in tests.
+   */
+  async runScript(input: {
+    studentSql: string;
+    context: SqlExperimentContext;
+    checks?: SqlCheck[];
+  }): Promise<SqlScriptResult> {
+    const lowered = input.studentSql.toLowerCase();
+    const statements = splitSqlStatements(input.studentSql);
+    if (lowered.includes("runtime_error")) {
+      return {
+        ok: false,
+        statements: [{ sql: statements[0] ?? input.studentSql, kind: "ddl", error: "Simulated SQL error" }],
+        snapshot: [],
+        snapshotTruncated: false,
+        error: "Simulated SQL error",
+        timedOut: false,
+        runtimeMs: 1,
+      };
+    }
+    const executed: SqlStatementResult[] = statements.map((sql) =>
+      /^\s*select/i.test(sql)
+        ? { sql, kind: "select", result: SAMPLE_RESULT }
+        : { sql, kind: "ddl", affectedRows: 0 },
+    );
+    const failChecks = lowered.includes("wrong_answer");
+    return {
+      ok: true,
+      statements: executed,
+      snapshot: [
+        {
+          name: "stub_table",
+          columns: [{ name: "result", dataType: "varchar(16)", nullable: true, key: "", extra: "" }],
+          rows: [["stub"]],
+          rowCount: 1,
+          truncated: false,
+        },
+      ],
+      snapshotTruncated: false,
+      checks: input.checks?.map((check) => ({
+        label: check.label,
+        passed: !failChecks,
+        detail: failChecks ? "Simulated failing check" : undefined,
+      })),
+      timedOut: false,
+      runtimeMs: 1,
     };
   }
 }

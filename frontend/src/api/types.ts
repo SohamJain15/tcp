@@ -49,6 +49,13 @@ export type SupportedLanguage =
 export type EditorOnlyLanguage = "react" | "html" | "css";
 export type ExecutableLanguage = Exclude<SupportedLanguage, EditorOnlyLanguage>;
 
+/**
+ * What a submission was written in. Wider than `ExecutableLanguage` by exactly one member: "sql"
+ * is a language students submit in but Judge0 never sees — SQL problems are graded by the MySQL
+ * sandbox instead.
+ */
+export type SubmissionLanguage = ExecutableLanguage | "sql";
+
 export type SubmissionStatus =
   | "QUEUED"
   | "RUNNING"
@@ -139,6 +146,8 @@ export const DEPARTMENTS: Department[] = [
   "B.Tech – Computer Science & Engineering (CSE-IOT)",
 ];
 
+export type ProblemKind = "coding" | "sql";
+
 export interface ProblemTestCase {
   input: string;
   output: string;
@@ -148,6 +157,8 @@ export interface ProblemTestCase {
 export interface StudentProblemSummary {
   id: string;
   title: string;
+  /** "sql" switches the workspace to a single SQL editor and a result grid. */
+  kind: ProblemKind;
   difficulty: Difficulty;
   tags: string[];
   targetDepartment?: Department | null;
@@ -164,6 +175,9 @@ export interface StudentProblemSummary {
 
 export interface StudentProblemDetail extends StudentProblemSummary {
   statement: string;
+  /** SQL problems: the seeded schema, shown the way HackerRank shows table definitions. */
+  schemaSql?: string;
+  ordered?: boolean;
   inputFormat: string;
   outputFormat: string;
   constraints: string[];
@@ -226,7 +240,7 @@ export interface FailedTestCase {
 
 export interface SubmissionResult {
   problemId: string;
-  language: ExecutableLanguage;
+  language: SubmissionLanguage;
   status: SubmissionStatus;
   runtimeMs: number;
   memoryKb: number;
@@ -236,6 +250,8 @@ export interface SubmissionResult {
   stdout?: string;
   stderr?: string;
   failedTest: FailedTestCase | null;
+  /** SQL problems: the grid to render instead of a stdout blob. */
+  sqlResult?: SqlResultSet | null;
 }
 
 export interface RunResultEnvelope {
@@ -345,7 +361,7 @@ export interface Submission {
   contestId: string | null;
   contestTitle: string | null;
   contestQuestionId: string | null;
-  language: ExecutableLanguage;
+  language: SubmissionLanguage;
   status: SubmissionStatus;
   runtimeMs: number;
   memoryKb: number;
@@ -356,6 +372,10 @@ export interface Submission {
   stdout?: string | null;
   stderr?: string | null;
   failedTest: FailedTestCase | null;
+  /** SQL problems: the grid the student's query produced. */
+  sqlResult?: SqlResultSet | null;
+  /** SQL problems: the reference grid. Withheld during contests and class tests. */
+  sqlExpected?: SqlResultSet | null;
   createdAt: string;
   updatedAt: string;
   judgedAt: string | null;
@@ -1677,6 +1697,93 @@ export interface SqlResultSet {
   truncated: boolean;
 }
 
+export type SqlMode = "query" | "script";
+
+export const SQL_CHECK_TYPES = [
+  "tableExists",
+  "tableCount",
+  "hasColumn",
+  "hasConstraint",
+  "rowCount",
+  "queryReturns",
+] as const;
+export type SqlCheckType = (typeof SQL_CHECK_TYPES)[number];
+
+export const SQL_CONSTRAINT_KINDS = [
+  "PRIMARY KEY",
+  "FOREIGN KEY",
+  "UNIQUE",
+  "NOT NULL",
+  "CHECK",
+  "INDEX",
+] as const;
+
+/**
+ * A structural condition a script experiment's finished database must satisfy. Mirrors the backend
+ * `SqlCheck`; the fields a given type actually uses vary, which the backend validator enforces
+ * strictly. `anyTable` is what makes a check name-agnostic — it passes if any one of the student's
+ * tables satisfies it, so a student who names their table `student_tbl` is not marked wrong for it.
+ */
+export interface SqlCheck {
+  type: SqlCheckType;
+  label: string;
+  table?: string;
+  anyTable?: boolean;
+  column?: string;
+  dataType?: string;
+  constraint?: (typeof SQL_CONSTRAINT_KINDS)[number];
+  min?: number;
+  max?: number;
+  sql?: string;
+  minRows?: number;
+  maxRows?: number;
+}
+
+/** One statement's outcome inside a script run. Mirrors the backend `SqlStatementResult`. */
+export interface SqlStatementResult {
+  sql: string;
+  kind: "select" | "write" | "ddl";
+  result?: SqlResultSet;
+  affectedRows?: number;
+  error?: string;
+}
+
+export interface SqlColumnInfo {
+  name: string;
+  dataType: string;
+  nullable: boolean;
+  /** MySQL's COLUMN_KEY: "PRI", "UNI", "MUL" or "". */
+  key: string;
+  extra: string;
+}
+
+/** One table as it stands after a script finished — what the student actually built. */
+export interface SqlTableSnapshot {
+  name: string;
+  columns: SqlColumnInfo[];
+  rows: SqlCell[][];
+  rowCount: number;
+  truncated: boolean;
+}
+
+export interface SqlCheckResult {
+  label: string;
+  passed: boolean;
+  detail?: string;
+}
+
+export interface SqlScriptResult {
+  ok: boolean;
+  statements: SqlStatementResult[];
+  snapshot: SqlTableSnapshot[];
+  checks?: SqlCheckResult[];
+  snapshotTruncated: boolean;
+  error?: string;
+  internalError?: boolean;
+  timedOut: boolean;
+  runtimeMs: number;
+}
+
 /** An experiment as a student sees it — never the SQL reference query or hidden coding tests. */
 export interface StudentLabExperiment {
   id: string;
@@ -1686,8 +1793,16 @@ export interface StudentLabExperiment {
   aim: string;
   points: number;
   // sql
+  /**
+   * "query" — one statement against a seeded schema, graded by comparing result grids.
+   * "script" — a multi-statement application experiment (DDL, DML, constraints, a mini-project),
+   * judged by structural checks over whatever schema the student designed. Absent means "query".
+   */
+  sqlMode?: SqlMode;
   schemaSql?: string;
   ordered?: boolean;
+  /** Script mode: the rubric, in the faculty's own words. Check bodies stay server-side. */
+  checkLabels?: string[];
   // coding
   difficulty?: Difficulty;
   constraints?: string;
@@ -1719,6 +1834,9 @@ export interface StudentLabDetail extends StudentLabSummary {
 /** Faculty-facing lab record (mirrors the backend LabRecord; experiments carry the reference query). */
 export interface FacultyLabExperiment extends StudentLabExperiment {
   solutionSql?: string;
+  /** Script experiments: the full check bodies, which students never receive. */
+  checks?: SqlCheck[];
+  facultyMarked?: boolean;
   hiddenTestCases?: { input: string; output: string; explanation?: string }[];
 }
 

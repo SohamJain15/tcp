@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validateSchemaSql } from "../../execution/sql/sql-policy";
 import { createLabSchema } from "../lab/lab.validator";
 import {
   DEPARTMENTS,
@@ -39,6 +40,22 @@ export const classroomSchema = createLabSchema
           code: "custom",
           path: ["experiments", index, "kind"],
           message: "Experiment type must match the classroom kind",
+        });
+        return;
+      }
+      if (experiment.kind !== "sql") {
+        return;
+      }
+      // Seed SQL runs with schema-owner privileges inside the student's throwaway database. A dump
+      // that opens with `CREATE DATABASE x; USE x;` seeds its tables somewhere the student cannot
+      // reach, and every query then fails with "table doesn't exist" — a failure that is impossible
+      // to diagnose from the student's side, so it has to be caught here, when the lab is saved.
+      const seed = validateSchemaSql(experiment.schemaSql, 100_000);
+      if (!seed.ok) {
+        context.addIssue({
+          code: "custom",
+          path: ["experiments", index, "schemaSql"],
+          message: seed.error ?? "Seed SQL is not valid",
         });
       }
     });

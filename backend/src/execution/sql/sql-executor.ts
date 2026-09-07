@@ -10,6 +10,8 @@
  * attempt) and a stub used when the sandbox is disabled and in tests.
  */
 
+import type { SqlCheck } from "./sql-checks";
+
 export type SqlCell = string | number | boolean | null;
 
 export interface SqlResultSet {
@@ -27,6 +29,64 @@ export interface SqlExperimentContext {
   solutionSql: string;
   /** Whether row order is part of the answer (the task required an ORDER BY). */
   ordered: boolean;
+}
+
+/**
+ * One statement's outcome inside a script run.
+ *
+ * A `SELECT` carries a grid; `INSERT`/`UPDATE`/`DELETE` carry a row count; DDL carries neither and
+ * is reported by the fact that it succeeded. Reporting all three is what lets an application
+ * experiment ("create these tables, then populate them") show the student something at all —
+ * a query-mode run has nothing to display for a `CREATE TABLE`.
+ */
+export interface SqlStatementResult {
+  sql: string;
+  kind: "select" | "write" | "ddl";
+  result?: SqlResultSet;
+  affectedRows?: number;
+  /** Set when this statement failed; execution stops here and later statements are not attempted. */
+  error?: string;
+}
+
+export interface SqlColumnInfo {
+  name: string;
+  dataType: string;
+  nullable: boolean;
+  /** MySQL's `COLUMN_KEY`: "PRI", "UNI", "MUL" or "". */
+  key: string;
+  extra: string;
+}
+
+/** One table as it stands after a script finished — the "show me the actual tables" payload. */
+export interface SqlTableSnapshot {
+  name: string;
+  columns: SqlColumnInfo[];
+  rows: SqlCell[][];
+  /** Total rows in the table, which can exceed `rows.length`. */
+  rowCount: number;
+  truncated: boolean;
+}
+
+export interface SqlCheckResult {
+  label: string;
+  passed: boolean;
+  /** One line explaining a failure, e.g. "no table has a FOREIGN KEY". */
+  detail?: string;
+}
+
+export interface SqlScriptResult {
+  ok: boolean;
+  statements: SqlStatementResult[];
+  /** Every table in the student's database once the script finished. */
+  snapshot: SqlTableSnapshot[];
+  /** Present only when the experiment declares checks. */
+  checks?: SqlCheckResult[];
+  /** True when the snapshot itself was capped (too many tables), not when a single table was. */
+  snapshotTruncated: boolean;
+  error?: string;
+  internalError?: boolean;
+  timedOut: boolean;
+  runtimeMs: number;
 }
 
 export type SqlVerdict =
@@ -66,4 +126,17 @@ export interface SqlExecutor {
   run(input: { studentSql: string; context: SqlExperimentContext }): Promise<SqlRunResult>;
   /** Seed the schema, run the student's query and the reference query, and compare them. */
   grade(input: { studentSql: string; context: SqlExperimentContext }): Promise<SqlGradeResult>;
+  /**
+   * Seed the schema, run a multi-statement script, then report every statement's outcome, the
+   * resulting tables and — when the experiment declares them — the structural checks.
+   *
+   * This is the application-experiment path (DDL, DML, constraints, a mini-project schema). It has
+   * no reference-result comparison because the student designs their own tables, so two correct
+   * answers legitimately differ in table and column names.
+   */
+  runScript(input: {
+    studentSql: string;
+    context: SqlExperimentContext;
+    checks?: SqlCheck[];
+  }): Promise<SqlScriptResult>;
 }

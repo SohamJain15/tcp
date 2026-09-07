@@ -14,6 +14,25 @@ vi.mock("@/components/AppLayout", () => ({
 vi.mock("@/components/SqlWorkspace", () => ({
   SqlResultTable: () => <div>SQL result table</div>,
 }));
+// Monaco needs a real layout engine, so the workspace's editor stands in as a textarea carrying
+// the same accessible name the component gives the editor wrapper.
+vi.mock("@monaco-editor/react", () => ({
+  default: ({
+    value,
+    onChange,
+    wrapperProps,
+  }: {
+    value: string;
+    onChange: (next: string) => void;
+    wrapperProps?: Record<string, string>;
+  }) => (
+    <textarea
+      aria-label={wrapperProps?.["aria-label"]}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  ),
+}));
 vi.mock("@/api/classrooms", async (original) => ({
   ...(await original<typeof import("@/api/classrooms")>()),
   classroomApi: {
@@ -201,6 +220,70 @@ describe("classroom screens", () => {
         }),
       ),
     );
+  });
+  it("shows a script experiment's rubric, its statements, and the tables it created", async () => {
+    const scripted = structuredClone(detail);
+    scripted.classroom.sessions[0].attendance = [
+      { ...scripted.classroom.members![0], enteredAt: "2026-09-08T04:31:00Z" },
+    ];
+    const experiment = scripted.classroom.sessions[0].experiments[0];
+    experiment.sqlMode = "script";
+    experiment.title = "Design a schema";
+    experiment.checkLabels = ["A primary key is defined"];
+    vi.mocked(classroomApi.get).mockResolvedValue(scripted);
+    vi.mocked(classroomApi.work).mockResolvedValue({
+      work: {
+        id: "w1",
+        sessionId: "s1",
+        experimentId: "e1",
+        email: "student@example.com",
+        mode: "official",
+        action: "run",
+        code: "CREATE TABLE dept (id INT PRIMARY KEY);",
+        language: "sql",
+        createdAt: "2026-09-08T04:32:00Z",
+        output: {
+          status: "EXECUTED",
+          stdout: "",
+          stderr: "",
+          truncated: false,
+          runtimeMs: 4,
+          script: {
+            ok: true,
+            statements: [{ sql: "CREATE TABLE dept (id INT PRIMARY KEY)", kind: "ddl", affectedRows: 0 }],
+            snapshot: [
+              {
+                name: "dept",
+                columns: [{ name: "id", dataType: "int", nullable: false, key: "PRI", extra: "" }],
+                rows: [],
+                rowCount: 0,
+                truncated: false,
+              },
+            ],
+            checks: [{ label: "A primary key is defined", passed: true }],
+            snapshotTruncated: false,
+            timedOut: false,
+            runtimeMs: 4,
+          },
+        },
+      },
+    });
+    mount(false);
+    fireEvent.click(await screen.findByRole("button", { name: "Open experiment" }));
+    // The rubric is visible before the student writes anything — it is the task, not a reveal.
+    expect(screen.getByText("A primary key is defined")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Your SQL"), {
+      target: { value: "CREATE TABLE dept (id INT PRIMARY KEY);" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    // A CREATE TABLE has no result grid, so the tables it built are what the student needs back.
+    const tables = await screen.findByRole("button", { name: /^Tables/ });
+    expect(tables).toBeInTheDocument();
+    expect(await screen.findByText("dept")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Result" }));
+    expect(screen.getByText("CREATE TABLE dept (id INT PRIMARY KEY)")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Checks" }));
+    expect(screen.getAllByText("A primary key is defined").length).toBeGreaterThan(1);
   });
   it("shows absence separately from not-performed work and prevents starting an unentered session", async () => {
     mount(false);

@@ -1,3 +1,4 @@
+import type { SqlCheck } from "../../execution/sql/sql-checks";
 import type { HarnessSpec } from "../../execution/harness/contract";
 import type { UserRole } from "../../shared/types/auth";
 import type { Department, Difficulty, ExecutableLanguage, ProblemLifecycleState } from "../../shared/types/domain";
@@ -45,15 +46,36 @@ export interface LabCodingExperiment extends LabExperimentBase {
   harness?: HarnessSpec;
 }
 
+/**
+ * How a SQL experiment is worked and judged.
+ *
+ * - `query`  — one statement against a seeded schema, graded by comparing result grids. This is a
+ *   "write the SELECT" experiment: syllabus practicals 1, 2, 7, 8, 9.
+ * - `script` — a multi-statement script, usually against an empty database, judged by structural
+ *   checks over whatever the student built. This is an application experiment: practicals 3, 4, 5,
+ *   6 and the mini-projects, where the student designs their own schema and no two correct answers
+ *   share table names.
+ */
+export type LabSqlMode = "query" | "script";
+
 /** A SQL experiment — the schema is shown to students; the reference query is not. */
 export interface LabSqlExperiment extends LabExperimentBase {
   kind: "sql";
-  /** DDL + seed data. Safe to show students — it is the setup, not the answer. */
+  /** Defaults to "query" so experiments authored before script mode existed keep their behaviour. */
+  sqlMode: LabSqlMode;
+  /** DDL + seed data. Safe to show students — it is the setup, not the answer. Empty for a
+   *  "design your own database" experiment, which starts from an empty schema. */
   schemaSql: string;
-  /** The reference query. Never sent to a student; the expected result is derived from it. */
+  /** The reference query. Never sent to a student; the expected result is derived from it. Empty
+   *  in script mode, where there is no single reference answer. */
   solutionSql: string;
   /** Whether row order is part of the answer (the task required an ORDER BY). */
   ordered: boolean;
+  /** Script mode only. Structural conditions the student's finished database must satisfy. The
+   *  labels are shown to the student up front, so they double as the rubric. */
+  checks?: SqlCheck[];
+  /** Script mode only. True when the experiment is graded by the faculty with no automatic verdict. */
+  facultyMarked?: boolean;
 }
 
 export type LabExperiment = LabCodingExperiment | LabSqlExperiment;
@@ -117,8 +139,11 @@ export interface StudentLabExperiment {
   aim: string;
   points: number;
   // sql
+  sqlMode?: LabSqlMode;
   schemaSql?: string;
   ordered?: boolean;
+  /** Rubric labels only — a student sees what will be verified, not how it is verified. */
+  checkLabels?: string[];
   // coding
   difficulty?: Difficulty;
   constraints?: string;
@@ -161,8 +186,12 @@ export function toStudentExperiment(experiment: LabExperiment): StudentLabExperi
       title: experiment.title,
       aim: experiment.aim,
       points: experiment.points,
+      sqlMode: experiment.sqlMode ?? "query",
       schemaSql: experiment.schemaSql,
       ordered: experiment.ordered,
+      // Labels only. A student should know what is being verified — it is the rubric — but the
+      // check bodies (a faculty verification query, an exact table name) stay server-side.
+      checkLabels: experiment.checks?.map((check) => check.label),
     };
   }
   return {

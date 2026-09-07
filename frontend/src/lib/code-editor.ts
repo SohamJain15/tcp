@@ -278,8 +278,14 @@ async function provideExecutableFormattingEdits(
   return createFullModelEdit(monaco, model, nextValue);
 }
 
-export function getMonacoLanguage(language: ExecutableLanguage): string {
+/**
+ * Widened past `ExecutableLanguage` because labs carry the session language as a free string: "sql"
+ * is a lab language but never a Judge0 one, so it is not in the executable union.
+ */
+export function getMonacoLanguage(language: ExecutableLanguage | "sql" | (string & {})): string {
   switch (language) {
+    case "sql":
+      return "sql";
     case "arduino":
       return "cpp";
     case "assembly8086":
