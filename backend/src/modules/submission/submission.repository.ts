@@ -98,7 +98,12 @@ function mapSubmissionRecord(submissionId: string, data: Record<string, unknown>
     labId: typeof data.labId === "string" ? data.labId : null,
     labExperimentId: typeof data.labExperimentId === "string" ? data.labExperimentId : null,
     code: typeof data.code === "string" ? data.code : "",
-    language: normalizeExecutableLanguage(data.language),
+    // Older finalization reads normalized SQL to cpp and saved that value back.
+    // The recorded sandbox provider identifies those historical SQL submissions.
+    language: data.executionProvider === "sql-mysql" || data.executionProvider === "sql-stub" ||
+      (typeof data.language === "string" && data.language.trim().toLowerCase() === "sql")
+      ? "sql"
+      : normalizeExecutableLanguage(data.language),
     status: normalizeSubmissionStatus(data.status),
     runtimeMs: normalizeNumber(data.runtimeMs ?? data.executionTime, 0),
     memoryKb: normalizeNumber(data.memoryKb, 0),

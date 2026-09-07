@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { EXECUTABLE_LANGUAGES, normalizeLanguage, toStatusLabel } from "@/api/mappers";
+import { EXECUTABLE_LANGUAGES, normalizeLanguage, toLanguageLabel, toStatusLabel } from "@/api/mappers";
 
 describe("api mappers", () => {
+  it("labels SQL submissions separately from C++", () => {
+    expect(toLanguageLabel("sql")).toBe("SQL");
+    expect(toLanguageLabel("cpp")).toBe("C++");
+  });
   it("normalizes language aliases", () => {
     expect(normalizeLanguage("C++")).toBe("cpp");
     expect(normalizeLanguage("py")).toBe("python");

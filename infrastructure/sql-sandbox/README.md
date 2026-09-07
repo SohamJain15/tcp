@@ -16,9 +16,14 @@ cp infrastructure/sql-sandbox/.env.example infrastructure/sql-sandbox/.env
 cp infrastructure/sql-sandbox/mysql.cnf.example infrastructure/sql-sandbox/mysql.cnf
 ```
 
-Set both passwords in `infrastructure/sql-sandbox/.env`. The real `mysql.cnf` is deployment-only
-and is ignored by Git; keep it on the Linux server after copying the example. Then run these
-commands from the repository root:
+Generate both passwords with `openssl rand -hex 32` and set them in
+`infrastructure/sql-sandbox/.env`. `SQL_SANDBOX_ADMIN_PASSWORD` must match `^[A-Za-z0-9_-]+$` —
+`init/01-create-admin.sh` interpolates it into a SQL literal and refuses anything else — and it must
+be copied into the backend's `MYSQL_ADMIN_PASSWORD`. If those two drift apart the backend cannot
+connect and every SQL run fails.
+
+The real `mysql.cnf` is deployment-only and is ignored by Git; keep it on the Linux server after
+copying the example. Then run these commands from the repository root:
 
 ```bash
 npm run sql-sandbox:up
