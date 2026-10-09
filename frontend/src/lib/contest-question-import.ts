@@ -4,8 +4,12 @@ import type { JsonImportFieldError } from "@/lib/problem-import-schema";
 
 /**
  * Client-side mirror of the backend `codingQuestionSchema`
- * (backend/src/modules/contest/contest.validator.ts). Only coding questions can be imported —
- * MCQ and MSQ stay in the form builder where the option/answer pairing is easier to get right.
+ * (backend/src/modules/contest/contest.validator.ts). Coding and Database questions can be
+ * imported — MCQ and MSQ stay in the form builder where the option/answer pairing is easier to get
+ * right.
+ *
+ * Entries discriminate on `type`. A missing `type` means Coding, so every JSON file written before
+ * Database questions existed keeps importing unchanged.
  */
 
 export interface ImportedCodingQuestion {
@@ -27,7 +31,42 @@ const testCaseSchema = z.object({
   output: z.string(),
 });
 
+/**
+ * A Database question. The schema seeds a throwaway MySQL database and the reference query derives
+ * the expected result, so neither test cases nor an output format apply — the backend blanks those
+ * fields for SQL questions.
+ */
+export interface ImportedDatabaseQuestion {
+  problemTitle: string;
+  difficulty: "Easy" | "Medium" | "Hard";
+  problemStatement: string;
+  constraints: string;
+  schemaSql: string;
+  solutionSql: string;
+  ordered: boolean;
+  points: number;
+}
+
+export type ImportedContestQuestion =
+  | ({ type: "Coding" } & ImportedCodingQuestion)
+  | ({ type: "Database" } & ImportedDatabaseQuestion);
+
+const databaseQuestionJsonSchema = z.object({
+  type: z.literal("Database"),
+  problemTitle: z.string().min(1, "Problem title is required"),
+  difficulty: z.enum(["Easy", "Medium", "Hard"]),
+  problemStatement: z.string().min(1, "Problem statement is required"),
+  constraints: z.string().optional(),
+  schemaSql: z.string().min(1, "Database schema and seed data are required"),
+  solutionSql: z.string().min(1, "A reference query is required"),
+  // Whether row order is part of the answer. Defaults to false, matching the backend.
+  ordered: z.boolean().optional(),
+  points: z.number().positive().optional(),
+});
+
 const codingQuestionJsonSchema = z.object({
+  // Optional so a file written before Database questions existed still imports as Coding.
+  type: z.literal("Coding").optional(),
   problemTitle: z.string().min(1, "Problem title is required"),
   difficulty: z.enum(["Easy", "Medium", "Hard"]),
   problemStatement: z.string().min(1, "Problem statement is required"),
@@ -41,6 +80,7 @@ const codingQuestionJsonSchema = z.object({
 
 export const CONTEST_CODING_EXAMPLE_JSON = `[
   {
+    "type": "Coding",
     "problemTitle": "Replace with the coding question title",
     "difficulty": "Easy",
     "problemStatement": "Replace with the full problem statement.",
@@ -60,11 +100,22 @@ export const CONTEST_CODING_EXAMPLE_JSON = `[
         "output": "Replace with hidden output"
       }
     ]
+  },
+  {
+    "type": "Database",
+    "problemTitle": "Replace with the database question title",
+    "difficulty": "Easy",
+    "problemStatement": "Replace with what the student's query must return.",
+    "constraints": "Use MySQL syntax; return the requested columns.",
+    "points": 100,
+    "schemaSql": "CREATE TABLE employees (id INT PRIMARY KEY, name VARCHAR(50), salary INT);\\nINSERT INTO employees VALUES (1,'Ada',90000),(2,'Alan',70000);",
+    "solutionSql": "SELECT name FROM employees WHERE salary > 75000;",
+    "ordered": false
   }
 ]`;
 
 export interface ContestQuestionImportResult {
-  questions: ImportedCodingQuestion[];
+  questions: ImportedContestQuestion[];
   errors: JsonImportFieldError[];
 }
 
@@ -92,21 +143,54 @@ export function parseContestCodingQuestionsJson(source: string): ContestQuestion
 
   const entries = Array.isArray(parsed) ? parsed : [parsed];
   if (entries.length === 0) {
-    return { questions: [], errors: [{ path: "json", message: "Provide at least one coding question" }] };
+    return { questions: [], errors: [{ path: "json", message: "Provide at least one question" }] };
   }
 
-  const questions: ImportedCodingQuestion[] = [];
+  const questions: ImportedContestQuestion[] = [];
   const errors: JsonImportFieldError[] = [];
 
   entries.forEach((entry, index) => {
+    const prefix = `question[${index}]`;
+    // A missing type means the original coding shape, so files written before Database questions
+    // existed still import unchanged.
+    const type =
+      (entry && typeof entry === "object" && "type" in entry ? (entry as { type?: unknown }).type : undefined) ?? "Coding";
+
+    if (type === "Database") {
+      const result = databaseQuestionJsonSchema.safeParse(entry);
+      if (!result.success) {
+        errors.push(...toFieldErrors(result.error, prefix));
+        return;
+      }
+      const value = result.data;
+      questions.push({
+        type: "Database",
+        problemTitle: value.problemTitle.trim(),
+        difficulty: value.difficulty,
+        problemStatement: value.problemStatement.trim(),
+        constraints: value.constraints?.trim() || "Use MySQL syntax and return the requested columns.",
+        schemaSql: value.schemaSql.trim(),
+        solutionSql: value.solutionSql.trim(),
+        ordered: value.ordered ?? false,
+        points: value.points ?? 100,
+      });
+      return;
+    }
+
+    if (type !== "Coding") {
+      errors.push({ path: `${prefix}.type`, message: `Unknown type "${String(type)}" — use Coding or Database` });
+      return;
+    }
+
     const result = codingQuestionJsonSchema.safeParse(entry);
     if (!result.success) {
-      errors.push(...toFieldErrors(result.error, `question[${index}]`));
+      errors.push(...toFieldErrors(result.error, prefix));
       return;
     }
 
     const value = result.data;
     questions.push({
+      type: "Coding",
       problemTitle: value.problemTitle.trim(),
       difficulty: value.difficulty,
       problemStatement: value.problemStatement.trim(),

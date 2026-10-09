@@ -295,7 +295,6 @@ export default function CreateContest() {
               solutionSql: question.solutionSql.trim(), ordered: question.ordered } };
         }
         if (question.type === "Coding") {
-          
           return {
             id: question.id,
             type: "Coding",
@@ -415,16 +414,21 @@ export default function CreateContest() {
 
     setQuestions((current) => [
       ...current,
-      ...imported.map((question) => ({
-        ...createQuestion("Coding"),
-        ...question,
-        sampleTestCases: normalizeTestCases(question.sampleTestCases),
-        hiddenTestCases: normalizeTestCases(question.hiddenTestCases),
-      })) as BuilderQuestion[],
+      ...imported.map((question): BuilderQuestion =>
+        question.type === "Database"
+          ? { ...createQuestion("Database"), ...question, type: "Database" }
+          : {
+              ...createQuestion("Coding"),
+              ...question,
+              type: "Coding",
+              sampleTestCases: normalizeTestCases(question.sampleTestCases),
+              hiddenTestCases: normalizeTestCases(question.hiddenTestCases),
+            },
+      ),
     ]);
     setJsonSource("");
     setAuthoringTab("form");
-    toast.success(`${imported.length} coding question${imported.length === 1 ? "" : "s"} added`);
+    toast.success(`${imported.length} question${imported.length === 1 ? "" : "s"} added`);
   };
 
   const removeQuestion = (questionId: string) => {
@@ -616,10 +620,11 @@ export default function CreateContest() {
             <TabsContent value="json" className="mt-5 space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h3 className="font-display text-base font-bold">Import Coding Questions</h3>
+                  <h3 className="font-display text-base font-bold">Import Coding &amp; Database Questions</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Paste one coding question or an array of them. MCQ and MSQ are authored in the
-                    Form Builder.
+                    Paste one question or an array of them, each tagged <code className="font-mono-code">"type": "Coding"</code>{" "}
+                    or <code className="font-mono-code">"type": "Database"</code>. An entry with no type is treated as
+                    Coding. MCQ and MSQ are authored in the Form Builder.
                   </p>
                 </div>
                 <Button type="button" variant="outline" onClick={copyJsonStructure}>

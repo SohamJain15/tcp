@@ -6,6 +6,7 @@ import { createRequireHod } from "../../middleware/require-hod";
 import { createClassTestService } from "../../modules/classtest/classtest.service";
 import { NoopCrosswordClueGenerator } from "../../modules/classtest/ai/crossword-clue-generator";
 import { StubSqlExecutor } from "../../execution/sql/stub-sql-executor";
+import type { SqlExecutor } from "../../execution/sql/sql-executor";
 import { createDepartmentService } from "../../modules/department/department.service";
 import { createReportService } from "../../modules/report/report.service";
 import {
@@ -56,9 +57,12 @@ export interface CreateTestAppOptions {
   hintGenerator?: HintGenerator;
   /** Override authentication to verify routes reject unauthenticated requests. */
   authMiddleware?: ApplicationDependencies["authMiddleware"];
+  /** Override the SQL executor to exercise sandbox failure paths without a MySQL. */
+  sqlExecutor?: SqlExecutor;
 }
 
 export function createTestApp(options: CreateTestAppOptions = {}) {
+  const sqlExecutor = options.sqlExecutor ?? new StubSqlExecutor();
   const seedTime = new Date(Date.UTC(2026, 4, 7, 0, 0, 0));
   const userRepository = new InMemoryUserRepository([
     {
@@ -300,7 +304,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       now,
     }),
     problemService: createProblemService({
-    sqlExecutor: new StubSqlExecutor(),
+    sqlExecutor,
       problemRepository,
       submissionRepository,
       userRepository,
@@ -310,7 +314,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       now,
     }),
     submissionService: createSubmissionService({
-    sqlExecutor: new StubSqlExecutor(),
+    sqlExecutor,
       problemRepository,
       contestRepository,
       contestAttemptRepository,
@@ -338,7 +342,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       submissionQueue,
       userRepository,
       executionProvider: new StubExecutionProvider(),
-      sqlExecutor: new StubSqlExecutor(),
+      sqlExecutor,
       now,
     }),
     departmentService: createDepartmentService({
@@ -362,7 +366,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       crosswordClueGenerator: new NoopCrosswordClueGenerator(),
       now,
     }),
-    classroomService: createClassroomService({ repository: new InMemoryClassrooms(), userRepository, executionProvider: new StubExecutionProvider(), sqlExecutor: new StubSqlExecutor(), now: options.classroomNow ?? now }),
+    classroomService: createClassroomService({ repository: new InMemoryClassrooms(), userRepository, executionProvider: new StubExecutionProvider(), sqlExecutor, now: options.classroomNow ?? now }),
     reportService: createReportService({
       contestRepository,
       contestAttemptRepository,

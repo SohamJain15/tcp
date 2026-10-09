@@ -304,7 +304,13 @@ export function normalizeCodingQuestion(raw: z.infer<typeof codingQuestionSchema
     sampleTestCases,
     hiddenTestCases,
     kind: raw.kind,
-    ...(raw.kind === "sql" ? { sql: raw.sql, sampleTestCases: [], hiddenTestCases: [], supportedLanguages: [] } : {}),
-    supportedLanguages: raw.kind === "sql" ? [] : raw.supportedLanguages.length > 0 ? raw.supportedLanguages : [...EXECUTABLE_LANGUAGES],
+    // A SQL question is judged by comparing result grids, so test cases and Judge0 languages have
+    // no meaning for it — storing stale values would mislead every later reader of the record.
+    ...(raw.kind === "sql"
+      ? { sql: raw.sql, sampleTestCases: [], hiddenTestCases: [], supportedLanguages: [] }
+      : {
+          supportedLanguages:
+            raw.supportedLanguages.length > 0 ? raw.supportedLanguages : [...EXECUTABLE_LANGUAGES],
+        }),
   };
 }

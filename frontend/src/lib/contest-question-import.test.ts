@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { parseClassTestQuestionsJson } from "./contest-question-import";
+import {
+  CONTEST_CODING_EXAMPLE_JSON,
+  parseClassTestQuestionsJson,
+  parseContestCodingQuestionsJson,
+} from "./contest-question-import";
 
 describe("parseClassTestQuestionsJson", () => {
   it("imports all four question types from one file", () => {
@@ -121,5 +125,96 @@ describe("parseClassTestQuestionsJson", () => {
       JSON.stringify([{ type: "Crossword", entries: [{ answer: "A1", clue: "a" }, { answer: "GOOD", clue: "b" }] }]),
     );
     expect(nonLetter.errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe("parseContestCodingQuestionsJson", () => {
+  const database = {
+    type: "Database",
+    problemTitle: "High earners",
+    difficulty: "Easy",
+    problemStatement: "List employees earning more than 75000.",
+    schemaSql: "CREATE TABLE employees (id INT, name VARCHAR(50), salary INT);",
+    solutionSql: "SELECT name FROM employees WHERE salary > 75000;",
+    ordered: true,
+    points: 50,
+  };
+
+  it("imports a Database question alongside a Coding one", () => {
+    const { questions, errors } = parseContestCodingQuestionsJson(
+      JSON.stringify([
+        {
+          type: "Coding",
+          problemTitle: "Add two numbers",
+          difficulty: "Easy",
+          problemStatement: "Print the sum.",
+          constraints: "1 <= n <= 10",
+          sampleTestCases: [{ input: "1 2", output: "3" }],
+          hiddenTestCases: [{ input: "4 5", output: "9" }],
+        },
+        database,
+      ]),
+    );
+    expect(errors).toEqual([]);
+    expect(questions.map((question) => question.type)).toEqual(["Coding", "Database"]);
+    expect(questions[1]).toMatchObject({
+      type: "Database",
+      schemaSql: expect.stringContaining("CREATE TABLE employees"),
+      solutionSql: expect.stringContaining("SELECT name"),
+      ordered: true,
+      points: 50,
+    });
+  });
+
+  it("still imports a typeless entry as Coding, so older contest files keep working", () => {
+    const { questions, errors } = parseContestCodingQuestionsJson(
+      JSON.stringify([
+        {
+          problemTitle: "Add two numbers",
+          difficulty: "Easy",
+          problemStatement: "Print the sum.",
+          constraints: "1 <= n <= 10",
+          sampleTestCases: [{ input: "1 2", output: "3" }],
+          hiddenTestCases: [{ input: "4 5", output: "9" }],
+        },
+      ]),
+    );
+    expect(errors).toEqual([]);
+    expect(questions[0].type).toBe("Coding");
+  });
+
+  it("defaults ordered and points, and supplies constraints when omitted", () => {
+    // `database` carries no `constraints`, and JSON.stringify drops the undefined keys — so this
+    // is the minimal Database entry a faculty member could paste.
+    const { questions, errors } = parseContestCodingQuestionsJson(
+      JSON.stringify([{ ...database, ordered: undefined, points: undefined }]),
+    );
+    expect(errors).toEqual([]);
+    expect(questions[0]).toMatchObject({ ordered: false, points: 100 });
+    expect((questions[0] as { constraints: string }).constraints).not.toBe("");
+  });
+
+  it("requires the schema and the reference query", () => {
+    const { questions, errors } = parseContestCodingQuestionsJson(
+      JSON.stringify([{ ...database, schemaSql: "", solutionSql: "" }]),
+    );
+    expect(questions).toEqual([]);
+    expect(errors.map((error) => error.path)).toEqual([
+      "question[0].schemaSql",
+      "question[0].solutionSql",
+    ]);
+  });
+
+  it("flags an unknown type rather than importing it as Coding", () => {
+    const { questions, errors } = parseContestCodingQuestionsJson(JSON.stringify([{ type: "MCQ", statement: "x" }]));
+    expect(questions).toEqual([]);
+    expect(errors[0].message).toContain("Coding or Database");
+  });
+
+  it("parses the example structure the Copy button hands out", () => {
+    // The template is pasted verbatim by faculty, so it has to survive its own importer.
+    const { questions, errors } = parseContestCodingQuestionsJson(CONTEST_CODING_EXAMPLE_JSON);
+    expect(errors).toEqual([]);
+    expect(questions.map((question) => question.type)).toEqual(["Coding", "Database"]);
   });
 });
