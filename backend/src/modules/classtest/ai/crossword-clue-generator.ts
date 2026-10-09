@@ -1,5 +1,5 @@
 import { env } from "../../../config/env";
-import { callOllamaJson, probeOllama, type OllamaRuntimeStatus } from "../../../shared/ai/ollama";
+import { callGatewayJson, probeGateway, type AiRuntimeStatus } from "../../../shared/ai/gateway";
 import { logServerError } from "../../../shared/logging/error-logger";
 import {
   buildCrosswordCluePrompt,
@@ -13,7 +13,7 @@ export interface CrosswordClue {
 }
 
 export interface CrosswordClueGenerator {
-  getStatus(): Promise<OllamaRuntimeStatus>;
+  getStatus(): Promise<AiRuntimeStatus>;
   /** One clue per requested word, in the same order — or null if usable clues could not be made. */
   generate(words: string[], topic?: string): Promise<CrosswordClue[] | null>;
   readonly model: string;
@@ -67,17 +67,18 @@ export function parseClueResponse(raw: string, words: readonly string[]): Crossw
   return clues;
 }
 
-export class OllamaCrosswordClueGenerator implements CrosswordClueGenerator {
+export class GatewayCrosswordClueGenerator implements CrosswordClueGenerator {
   readonly promptVersion = CROSSWORD_CLUE_PROMPT_VERSION;
 
   constructor(
     readonly model: string = env.AI_MODEL,
     private readonly baseUrl: string = env.AI_BASE_URL,
+    private readonly apiKey: string = env.AI_API_KEY,
     private readonly timeoutMs: number = env.AI_TIMEOUT_MS,
     private readonly enabled: boolean = env.AI_ENABLED,
   ) {}
 
-  async getStatus(): Promise<OllamaRuntimeStatus> {
+  async getStatus(): Promise<AiRuntimeStatus> {
     if (!this.enabled) {
       return {
         available: false,
@@ -87,7 +88,7 @@ export class OllamaCrosswordClueGenerator implements CrosswordClueGenerator {
       };
     }
 
-    return probeOllama(this.baseUrl, this.model);
+    return probeGateway(this.baseUrl, this.apiKey, this.model);
   }
 
   async generate(words: string[], topic?: string): Promise<CrosswordClue[] | null> {
@@ -101,12 +102,14 @@ export class OllamaCrosswordClueGenerator implements CrosswordClueGenerator {
     }
 
     const { system, user } = buildCrosswordCluePrompt(words, topic);
-    const raw = await callOllamaJson({
+    const raw = await callGatewayJson({
       baseUrl: this.baseUrl,
+      apiKey: this.apiKey,
       model: this.model,
       timeoutMs: this.timeoutMs,
       system,
       user,
+      maxTokens: env.AI_MAX_TOKENS,
     });
 
     if (raw === null) {
@@ -114,7 +117,7 @@ export class OllamaCrosswordClueGenerator implements CrosswordClueGenerator {
     }
     const parsed = parseClueResponse(raw, words);
     if (parsed === null) {
-      logServerError("Ollama crossword response was unusable", new Error("Invalid clue response"), {
+      logServerError("AI gateway crossword response was unusable", new Error("Invalid clue response"), {
         model: this.model,
         wordCount: words.length,
       });
@@ -128,7 +131,7 @@ export class NoopCrosswordClueGenerator implements CrosswordClueGenerator {
   readonly model = "none";
   readonly promptVersion = CROSSWORD_CLUE_PROMPT_VERSION;
 
-  async getStatus(): Promise<OllamaRuntimeStatus> {
+  async getStatus(): Promise<AiRuntimeStatus> {
     return {
       available: false,
       model: this.model,

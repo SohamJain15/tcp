@@ -120,23 +120,31 @@ const envSchema = z.object({
   // A namespaced throwaway database older than this is treated as orphaned (its request crashed
   // mid-run) and dropped by the sweeper. 0 disables the sweeper.
   SQL_SANDBOX_SWEEP_INTERVAL_MS: z.coerce.number().int().nonnegative().default(300000),
-  // Local AI contest reports. Every default is safe with nothing installed: the adapter probes the
-  // runtime, finds it absent, and falls back to template-generated narratives.
+  // CoE AI Gateway (OpenAI-compatible) for contest reports, hints and crossword clues. Every
+  // default is safe without a key: the adapter probes the gateway, finds it unusable, and falls
+  // back to template-generated narratives.
   AI_ENABLED: z.unknown().transform((value) => parseBoolean(value, true)),
-  AI_BASE_URL: z.string().min(1).default("http://localhost:11434"),
-  // One model serves reports, hints, and crossword clues. Production must state it explicitly so
-  // no feature can silently select a different hardcoded model.
+  AI_BASE_URL: z
+    .string()
+    .min(1)
+    .default("https://ai.tcetcercd.in/v1")
+    .transform((value) => value.trim().replace(/\/+$/, "")),
+  // Per-user gateway key (sk-...). Sent only as a Bearer header; never logged.
+  AI_API_KEY: z.string().optional().transform((value) => value?.trim() ?? ""),
+  // The gateway serves a single model and ignores this value, but it is stored on generated hints
+  // and reports as the model id.
   AI_MODEL: z.string().optional().transform((value) => value?.trim() ?? ""),
   AI_TIMEOUT_MS: z.coerce.number().int().positive().default(120000),
+  AI_MAX_TOKENS: z.coerce.number().int().positive().default(1024),
   // A GENERATING report older than this is treated as abandoned and can be reclaimed, so a crash
   // mid-generation cannot wedge a contest's report forever.
   AI_STALE_LOCK_MS: z.coerce.number().int().positive().default(600000),
 }).superRefine((value, ctx) => {
-  if (value.NODE_ENV === "production" && value.AI_ENABLED && !value.AI_MODEL) {
+  if (value.NODE_ENV === "production" && value.AI_ENABLED && !value.AI_API_KEY) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      path: ["AI_MODEL"],
-      message: "AI_MODEL is required when AI is enabled in production.",
+      path: ["AI_API_KEY"],
+      message: "AI_API_KEY is required when AI is enabled in production.",
     });
   }
 
@@ -173,9 +181,7 @@ const parsedEnv = parseEnvironment(process.env);
 
 export const env = {
   ...parsedEnv,
-  // Development and tests remain zero-config; production is validated above and never reaches
-  // this fallback.
-  AI_MODEL: parsedEnv.AI_MODEL || "qwen2.5-coder:latest",
+  AI_MODEL: parsedEnv.AI_MODEL || "qwen3.6",
   coeTrustedProxyIps: parsedEnv.COE_TRUSTED_PROXY_IPS.split(",")
     .map((entry) => entry.trim())
     .filter(Boolean),

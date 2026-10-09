@@ -4,7 +4,7 @@ import type { ContestAnalytics, ContestReportNarrative, NarrativeSection } from 
  * Deterministic, template-generated narrative.
  *
  * This is not a degraded mode to be embarrassed about — it is the floor the whole feature stands on.
- * It runs when no local model is installed, when Ollama is down, when generation times out, and
+ * It runs when the AI gateway is unreachable or rejects the key, when generation times out, and
  * per-section when the grounding validator rejects what the model wrote. Every sentence here is
  * assembled from the metrics, so it is correct by construction.
  */

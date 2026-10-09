@@ -3,6 +3,7 @@ import { env } from "../../config/env";
 import { inferHarness } from "../../execution/harness/inference/infer-harness";
 import { AppError } from "../../shared/errors/app-error";
 import { AI_NOT_REACHABLE_MESSAGE } from "../../shared/errors/public-messages";
+import { logServerError } from "../../shared/logging/error-logger";
 import { paginateArray, type PaginatedResult, type PaginationInput } from "../../shared/utils/pagination";
 import type { AuthenticatedUser } from "../../shared/types/auth";
 import type {
@@ -80,6 +81,31 @@ export interface ProblemServiceDependencies {
   /** Seeds a SQL problem's schema once at save time so students never pay for the preview. */
   sqlExecutor: SqlExecutor;
   now: () => Date;
+  /**
+   * Runs work after the response has been sent. Defaults to fire-and-forget; tests replace it to
+   * capture or skip the task deterministically.
+   */
+  runInBackground?: (task: () => Promise<void>) => void;
+}
+
+function runInBackgroundByDefault(task: () => Promise<void>): void {
+  void task().catch((error) => logServerError("Background problem task failed", error));
+}
+
+/**
+ * Generates hints as soon as a problem is published, so the first student to open the hints panel
+ * does not wait on (or miss out because of) a model call. Never blocks the publishing request;
+ * lazy generation on first request remains the safety net if this attempt fails.
+ */
+function scheduleHintGeneration(dependencies: ProblemServiceDependencies, problemId: string): void {
+  const run = dependencies.runInBackground ?? runInBackgroundByDefault;
+  run(async () => {
+    const problem = await dependencies.problemRepository.getById(problemId);
+    if (!problem || problem.lifecycleState !== "Published" || problem.hints.length > 0) {
+      return;
+    }
+    await generateAndStoreHints(dependencies, problem, { force: false });
+  });
 }
 
 /**
@@ -231,14 +257,18 @@ export async function generateAndStoreHints(
     texts = null;
   }
 
+  // A model call takes a while and may run in the background after publishing; re-read so a
+  // faculty edit saved in the meantime is not overwritten by the stale snapshot.
+  const latest = (await dependencies.problemRepository.getById(problem.id)) ?? problem;
+
   if (!texts) {
     // Release the lock so the next request can try again rather than waiting out the stale timer.
     await dependencies.problemRepository.save({
-      ...problem,
+      ...latest,
       hintsLockedAt: null,
       updatedAt: dependencies.now(),
     });
-    return options.force ? [] : problem.hints;
+    return options.force ? [] : latest.hints;
   }
 
   const hints = buildGeneratedHints(
@@ -249,7 +279,7 @@ export async function generateAndStoreHints(
   );
 
   await dependencies.problemRepository.save({
-    ...problem,
+    ...latest,
     hints,
     hintsLockedAt: null,
     updatedAt: dependencies.now(),
@@ -500,8 +530,8 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
         sampleTestCases,
         hiddenTestCases,
         harness,
-        // Generated lazily on the first hint request rather than at creation, so publishing a
-        // problem never blocks on the model being up.
+        // Generated in the background once published (and lazily on first request as a fallback),
+        // so publishing a problem never blocks on the model being up.
         hints: [],
         hintsLockedAt: null,
         createdAt: now,
@@ -509,6 +539,9 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
       };
 
       await dependencies.problemRepository.save(problem);
+      if (problem.lifecycleState === "Published") {
+        scheduleHintGeneration(dependencies, problem.id);
+      }
       return toManageProblemDetail(problem);
     },
 
@@ -529,6 +562,9 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
       };
 
       await dependencies.problemRepository.save(updatedProblem);
+      if (updatedProblem.lifecycleState === "Published" && updatedProblem.hints.length === 0) {
+        scheduleHintGeneration(dependencies, updatedProblem.id);
+      }
       return toManageProblemDetail(updatedProblem);
     },
 
@@ -542,6 +578,9 @@ export function createProblemService(dependencies: ProblemServiceDependencies): 
       };
 
       await dependencies.problemRepository.save(updatedProblem);
+      if (lifecycleState === "Published" && updatedProblem.hints.length === 0) {
+        scheduleHintGeneration(dependencies, updatedProblem.id);
+      }
       return toManageProblemDetail(updatedProblem);
     },
   };

@@ -39,10 +39,10 @@ import {
   MongoHintRevealRepository,
   type HintRevealRepository,
 } from "../modules/problem/hint-reveal.repository";
-import { NoopHintGenerator, OllamaHintGenerator } from "../modules/problem/ai/hint-generator";
+import { GatewayHintGenerator, NoopHintGenerator } from "../modules/problem/ai/hint-generator";
 import {
+  GatewayCrosswordClueGenerator,
   NoopCrosswordClueGenerator,
-  OllamaCrosswordClueGenerator,
 } from "../modules/classtest/ai/crossword-clue-generator";
 import { createProblemService, type ProblemService } from "../modules/problem/problem.service";
 import {
@@ -64,10 +64,10 @@ import {
 } from "../modules/report/report.repository";
 import { createReportService, type ReportService } from "../modules/report/report.service";
 import {
-  OllamaReportGenerator,
+  GatewayReportGenerator,
   TemplateOnlyReportGenerator,
   type AiReportGenerator,
-} from "../modules/report/ai/ollama-client";
+} from "../modules/report/ai/gateway-client";
 import { env } from "../config/env";
 import {
   MongoLabRepository,
@@ -230,7 +230,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     submissionRepository: repositories.submissionRepository,
     userRepository: repositories.userRepository,
     hintRevealRepository: repositories.hintRevealRepository,
-    hintGenerator: env.AI_ENABLED ? new OllamaHintGenerator() : new NoopHintGenerator(),
+    hintGenerator: env.AI_ENABLED ? new GatewayHintGenerator() : new NoopHintGenerator(),
     now,
   });
 
@@ -288,7 +288,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     contestReportRepository: repositories.contestReportRepository,
     aiReportGenerator:
       overrides.aiReportGenerator ??
-      (env.AI_ENABLED ? new OllamaReportGenerator() : new TemplateOnlyReportGenerator()),
+      (env.AI_ENABLED ? new GatewayReportGenerator() : new TemplateOnlyReportGenerator()),
     staleLockMs: env.AI_STALE_LOCK_MS,
     now,
   });
@@ -303,7 +303,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     executionProvider,
     submissionQueue,
     crosswordClueGenerator: env.AI_ENABLED
-      ? new OllamaCrosswordClueGenerator()
+      ? new GatewayCrosswordClueGenerator()
       : new NoopCrosswordClueGenerator(),
     now,
   });

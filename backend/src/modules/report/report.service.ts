@@ -11,7 +11,7 @@ import type {
   ContestRepository,
 } from "../contest/contest.repository";
 import type { SubmissionRepository } from "../submission/submission.repository";
-import type { AiReportGenerator, AiRuntimeStatus } from "./ai/ollama-client";
+import type { AiReportGenerator, AiRuntimeStatus } from "./ai/gateway-client";
 import { validateNarrativeNumbers } from "./ai/grounding";
 import {
   buildContestAnalytics,

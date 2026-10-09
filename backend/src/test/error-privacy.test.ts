@@ -3,9 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { env, parseEnvironment } from "../config/env";
-import { OllamaCrosswordClueGenerator } from "../modules/classtest/ai/crossword-clue-generator";
-import { OllamaHintGenerator } from "../modules/problem/ai/hint-generator";
-import { OllamaReportGenerator } from "../modules/report/ai/ollama-client";
+import { GatewayCrosswordClueGenerator } from "../modules/classtest/ai/crossword-clue-generator";
+import { GatewayHintGenerator } from "../modules/problem/ai/hint-generator";
+import { GatewayReportGenerator } from "../modules/report/ai/gateway-client";
 import { toPublicAiRuntimeStatus } from "../modules/report/report.service";
 import { toContestReportResponse, type ContestReportRecord } from "../modules/report/report.model";
 import { AppError } from "../shared/errors/app-error";
@@ -18,25 +18,24 @@ import { formatErrorResponse } from "../shared/middleware/error-handler";
 import { createTestApp } from "./helpers/create-test-app";
 
 describe("production error privacy", () => {
-  it("uses AI_MODEL for every Ollama feature", () => {
-    expect(new OllamaReportGenerator().model).toBe(env.AI_MODEL);
-    expect(new OllamaHintGenerator().model).toBe(env.AI_MODEL);
-    expect(new OllamaCrosswordClueGenerator().model).toBe(env.AI_MODEL);
+  it("uses AI_MODEL for every AI gateway feature", () => {
+    expect(new GatewayReportGenerator().model).toBe(env.AI_MODEL);
+    expect(new GatewayHintGenerator().model).toBe(env.AI_MODEL);
+    expect(new GatewayCrosswordClueGenerator().model).toBe(env.AI_MODEL);
   });
 
-  it("requires an explicit production AI model when AI is enabled", () => {
+  it("requires a gateway API key in production when AI is enabled", () => {
     const source = {
       ...process.env,
       NODE_ENV: "production",
       AI_ENABLED: "true",
-      AI_MODEL: "",
+      AI_API_KEY: "",
       COE_JWT_SECRET: "test-secret-that-is-at-least-32-characters",
       COE_TRUSTED_PROXY_IPS: "127.0.0.1",
     };
 
-    expect(() => parseEnvironment(source)).toThrow(/AI_MODEL is required/);
-    expect(parseEnvironment({ ...source, AI_MODEL: "qwen2.5-coder:latest" }).AI_MODEL)
-      .toBe("qwen2.5-coder:latest");
+    expect(() => parseEnvironment(source)).toThrow(/AI_API_KEY is required/);
+    expect(parseEnvironment({ ...source, AI_API_KEY: "sk-test" }).AI_API_KEY).toBe("sk-test");
   });
 
   it("hides 5xx details but preserves safe 4xx validation", () => {

@@ -1,7 +1,7 @@
 import { env } from "../../../config/env";
 import { AI_NOT_REACHABLE_MESSAGE } from "../../../shared/errors/public-messages";
 import { logServerError } from "../../../shared/logging/error-logger";
-import { callOllamaJson, probeOllama } from "../../../shared/ai/ollama";
+import { callGatewayJson, probeGateway, type AiRuntimeStatus } from "../../../shared/ai/gateway";
 import {
   assignNarrativeSection,
   type ContestAnalytics,
@@ -12,20 +12,14 @@ import { buildTemplateSection } from "./fallback";
 import { PROMPT_VERSION, SECTION_SPECS, buildSectionPrompt } from "./prompt";
 
 /**
- * Local model adapter.
+ * CoE AI Gateway adapter.
  *
  * The contract with the rest of the module is simple: this never throws and never blocks the report.
- * Any failure — no runtime installed, timeout, garbage JSON, a section the model refused to write —
+ * Any failure — gateway down, bad key, timeout, garbage JSON, a section the model refused to write —
  * resolves to the template text for that section. A report is always produced.
  */
 
-export interface AiRuntimeStatus {
-  available: boolean;
-  model: string;
-  baseUrl: string;
-  /** Internal diagnostic only. Public API responses must map this to a safe message. */
-  reason: string | null;
-}
+export type { AiRuntimeStatus };
 
 export interface AiGenerationResult {
   narrative: ContestReportNarrative;
@@ -108,12 +102,13 @@ export function parseSectionResponse(
   return null;
 }
 
-export class OllamaReportGenerator implements AiReportGenerator {
+export class GatewayReportGenerator implements AiReportGenerator {
   private healthCache: { checkedAt: number; status: AiRuntimeStatus } | null = null;
 
   constructor(
     private readonly baseUrl: string = env.AI_BASE_URL,
     readonly model: string = env.AI_MODEL,
+    private readonly apiKey: string = env.AI_API_KEY,
     private readonly timeoutMs: number = env.AI_TIMEOUT_MS,
     private readonly enabled: boolean = env.AI_ENABLED,
   ) {}
@@ -139,16 +134,18 @@ export class OllamaReportGenerator implements AiReportGenerator {
   }
 
   private async probe(): Promise<AiRuntimeStatus> {
-    return probeOllama(this.baseUrl, this.model);
+    return probeGateway(this.baseUrl, this.apiKey, this.model);
   }
 
   private async chat(system: string, user: string): Promise<string | null> {
-    return callOllamaJson({
+    return callGatewayJson({
       baseUrl: this.baseUrl,
+      apiKey: this.apiKey,
       model: this.model,
       timeoutMs: this.timeoutMs,
       system,
       user,
+      maxTokens: env.AI_MAX_TOKENS,
     });
   }
 
@@ -168,8 +165,8 @@ export class OllamaReportGenerator implements AiReportGenerator {
     const warnings: string[] = [];
     let usedAi = false;
 
-    // Sequential rather than parallel: a local runtime serves one request at a time anyway, and
-    // firing five at once only makes each slower while risking a queue timeout.
+    // Sequential rather than parallel: the gateway is a single campus server shared by many
+    // students, and firing five at once only makes each slower while risking a timeout.
     for (const spec of SECTION_SPECS) {
       const { system, user } = buildSectionPrompt(metrics, spec);
       const raw = await this.chat(system, user);
@@ -180,7 +177,7 @@ export class OllamaReportGenerator implements AiReportGenerator {
 
       const parsed = parseSectionResponse(raw, spec.key, spec.shape);
       if (parsed === null) {
-        logServerError("Ollama report response was unusable", new Error("Invalid report section"), {
+        logServerError("AI gateway report response was unusable", new Error("Invalid report section"), {
           model: this.model,
           section: spec.key,
         });

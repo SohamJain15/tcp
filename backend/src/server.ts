@@ -12,7 +12,7 @@ const attemptFinalizerIntervalMs = env.ATTEMPT_FINALIZER_INTERVAL_MS;
 
 const server = app.listen(port, () => {
   console.log(`Server running on port ${port}`);
-  console.log(`[AI] ${env.AI_ENABLED ? `Enabled with model ${env.AI_MODEL}` : "Disabled"}.`);
+  console.log(`[AI] ${env.AI_ENABLED ? `Enabled via gateway ${env.AI_BASE_URL} (model ${env.AI_MODEL})` : "Disabled"}.`);
   console.log("[AUTH] Trusted proxy enforcement: ON.");
   console.log(`[AUTH] Trusted proxy IP/CIDR allowlist: ${env.coeTrustedProxyIps.join(", ")}`);
   if (embeddedWorker) {

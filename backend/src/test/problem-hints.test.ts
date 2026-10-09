@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { parseHintResponse } from "../modules/problem/ai/hint-generator";
 import type { HintGenerator } from "../modules/problem/ai/hint-generator";
-import type { OllamaRuntimeStatus } from "../shared/ai/ollama";
+import type { AiRuntimeStatus } from "../shared/ai/gateway";
 import { createTestApp } from "./helpers/create-test-app";
 
 const facultyHeaders = {
@@ -43,7 +43,7 @@ class FakeHintGenerator implements HintGenerator {
 
   constructor(private readonly hints: string[] | null = ["Think about order.", "Use a map.", "Watch duplicates."]) {}
 
-  async getStatus(): Promise<OllamaRuntimeStatus> {
+  async getStatus(): Promise<AiRuntimeStatus> {
     return { available: true, model: this.model, baseUrl: "", reason: null };
   }
 
@@ -194,6 +194,77 @@ describe("problem hints endpoints", () => {
     expect(response.body.hints[0].editedBy).toBe("faculty1@tcetmumbai.in");
     // Untouched hints keep their provenance.
     expect(response.body.hints[1].model).toBe("qwen2.5-coder:latest");
+  });
+
+  it("generates hints in the background as soon as a problem is created as published", async () => {
+    const generator = new FakeHintGenerator();
+    const tasks: Promise<void>[] = [];
+    const { app } = createTestApp({
+      hintGenerator: generator,
+      problemBackgroundRunner: (task) => tasks.push(task()),
+    });
+
+    const problem = await createProblem(app, { title: "Hint Problem H" });
+    expect(tasks).toHaveLength(1);
+    await Promise.all(tasks);
+
+    const response = await request(app).get(`/api/problems/${problem.id}/hints`);
+    expect(response.body.totalHints).toBe(3);
+    expect(generator.calls).toBe(1);
+  });
+
+  it("does not generate for drafts until they are published", async () => {
+    const generator = new FakeHintGenerator();
+    const tasks: Promise<void>[] = [];
+    const { app } = createTestApp({
+      hintGenerator: generator,
+      problemBackgroundRunner: (task) => tasks.push(task()),
+    });
+
+    const problem = await createProblem(app, { title: "Hint Problem I", lifecycleState: "Draft" });
+    expect(tasks).toHaveLength(0);
+
+    const published = await request(app)
+      .patch(`/api/problems/${problem.id}/state`)
+      .set(facultyHeaders)
+      .send({ lifecycleState: "Published" });
+    expect(published.status).toBe(200);
+    await Promise.all(tasks);
+
+    expect(generator.calls).toBe(1);
+  });
+
+  it("keeps a faculty edit saved while background generation was running", async () => {
+    let releaseGeneration: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseGeneration = resolve;
+    });
+    class SlowHintGenerator extends FakeHintGenerator {
+      override async generate(): Promise<string[] | null> {
+        await gate;
+        return super.generate();
+      }
+    }
+    const tasks: Promise<void>[] = [];
+    const { app } = createTestApp({
+      hintGenerator: new SlowHintGenerator(),
+      problemBackgroundRunner: (task) => tasks.push(task()),
+    });
+
+    const problem = await createProblem(app, { title: "Hint Problem J" });
+    const edit = await request(app)
+      .patch(`/api/problems/${problem.id}`)
+      .set(facultyHeaders)
+      .send({ title: "Hint Problem J (edited)" });
+    expect(edit.status).toBe(200);
+
+    releaseGeneration();
+    await Promise.all(tasks);
+
+    const detail = await request(app).get(`/api/problems/${problem.id}/hints`);
+    expect(detail.body.totalHints).toBe(3);
+    const manage = await request(app).get(`/api/problems/manage/${problem.id}`).set(facultyHeaders);
+    expect(manage.body.problem.title).toBe("Hint Problem J (edited)");
   });
 
   it("does not let a student reach hints for another department's problem", async () => {

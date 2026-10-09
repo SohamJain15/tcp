@@ -1,5 +1,5 @@
 import { env } from "../../../config/env";
-import { callOllamaJson, probeOllama, type OllamaRuntimeStatus } from "../../../shared/ai/ollama";
+import { callGatewayJson, probeGateway, type AiRuntimeStatus } from "../../../shared/ai/gateway";
 import { logServerError } from "../../../shared/logging/error-logger";
 import type { ProblemRecord } from "../problem.model";
 import {
@@ -10,7 +10,7 @@ import {
 } from "./hint-prompt";
 
 export interface HintGenerator {
-  getStatus(): Promise<OllamaRuntimeStatus>;
+  getStatus(): Promise<AiRuntimeStatus>;
   /** Returns exactly `HINTS_PER_PROBLEM` hints, or null if usable ones could not be produced. */
   generate(problem: ProblemRecord): Promise<string[] | null>;
   readonly model: string;
@@ -63,17 +63,18 @@ export function parseHintResponse(raw: string): string[] | null {
   return hints;
 }
 
-export class OllamaHintGenerator implements HintGenerator {
+export class GatewayHintGenerator implements HintGenerator {
   readonly promptVersion = HINT_PROMPT_VERSION;
 
   constructor(
     readonly model: string = env.AI_MODEL,
     private readonly baseUrl: string = env.AI_BASE_URL,
+    private readonly apiKey: string = env.AI_API_KEY,
     private readonly timeoutMs: number = env.AI_TIMEOUT_MS,
     private readonly enabled: boolean = env.AI_ENABLED,
   ) {}
 
-  async getStatus(): Promise<OllamaRuntimeStatus> {
+  async getStatus(): Promise<AiRuntimeStatus> {
     if (!this.enabled) {
       return {
         available: false,
@@ -83,7 +84,7 @@ export class OllamaHintGenerator implements HintGenerator {
       };
     }
 
-    return probeOllama(this.baseUrl, this.model);
+    return probeGateway(this.baseUrl, this.apiKey, this.model);
   }
 
   async generate(problem: ProblemRecord): Promise<string[] | null> {
@@ -93,15 +94,15 @@ export class OllamaHintGenerator implements HintGenerator {
     }
 
     const { system, user } = buildHintPrompt(problem);
-    // Problem statements run long; the report's 8k default would truncate the constraints on
-    // exactly the problems where the constraints are the hint.
-    const raw = await callOllamaJson({
+    const raw = await callGatewayJson({
       baseUrl: this.baseUrl,
+      apiKey: this.apiKey,
       model: this.model,
       timeoutMs: this.timeoutMs,
       system,
       user,
-      numCtx: 16384,
+      // Three hints of up to MAX_HINT_CHARS each need more room than a report section.
+      maxTokens: Math.max(env.AI_MAX_TOKENS, 1536),
     });
 
     if (raw === null) {
@@ -109,7 +110,7 @@ export class OllamaHintGenerator implements HintGenerator {
     }
     const parsed = parseHintResponse(raw);
     if (parsed === null) {
-      logServerError("Ollama hint response was unusable", new Error("Invalid hint response"), {
+      logServerError("AI gateway hint response was unusable", new Error("Invalid hint response"), {
         model: this.model,
       });
     }
@@ -122,7 +123,7 @@ export class NoopHintGenerator implements HintGenerator {
   readonly model = "none";
   readonly promptVersion = HINT_PROMPT_VERSION;
 
-  async getStatus(): Promise<OllamaRuntimeStatus> {
+  async getStatus(): Promise<AiRuntimeStatus> {
     return {
       available: false,
       model: this.model,

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ContestAttemptRecord, ContestRecord } from "../modules/contest/contest.model";
 import type { SubmissionRecord } from "../modules/submission/submission.model";
-import type { AiReportGenerator } from "../modules/report/ai/ollama-client";
+import type { AiReportGenerator } from "../modules/report/ai/gateway-client";
 import { PROMPT_VERSION } from "../modules/report/ai/prompt";
 import {
   collectGroundedNumbers,

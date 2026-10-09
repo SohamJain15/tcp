@@ -314,7 +314,7 @@ export function toContestReportResponse(
   const warnings =
     production
       ? [...new Set(record.warnings.map((warning) =>
-          /ollama|model|runtime|localhost|https?:|\bpull\b|unreachable|timeout|error|failed/i.test(warning)
+          /ollama|gateway|api[_ ]key|model|runtime|localhost|https?:|\bpull\b|unreachable|timeout|error|failed/i.test(warning)
             ? AI_NOT_REACHABLE_MESSAGE
             : warning,
         ))]

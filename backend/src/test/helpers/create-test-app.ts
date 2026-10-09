@@ -12,7 +12,7 @@ import { createReportService } from "../../modules/report/report.service";
 import {
   TemplateOnlyReportGenerator,
   type AiReportGenerator,
-} from "../../modules/report/ai/ollama-client";
+} from "../../modules/report/ai/gateway-client";
 import { createContestService } from "../../modules/contest/contest.service";
 import { createLeaderboardService } from "../../modules/leaderboard/leaderboard.service";
 import { createProblemService } from "../../modules/problem/problem.service";
@@ -53,8 +53,13 @@ export interface CreateTestAppOptions {
   classroomNow?: () => Date;
   /** Override the report narrator to exercise the AI path (and its failure modes) deterministically. */
   aiReportGenerator?: AiReportGenerator;
-  /** Override the hint generator to exercise hint generation without a local model. */
+  /** Override the hint generator to exercise hint generation without the AI gateway. */
   hintGenerator?: HintGenerator;
+  /**
+   * Background runner for the problem service (hint generation on publish). Skipped by default so
+   * tests stay deterministic; pass a capturing runner to exercise it.
+   */
+  problemBackgroundRunner?: (task: () => Promise<void>) => void;
   /** Override authentication to verify routes reject unauthenticated requests. */
   authMiddleware?: ApplicationDependencies["authMiddleware"];
   /** Override the SQL executor to exercise sandbox failure paths without a MySQL. */
@@ -309,8 +314,9 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       submissionRepository,
       userRepository,
       hintRevealRepository,
-      // Offline by default: tests must not depend on a local model being installed.
+      // Offline by default: tests must not depend on the AI gateway being reachable.
       hintGenerator: options.hintGenerator ?? new NoopHintGenerator(),
+      runInBackground: options.problemBackgroundRunner ?? (() => undefined),
       now,
     }),
     submissionService: createSubmissionService({
