@@ -1,4 +1,4 @@
-import type { ExecutableLanguage, SubmissionResult } from "@/api/types";
+import type { ExecutableLanguage, SubmissionLanguage, SubmissionResult } from "@/api/types";
 
 /**
  * Where run / submit / draft-save go.
@@ -16,7 +16,7 @@ export interface CodingWorkspaceApi {
 export interface CodingWorkspaceInput {
   questionId: string;
   code: string;
-  language: ExecutableLanguage;
+  language: SubmissionLanguage;
 }
 
 /**
@@ -33,4 +33,6 @@ export interface CodingWorkspaceQuestion {
   sampleTestCases: { input: string; output: string; explanation?: string }[];
   /** When set, the language picker offers only these — and disappears if there is just one. */
   supportedLanguages?: ExecutableLanguage[];
+  kind?: "coding" | "sql";
+  sqlSchema?: string;
 }

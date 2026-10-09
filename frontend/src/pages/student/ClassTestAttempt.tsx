@@ -5,7 +5,8 @@ import { Code2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { classTestApi } from "@/api/services";
-import type { ExecutableLanguage, StudentClassTestQuestion } from "@/api/types";
+import type { ClassTestCodingPayload, ExecutableLanguage, StudentClassTestQuestion } from "@/api/types";
+import type { CodingWorkspaceInput } from "@/components/workspace/types";
 import { ContestCodingBody } from "@/components/ContestCodingBody";
 import { CrosswordGrid } from "@/components/CrosswordGrid";
 import { AppLayout } from "@/components/AppLayout";
@@ -27,6 +28,21 @@ import { Textarea } from "@/components/ui/textarea";
  * ours, so this is also called from an effect watching the attempt status.
  */
 /** Renders a crossword's serialized answer (`{"1-across":"CAT"}`) as a readable "1 across: CAT" list. */
+/**
+ * Narrow the shared coding-workspace input for class tests.
+ *
+ * `CodingWorkspaceInput` is shared with contests, which now carry SQL questions, so its language is
+ * the wider `SubmissionLanguage`. Class tests have no SQL question type — their language picker
+ * never offers it — so "sql" arriving here means the workspace was wired to the wrong question
+ * kind, and failing loudly beats posting a language the class-test API cannot judge.
+ */
+function toClassTestPayload(input: CodingWorkspaceInput): ClassTestCodingPayload {
+  if (input.language === "sql") {
+    throw new Error("Class tests do not support SQL questions.");
+  }
+  return { ...input, language: input.language };
+}
+
 function formatCrosswordAnswer(value: string | string[] | null): string {
   if (typeof value !== "string" || value.trim() === "") {
     return "—";
@@ -432,9 +448,9 @@ export default function ClassTestAttempt() {
               supportedLanguages: expandedCodingQuestion.supportedLanguages as ExecutableLanguage[] | undefined,
             }}
             codingApi={{
-              run: (input) => classTestApi.runCodingQuestion(id, input, pathname),
-              submit: (input) => classTestApi.submitCodingQuestion(id, input, pathname),
-              saveDraft: (input) => classTestApi.saveCodingDraft(id, input, pathname),
+              run: (input) => classTestApi.runCodingQuestion(id, toClassTestPayload(input), pathname),
+              submit: (input) => classTestApi.submitCodingQuestion(id, toClassTestPayload(input), pathname),
+              saveDraft: (input) => classTestApi.saveCodingDraft(id, toClassTestPayload(input), pathname),
             }}
           />
         )}

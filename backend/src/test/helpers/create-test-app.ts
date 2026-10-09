@@ -338,6 +338,7 @@ export function createTestApp(options: CreateTestAppOptions = {}) {
       submissionQueue,
       userRepository,
       executionProvider: new StubExecutionProvider(),
+      sqlExecutor: new StubSqlExecutor(),
       now,
     }),
     departmentService: createDepartmentService({

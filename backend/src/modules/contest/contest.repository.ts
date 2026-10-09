@@ -89,6 +89,7 @@ function mapQuestion(value: unknown): ContestQuestion | null {
     return { ...base, type: "MSQ", statement: typeof record.statement === "string" ? record.statement : "", options: Array.isArray(record.options) ? record.options.map((option) => String(option)) : [], correctAnswers: Array.isArray(record.correctAnswers) ? record.correctAnswers.map((answer) => String(answer)) : [] };
   }
   if (record.type === "Coding") {
+    const sqlRecord = record.sql && typeof record.sql === "object" ? record.sql as Record<string, unknown> : null;
     return {
       ...base,
       type: "Coding",
@@ -103,6 +104,12 @@ function mapQuestion(value: unknown): ContestQuestion | null {
       sampleTestCases: mapTestCaseList(record.sampleTestCases),
       hiddenTestCases: mapTestCaseList(record.hiddenTestCases),
       supportedLanguages: normalizeLanguages(record.supportedLanguages),
+      kind: record.kind === "sql" ? "sql" : "coding",
+      ...(record.kind === "sql" && sqlRecord ? { sql: {
+        schemaSql: typeof sqlRecord.schemaSql === "string" ? sqlRecord.schemaSql : "",
+        solutionSql: typeof sqlRecord.solutionSql === "string" ? sqlRecord.solutionSql : "",
+        ordered: sqlRecord.ordered === true,
+      } } : {}),
     };
   }
   return null;
@@ -133,6 +140,7 @@ function mapQuestionState(value: unknown): ContestQuestionAttemptState | null {
     draftLanguage:
       typeof record.draftLanguage === "string"
         ? (() => {
+            if (record.draftLanguage.toLowerCase() === "sql") return "sql";
             const normalized = tryNormalizeSupportedLanguage(record.draftLanguage);
             return normalized && normalized !== "react" && normalized !== "html" && normalized !== "css" ? normalized : null;
           })()
@@ -140,6 +148,7 @@ function mapQuestionState(value: unknown): ContestQuestionAttemptState | null {
     finalSubmissionLanguage:
       typeof record.finalSubmissionLanguage === "string"
         ? (() => {
+            if (record.finalSubmissionLanguage.toLowerCase() === "sql") return "sql";
             const normalized = tryNormalizeSupportedLanguage(record.finalSubmissionLanguage);
             return normalized && normalized !== "react" && normalized !== "html" && normalized !== "css" ? normalized : null;
           })()

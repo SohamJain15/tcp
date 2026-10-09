@@ -2,6 +2,8 @@ import type { HarnessSpec } from "../../execution/harness/contract";
 import type { UserRole } from "../../shared/types/auth";
 import type { ProctorEventType } from "../../shared/constants/domain";
 import type { Department, Difficulty, ExecutableLanguage } from "../../shared/types/domain";
+import type { SqlExperimentContext } from "../../execution/sql/sql-executor";
+import type { SubmissionLanguage } from "../submission/submission.model";
 import { toIsoString } from "../../shared/utils/date";
 import { buildLanguagePercentileScorer } from "../../shared/utils/language-percentile";
 import { lowerIsBetterPercentile } from "../../shared/utils/percentile";
@@ -47,6 +49,8 @@ export interface MsqQuestion extends ContestQuestionBase {
 
 export interface CodingContestQuestion extends ContestQuestionBase {
   type: "Coding";
+  /** Existing contests omit this and remain ordinary coding questions. */
+  kind?: "coding" | "sql";
   problemTitle: string;
   difficulty: Difficulty;
   problemStatement: string;
@@ -58,6 +62,8 @@ export interface CodingContestQuestion extends ContestQuestionBase {
   sampleTestCases: ContestTestCase[];
   hiddenTestCases: ContestTestCase[];
   supportedLanguages: ExecutableLanguage[];
+  /** Present only when kind is sql. Hidden from students by response projection. */
+  sql?: SqlExperimentContext;
   /** Optional metadata-driven judging contract (see ProblemRecord.harness). */
   harness?: HarnessSpec;
 }
@@ -106,8 +112,8 @@ export interface ContestQuestionAttemptState {
   hasFinalCodingSubmission: boolean;
   /** Latest editor content auto-saved by the student, submitted for them when the attempt ends. */
   draftCode: string | null;
-  draftLanguage: ExecutableLanguage | null;
-  finalSubmissionLanguage: ExecutableLanguage | null;
+  draftLanguage: SubmissionLanguage | null;
+  finalSubmissionLanguage: SubmissionLanguage | null;
   finalSubmissionStatus: string | null;
   finalRuntimeMs: number;
   finalMemoryKb: number;
@@ -237,6 +243,8 @@ export interface StudentContestQuestionSummary {
   outputFormat?: string;
   sampleTestCases?: ContestTestCase[];
   supportedLanguages?: ExecutableLanguage[];
+  kind?: "coding" | "sql";
+  sqlSchema?: string;
 }
 
 export interface ContestQuestionReportItemBase {
@@ -270,7 +278,7 @@ export interface CodingContestQuestionReportItem extends ContestQuestionReportIt
   passedCount: number;
   totalCount: number;
   finalSubmissionId: string | null;
-  finalSubmissionLanguage: ExecutableLanguage | null;
+  finalSubmissionLanguage: SubmissionLanguage | null;
   finalSubmissionStatus: string | null;
   finalRuntimeMs: number;
   finalMemoryKb: number;
@@ -431,6 +439,9 @@ export interface CodingContestQuestionDetail {
   memoryLimitMb: number;
   sampleTestCases: ContestTestCase[];
   supportedLanguages: ExecutableLanguage[];
+  kind?: "coding" | "sql";
+  /** Seed DDL/DML is visible; the reference query remains server-only. */
+  sqlSchema?: string;
 }
 
 export type StudentContestQuestionDetailResponse =
@@ -483,7 +494,7 @@ export interface FacultyCodingQuestionReview extends FacultyContestAttemptQuesti
   passedCount: number;
   totalCount: number;
   finalSubmissionId: string | null;
-  finalSubmissionLanguage: ExecutableLanguage | null;
+  finalSubmissionLanguage: SubmissionLanguage | null;
   finalSubmissionStatus: string | null;
   finalRuntimeMs: number;
   finalMemoryKb: number;
@@ -749,6 +760,8 @@ export function toStudentContestDetailResponse(
               outputFormat: question.outputFormat,
               sampleTestCases: question.sampleTestCases,
               supportedLanguages: question.supportedLanguages,
+              kind: question.kind ?? "coding",
+              ...(question.kind === "sql" ? { sqlSchema: question.sql?.schemaSql } : {}),
             };
           }
 
@@ -857,6 +870,8 @@ export function toStudentContestQuestionDetailResponse(
       memoryLimitMb: question.memoryLimitMb,
       sampleTestCases: question.sampleTestCases,
       supportedLanguages: question.supportedLanguages,
+      kind: question.kind ?? "coding",
+      ...(question.kind === "sql" ? { sqlSchema: question.sql?.schemaSql } : {}),
     };
   }
 
@@ -967,7 +982,7 @@ export function computeAttemptEfficiency(attempt: ContestAttemptRecord): Attempt
     totalRuntimeMs += Math.max(0, state.finalRuntimeMs);
     totalMemoryKb += Math.max(0, state.finalMemoryKb);
     totalAttempts += Math.max(0, state.attemptsCount);
-    if (state.finalSubmissionLanguage) {
+    if (state.finalSubmissionLanguage && state.finalSubmissionLanguage !== "sql") {
       languageCounts.set(
         state.finalSubmissionLanguage,
         (languageCounts.get(state.finalSubmissionLanguage) ?? 0) + 1,

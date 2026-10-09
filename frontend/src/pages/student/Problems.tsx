@@ -13,7 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { DifficultyBadge } from "@/components/Badges";
 import { cn } from "@/lib/utils";
 import { problemsApi } from "@/api/services";
-import type { Difficulty, StudentProblemStatus, StudentProblemSummary } from "@/api/types";
+import type { Difficulty, ProblemKind, StudentProblemStatus, StudentProblemSummary } from "@/api/types";
 
 const BOOKMARKS_STORAGE_KEY = "problem_bookmarks";
 const DIFFICULTIES: Difficulty[] = ["Easy", "Medium", "Hard"];
@@ -102,7 +102,7 @@ const ProblemRow = memo(function ProblemRow({
                 <DifficultyBadge d={problem.difficulty} />
                 {problem.kind === "sql" && (
                   <span className="rounded border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
-                    SQL
+                    Database
                   </span>
                 )}
               </div>
@@ -259,6 +259,7 @@ const FilterPanel = memo(function FilterPanel({
 
 export default function StudentProblems() {
   const [q, setQ] = useState("");
+  const [section, setSection] = useState<ProblemKind>("coding");
   const [status, setStatus] = useState<StudentProblemStatus | "All">("All");
   const [difficulties, setDifficulties] = useState<Set<Difficulty>>(new Set());
   const [tags, setTags] = useState<Set<string>>(new Set());
@@ -280,6 +281,9 @@ export default function StudentProblems() {
   const filtered = useMemo(() => {
     const query = deferredQuery.trim().toLowerCase();
     return items.filter((problem) => {
+      if ((problem.kind ?? "coding") !== section) {
+        return false;
+      }
       if (status !== "All" && problem.userStatus !== status) {
         return false;
       }
@@ -298,7 +302,12 @@ export default function StudentProblems() {
 
       return true;
     });
-  }, [items, status, difficulties, tags, deferredQuery]);
+  }, [items, section, status, difficulties, tags, deferredQuery]);
+
+  const sectionCounts = useMemo(() => ({
+    coding: items.filter((problem) => problem.kind !== "sql").length,
+    sql: items.filter((problem) => problem.kind === "sql").length,
+  }), [items]);
 
   const toggleDifficulty = useCallback((difficulty: Difficulty) => {
     setDifficulties((current) => {
@@ -376,6 +385,10 @@ export default function StudentProblems() {
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr),280px]">
           <div className="space-y-3">
+            <div className="grid grid-cols-2 border border-border" role="tablist" aria-label="Problem sections">
+              <button type="button" role="tab" aria-selected={section === "coding"} onClick={() => setSection("coding")} className={cn("px-4 py-3 text-sm font-semibold", section === "coding" ? "bg-accent text-accent-foreground" : "bg-card text-muted-foreground hover:text-foreground")}>DSA / Coding ({sectionCounts.coding})</button>
+              <button type="button" role="tab" aria-selected={section === "sql"} onClick={() => setSection("sql")} className={cn("border-l border-border px-4 py-3 text-sm font-semibold", section === "sql" ? "bg-accent text-accent-foreground" : "bg-card text-muted-foreground hover:text-foreground")}>Database ({sectionCounts.sql})</button>
+            </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input

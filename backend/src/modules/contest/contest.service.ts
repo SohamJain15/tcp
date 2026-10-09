@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { generateSubmissionProgram } from "../../execution/harness";
 import type { ExecutionProvider } from "../../execution/execution-provider";
+import type { SqlExecutor } from "../../execution/sql/sql-executor";
 import { AppError } from "../../shared/errors/app-error";
 import { EXECUTION_SERVICE_UNAVAILABLE_MESSAGE } from "../../shared/errors/public-messages";
 import { logServerError } from "../../shared/logging/error-logger";
@@ -12,6 +13,7 @@ import { matchesStudentYearSemester, type StudentYear } from "../../shared/utils
 import type { SubmissionQueue } from "../../queue/submission-queue";
 import { redactFailedTest } from "../submission/submission.model";
 import type { SubmissionRepository } from "../submission/submission.repository";
+import type { SubmissionLanguage } from "../submission/submission.model";
 import type { UserRepository } from "../user/user.repository";
 import type {
   CodingContestQuestion,
@@ -158,6 +160,7 @@ interface ContestServiceDependencies {
   submissionQueue: SubmissionQueue;
   userRepository: UserRepository;
   executionProvider: ExecutionProvider;
+  sqlExecutor: SqlExecutor;
   now: () => Date;
 }
 
@@ -251,7 +254,7 @@ function normalizeContestQuestions(
     }
 
     const normalizedQuestion = normalizeCodingQuestion(question as Extract<ContestCreateInput["questions"][number], { type: "Coding" }>);
-    if (normalizedQuestion.hiddenTestCases.length === 0) {
+    if (normalizedQuestion.kind !== "sql" && normalizedQuestion.hiddenTestCases.length === 0) {
       throw new AppError(400, "Coding contest questions require at least one hidden testcase");
     }
 
@@ -711,7 +714,7 @@ async function createContestCodingSubmission(
   question: CodingContestQuestion,
   attempt: ContestAttemptRecord,
   code: string,
-  language: ExecutableLanguage,
+  language: SubmissionLanguage,
   userEmail: string,
   now: Date,
   dependencies: ContestServiceDependencies,
@@ -720,7 +723,14 @@ async function createContestCodingSubmission(
   // neither, and this also runs from server-side endings that have no request user at all.
   const userRecord = await dependencies.userRepository.getByEmail(userEmail);
   const submissionId = `submission_${randomUUID()}`;
-  const totalCount = question.sampleTestCases.length + question.hiddenTestCases.length;
+  const isSql = question.kind === "sql";
+  if ((isSql && language !== "sql") || (!isSql && language === "sql")) {
+    throw new AppError(400, isSql ? "Database questions require SQL" : "Coding questions require a programming language");
+  }
+  if (!isSql && !question.supportedLanguages.includes(language as ExecutableLanguage)) {
+    throw new AppError(400, "This language is not enabled for the question");
+  }
+  const totalCount = isSql ? 1 : question.sampleTestCases.length + question.hiddenTestCases.length;
 
   await dependencies.submissionRepository.create({
     id: submissionId,
@@ -747,7 +757,7 @@ async function createContestCodingSubmission(
     memoryKb: 0,
     passedCount: 0,
     totalCount,
-    executionProvider: "judge0",
+    executionProvider: isSql ? dependencies.sqlExecutor.provider : "judge0",
     ratingAwarded: 0,
     stdout: null,
     stderr: null,
@@ -757,6 +767,68 @@ async function createContestCodingSubmission(
     judgedAt: null,
     finalizationAppliedAt: null,
   });
+
+  if (isSql) {
+    // SQL grading is a millisecond result-set comparison, so it runs inline instead of going
+    // through the Judge0 queue. A sandbox failure must still land as a finalized submission: this
+    // also runs from the contest-end auto-submit loop, where a throw would abandon every remaining
+    // student's drafts.
+    let graded: Awaited<ReturnType<SqlExecutor["grade"]>>;
+    try {
+      graded = await dependencies.sqlExecutor.grade({ studentSql: code, context: question.sql! });
+    } catch (error) {
+      logServerError("Contest SQL grading failed", error, { submissionId, questionId: question.id });
+      graded = {
+        status: "INTERNAL_ERROR",
+        passed: false,
+        runtimeMs: 0,
+        provider: dependencies.sqlExecutor.provider,
+        message: EXECUTION_SERVICE_UNAVAILABLE_MESSAGE,
+      };
+    }
+
+    const persisted = await dependencies.submissionRepository.getById(submissionId);
+    if (persisted) await dependencies.submissionRepository.save({
+      ...persisted,
+      status: graded.status,
+      runtimeMs: graded.runtimeMs,
+      passedCount: graded.passed ? 1 : 0,
+      totalCount: 1,
+      executionProvider: graded.provider,
+      stderr: graded.message ?? null,
+      sqlResult: graded.studentResult ?? null,
+      sqlExpected: graded.expectedResult ?? null,
+      judgedAt: dependencies.now(),
+      finalizationAppliedAt: dependencies.now(),
+      updatedAt: dependencies.now(),
+    });
+    return {
+      submissionId,
+      attempt: withDerivedAttemptFields({
+        ...attempt,
+        // Record the verdict, but do NOT score it. `finalizeAttemptScoring` is the only place
+        // answers are graded — during a live contest nothing is scored, so a student never learns
+        // whether an answer was right. Scoring here would hand SQL questions an instant
+        // SOLVED + points that coding questions deliberately withhold until the attempt ends.
+        questionStates: updateQuestionState(attempt, question.id, (current) => ({
+          ...current,
+          status: "ATTEMPTED",
+          attemptsCount: current.attemptsCount + 1,
+          lastSubmissionId: submissionId,
+          passedCount: graded.passed ? 1 : 0,
+          totalCount: 1,
+          hasFinalCodingSubmission: true,
+          finalSubmissionLanguage: "sql",
+          finalSubmissionStatus: graded.status,
+          finalRuntimeMs: graded.runtimeMs,
+          finalMemoryKb: 0,
+          awardedPoints: 0,
+          solvedAt: null,
+        })),
+        updatedAt: dependencies.now(),
+      }),
+    };
+  }
 
   try {
     const queueJobId = await dependencies.submissionQueue.enqueue(submissionId);
@@ -846,7 +918,7 @@ async function autoSubmitPendingCodingDrafts(
       workingAttempt,
       state.draftCode,
       // Contests carry coding questions only, so a SQL submission can never be the last one here.
-      state.draftLanguage ?? (lastSubmission?.language === "sql" ? undefined : lastSubmission?.language) ?? "cpp",
+      question.kind === "sql" ? "sql" : state.draftLanguage ?? (lastSubmission?.language === "sql" ? undefined : lastSubmission?.language) ?? "cpp",
       attempt.userEmail,
       now,
       dependencies,
@@ -1452,6 +1524,20 @@ export function createContestService(dependencies: ContestServiceDependencies): 
       if (question.type !== "Coding") {
         throw new AppError(400, "Question does not accept code execution");
       }
+
+      if (question.kind === "sql") {
+        if (input.language !== "sql") throw new AppError(400, "Database questions require SQL");
+        const result = await dependencies.sqlExecutor.run({ studentSql: input.code, context: question.sql! });
+        return {
+          problemId: question.id, language: "sql" as const,
+          status: result.ok ? "ACCEPTED" : result.timedOut ? "TIME_LIMIT_EXCEEDED" : result.internalError ? "INTERNAL_ERROR" : "RUNTIME_ERROR",
+          runtimeMs: result.runtimeMs, memoryKb: 0, passedCount: result.ok ? 1 : 0, totalCount: 1,
+          executionProvider: dependencies.sqlExecutor.provider, stdout: undefined, stderr: result.error,
+          sqlResult: result.result ?? null,
+        };
+      }
+      if (input.language === "sql") throw new AppError(400, "Coding questions require a programming language");
+      if (!question.supportedLanguages.includes(input.language)) throw new AppError(400, "This language is not enabled for the question");
 
       const program = generateSubmissionProgram(input.language, input.code, question.harness);
       const result = await dependencies.executionProvider.executeRun({

@@ -31,7 +31,7 @@ import {
 } from "@/lib/contest-question-import";
 import type { JsonImportFieldError } from "@/lib/problem-import-schema";
 
-type BuilderQuestionType = "MCQ" | "MSQ" | "Coding";
+type BuilderQuestionType = "MCQ" | "MSQ" | "Coding" | "Database";
 type CodingDifficulty = "Easy" | "Medium" | "Hard";
 type TestCaseBuilder = { input: string; output: string };
 
@@ -65,6 +65,17 @@ type CodingQuestion = BaseQuestion & {
   hiddenTestCases: TestCaseBuilder[];
 };
 
+type DatabaseQuestion = BaseQuestion & {
+  type: "Database";
+  problemTitle: string;
+  difficulty: CodingDifficulty;
+  problemStatement: string;
+  constraints: string;
+  schemaSql: string;
+  solutionSql: string;
+  ordered: boolean;
+};
+
 type ChoiceQuestion = BaseQuestion & {
   type: "MCQ" | "MSQ";
   statement: string;
@@ -73,7 +84,7 @@ type ChoiceQuestion = BaseQuestion & {
   correctAnswers: string[];
 };
 
-type BuilderQuestion = CodingQuestion | ChoiceQuestion;
+type BuilderQuestion = CodingQuestion | DatabaseQuestion | ChoiceQuestion;
 
 const OPTION_KEYS = ["A", "B", "C", "D"] as const;
 function emptyTestCase(): TestCaseBuilder {
@@ -99,6 +110,11 @@ function createQuestion(type: BuilderQuestionType): BuilderQuestion {
     };
   }
 
+  if (type === "Database") {
+    return { id, type, problemTitle: "", difficulty: "Easy", problemStatement: "", constraints: "",
+      schemaSql: "", solutionSql: "", ordered: false, points: 100 };
+  }
+
   return {
     id,
     type,
@@ -116,6 +132,12 @@ function normalizeTestCases(testCases: ProblemTestCase[]): TestCaseBuilder[] {
 
 function mapContestQuestionToBuilder(question: ContestQuestion): BuilderQuestion {
   if (question.type === "Coding") {
+    if (question.kind === "sql") {
+      return { id: question.id, type: "Database", points: question.points, problemTitle: question.problemTitle,
+        difficulty: question.difficulty, problemStatement: question.problemStatement, constraints: question.constraints,
+        schemaSql: question.sql?.schemaSql ?? "", solutionSql: question.sql?.solutionSql ?? "",
+        ordered: question.sql?.ordered ?? false };
+    }
     return {
       id: question.id,
       type: "Coding",
@@ -263,10 +285,21 @@ export default function CreateContest() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       const normalizedQuestions: ContestQuestion[] = questions.map((question) => {
+        if (question.type === "Database") {
+          return { id: question.id, type: "Coding", kind: "sql", points: question.points,
+            problemTitle: question.problemTitle.trim(), difficulty: question.difficulty,
+            problemStatement: question.problemStatement.trim(), constraints: question.constraints.trim(),
+            inputFormat: "Write one MySQL query.", outputFormat: "Return the requested result table.",
+            sampleTestCases: [], hiddenTestCases: [], timeLimitSeconds: 5, memoryLimitMb: 256,
+            supportedLanguages: [], sql: { schemaSql: question.schemaSql.trim(),
+              solutionSql: question.solutionSql.trim(), ordered: question.ordered } };
+        }
         if (question.type === "Coding") {
+          
           return {
             id: question.id,
             type: "Coding",
+            kind: "coding",
             points: question.points,
             problemTitle: question.problemTitle.trim(),
             difficulty: question.difficulty,
@@ -644,7 +677,20 @@ export default function CreateContest() {
                   </Button>
                 </div>
 
-                {question.type === "Coding" ? (
+                {question.type === "Database" ? (
+                  <div className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2"><label className="text-sm font-medium">Problem Title</label><Input value={question.problemTitle} onChange={(event) => updateQuestion(question.id, current => current.type === "Database" ? { ...current, problemTitle: event.target.value } : current)} placeholder="e.g. Employees Earning More Than Their Managers" /></div>
+                      <div className="space-y-2"><label className="text-sm font-medium">Difficulty</label><ThemedSelect value={question.difficulty} onValueChange={(value) => updateQuestion(question.id, current => current.type === "Database" ? { ...current, difficulty: value as CodingDifficulty } : current)} options={["Easy", "Medium", "Hard"].map(value => ({ value, label: value }))} /></div>
+                    </div>
+                    <div className="space-y-2"><label className="text-sm font-medium">Problem Statement</label><Textarea className="min-h-[100px]" value={question.problemStatement} onChange={(event) => updateQuestion(question.id, current => current.type === "Database" ? { ...current, problemStatement: event.target.value } : current)} placeholder="Describe the data the student must retrieve" /></div>
+                    <div className="space-y-2"><label className="text-sm font-medium">Constraints / Requirements</label><Textarea value={question.constraints} onChange={(event) => updateQuestion(question.id, current => current.type === "Database" ? { ...current, constraints: event.target.value } : current)} placeholder="Use MySQL syntax; return the requested columns" /></div>
+                    <div className="space-y-2"><label className="text-sm font-medium">Database Schema + Seed Data</label><Textarea className="min-h-[180px] font-mono-code" value={question.schemaSql} onChange={(event) => updateQuestion(question.id, current => current.type === "Database" ? { ...current, schemaSql: event.target.value } : current)} placeholder="CREATE TABLE ...; INSERT INTO ...;" /></div>
+                    <div className="space-y-2"><label className="text-sm font-medium">Reference Query</label><Textarea className="min-h-[120px] font-mono-code" value={question.solutionSql} onChange={(event) => updateQuestion(question.id, current => current.type === "Database" ? { ...current, solutionSql: event.target.value } : current)} placeholder="SELECT ..." /><p className="text-xs text-muted-foreground">Used only for judging and never shown during the contest.</p></div>
+                    <label className="flex items-center gap-2 text-sm"><Checkbox checked={question.ordered} onCheckedChange={(checked) => updateQuestion(question.id, current => current.type === "Database" ? { ...current, ordered: Boolean(checked) } : current)} />Row order must match</label>
+                    <div className="space-y-2 md:max-w-xs"><label className="text-sm font-medium">Points</label><Input type="number" min={1} value={question.points} onChange={(event) => updateQuestion(question.id, current => ({ ...current, points: Number(event.target.value) || 0 }))} /></div>
+                  </div>
+                ) : question.type === "Coding" ? (
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Problem Title</label>
@@ -825,6 +871,9 @@ export default function CreateContest() {
                 </Button>
                 <Button variant="outline" onClick={() => addQuestion("Coding")}>
                   <Plus className="mr-1.5 h-4 w-4" /> Add Coding Problem
+                </Button>
+                <Button variant="outline" onClick={() => addQuestion("Database")}>
+                  <Plus className="mr-1.5 h-4 w-4" /> Add Database Problem
                 </Button>
               </div>
             </TabsContent>

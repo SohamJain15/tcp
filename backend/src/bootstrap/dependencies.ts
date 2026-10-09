@@ -265,6 +265,7 @@ export function createApplicationDependencies(overrides: DependencyOverrides = {
     submissionQueue,
     userRepository: repositories.userRepository,
     executionProvider,
+    sqlExecutor,
     now,
   });
 

@@ -9,6 +9,7 @@ import {
 import { normalizeNumber, tryNormalizeSupportedLanguage } from "../../shared/utils/normalize";
 import type { ExecutableLanguage } from "../../shared/types/domain";
 import type { CodingContestQuestion } from "./contest.model";
+import { validateSchemaSql, validateStudentSql } from "../../execution/sql/sql-policy";
 
 const contestTypeSchema = z.enum(["Rated", "Practice"]);
 const contestQuestionTypeSchema = z.enum(["MCQ", "MSQ", "Coding"]);
@@ -75,6 +76,12 @@ export const codingQuestionSchema = questionBaseSchema.extend({
   timeLimitSeconds: numberSchema.optional(),
   memoryLimitMb: numberSchema.optional(),
   supportedLanguages: codingLanguagesSchema,
+  kind: z.enum(["coding", "sql"]).default("coding"),
+  sql: z.object({
+    schemaSql: z.string().trim().min(1).max(100_000),
+    solutionSql: z.string().trim().min(1).max(20_000),
+    ordered: z.boolean().default(false),
+  }).strict().optional(),
 });
 
 /**
@@ -86,6 +93,18 @@ export const contestQuestionSchema = z
   .discriminatedUnion("type", [mcqQuestionSchema, msqQuestionSchema, codingQuestionSchema])
   .superRefine((value, ctx) => {
     if (value.type !== "Coding") {
+      return;
+    }
+
+    if (value.kind === "sql") {
+      if (!value.sql) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Database questions require schema and reference SQL", path: ["sql"] });
+        return;
+      }
+      const schema = validateSchemaSql(value.sql.schemaSql, 100_000);
+      const solution = validateStudentSql(value.sql.solutionSql, 20_000);
+      if (!schema.ok) ctx.addIssue({ code: z.ZodIssueCode.custom, message: schema.error ?? "Invalid schema SQL", path: ["sql", "schemaSql"] });
+      if (!solution.ok) ctx.addIssue({ code: z.ZodIssueCode.custom, message: solution.error ?? "Invalid reference SQL", path: ["sql", "solutionSql"] });
       return;
     }
 
@@ -230,7 +249,7 @@ export const contestAnswerSchema = z.object({
 export const contestCodingSubmissionSchema = z.object({
   questionId: z.string().min(1),
   code: z.string().trim().min(1),
-  language: z
+  language: z.union([z.literal("sql"), z
     .string()
     .min(1)
     .transform((value, ctx) => {
@@ -244,7 +263,7 @@ export const contestCodingSubmissionSchema = z.object({
       }
 
       return normalized;
-    }),
+    })]),
 });
 
 export const contestCodingRunSchema = contestCodingSubmissionSchema;
@@ -284,6 +303,8 @@ export function normalizeCodingQuestion(raw: z.infer<typeof codingQuestionSchema
     memoryLimitMb: raw.memoryLimitMb ?? DEFAULT_PROBLEM_MEMORY_LIMIT_MB,
     sampleTestCases,
     hiddenTestCases,
-    supportedLanguages: raw.supportedLanguages.length > 0 ? raw.supportedLanguages : [...EXECUTABLE_LANGUAGES],
+    kind: raw.kind,
+    ...(raw.kind === "sql" ? { sql: raw.sql, sampleTestCases: [], hiddenTestCases: [], supportedLanguages: [] } : {}),
+    supportedLanguages: raw.kind === "sql" ? [] : raw.supportedLanguages.length > 0 ? raw.supportedLanguages : [...EXECUTABLE_LANGUAGES],
   };
 }

@@ -176,7 +176,13 @@ function reindentBraceLanguage(source: string): string {
  * Single source of truth for formatting, shared by the Format button and Monaco's own
  * `formatDocument` (Shift+Alt+F).
  */
-export async function formatSourceCode(language: ExecutableLanguage, source: string): Promise<string> {
+export async function formatSourceCode(language: ExecutableLanguage | "sql", source: string): Promise<string> {
+  // No SQL formatter is wired up, so whitespace cleanup is the honest maximum. Narrowing here also
+  // keeps the language sets below typed to the Judge0 languages they actually describe.
+  if (language === "sql") {
+    return trimTrailingWhitespace(source);
+  }
+
   if (DEFAULT_FORMATTED_LANGUAGES.has(language)) {
     const formatted = await formatWithPrettier(language, source);
     if (formatted !== null) {
@@ -435,7 +441,7 @@ export function lockDownContestEditor(
  */
 export async function formatCodeInEditor(
   editor: StandaloneCodeEditor,
-  language: ExecutableLanguage,
+  language: ExecutableLanguage | "sql",
 ): Promise<void> {
   const model = editor.getModel();
   if (!model) {

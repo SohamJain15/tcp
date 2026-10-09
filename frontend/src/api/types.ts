@@ -762,6 +762,7 @@ export interface ContestMsqQuestion extends ContestQuestionBase {
 
 export interface ContestCodingQuestion extends ContestQuestionBase {
   type: "Coding";
+  kind?: "coding" | "sql";
   problemTitle: string;
   difficulty: Difficulty;
   problemStatement: string;
@@ -773,6 +774,7 @@ export interface ContestCodingQuestion extends ContestQuestionBase {
   sampleTestCases: ProblemTestCase[];
   hiddenTestCases: ProblemTestCase[];
   supportedLanguages: ExecutableLanguage[];
+  sql?: ProblemSqlSpec;
 }
 
 export type ContestQuestion = ContestMcqQuestion | ContestMsqQuestion | ContestCodingQuestion;
@@ -790,8 +792,8 @@ export interface ContestQuestionAttemptState {
   totalCount: number;
   hasFinalCodingSubmission: boolean;
   draftCode: string | null;
-  draftLanguage: ExecutableLanguage | null;
-  finalSubmissionLanguage: ExecutableLanguage | null;
+  draftLanguage: SubmissionLanguage | null;
+  finalSubmissionLanguage: SubmissionLanguage | null;
   finalSubmissionStatus: string | null;
   finalRuntimeMs: number;
   finalMemoryKb: number;
@@ -836,6 +838,8 @@ export interface StudentContestQuestionSummary {
   outputFormat?: string;
   sampleTestCases?: ProblemTestCase[];
   supportedLanguages?: ExecutableLanguage[];
+  kind?: "coding" | "sql";
+  sqlSchema?: string;
 }
 
 export interface ContestQuestionReportItemBase {
@@ -869,7 +873,7 @@ export interface CodingContestQuestionReportItem extends ContestQuestionReportIt
   passedCount: number;
   totalCount: number;
   finalSubmissionId: string | null;
-  finalSubmissionLanguage: ExecutableLanguage | null;
+  finalSubmissionLanguage: SubmissionLanguage | null;
   finalSubmissionStatus: string | null;
   finalRuntimeMs: number;
   finalMemoryKb: number;
@@ -1173,7 +1177,7 @@ export interface ContestAnswerPayload {
 export interface ContestCodingSubmissionPayload {
   questionId: string;
   code: string;
-  language: ExecutableLanguage;
+  language: SubmissionLanguage;
 }
 
 export interface ContestCodingSubmissionReceipt {

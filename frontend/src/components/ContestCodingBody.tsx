@@ -8,7 +8,8 @@ import { toast } from "sonner";
 import { submissionsApi } from "@/api/services";
 import { FailedTestCasePanel, shouldShowFailedTest } from "@/components/FailedTestCasePanel";
 import { EXECUTABLE_LANGUAGES, toLanguageLabel, toStatusLabel } from "@/api/mappers";
-import type { ExecutableLanguage, Submission, SubmissionResult } from "@/api/types";
+import type { ExecutableLanguage, Submission, SubmissionLanguage, SubmissionResult } from "@/api/types";
+import { SqlResultTable } from "@/components/SqlWorkspace";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ThemedSelect } from "@/components/ThemedSelect";
@@ -47,11 +48,13 @@ const STARTER_TEMPLATES: Partial<Record<ExecutableLanguage, string>> = {
   typescript: `// solution.ts\nfunction solve(): void {\n}\n\nsolve();\n`,
 };
 
-function getStarterCode(language: ExecutableLanguage): string {
+function getStarterCode(language: SubmissionLanguage): string {
+  if (language === "sql") return "-- Write your SQL query here\n";
   return STARTER_TEMPLATES[language] ?? `// Start coding in ${language}\n`;
 }
 
-function getFileExtension(language: ExecutableLanguage): string {
+function getFileExtension(language: SubmissionLanguage): string {
+  if (language === "sql") return "sql";
   const map: Partial<Record<ExecutableLanguage, string>> = {
     c: "c", cpp: "cpp", csharp: "cs", dart: "dart", php: "php", java: "java", python: "py",
     javascript: "js", ruby: "rb", scala: "scala", swift: "swift", typescript: "ts", go: "go",
@@ -121,29 +124,30 @@ export function ContestCodingBody({
   const shouldLockClipboard = lockClipboard ?? attemptIsActive;
 
   // A question may restrict which languages it accepts (class tests do; contests offer all).
-  const availableLanguages: ExecutableLanguage[] =
-    question.supportedLanguages && question.supportedLanguages.length > 0
+  const availableLanguages: SubmissionLanguage[] = question.kind === "sql"
+    ? ["sql"]
+    : question.supportedLanguages && question.supportedLanguages.length > 0
       ? question.supportedLanguages
       : (EXECUTABLE_LANGUAGES as ExecutableLanguage[]);
 
   // Reopen the question in whatever language it was last written in, otherwise a student who wrote
   // Python and navigated away would come back to an empty default-language editor. A remembered
   // language the question no longer allows is ignored.
-  const [language, setLanguage] = useState<ExecutableLanguage>(() => {
-    const remembered = getLanguage(questionId) as ExecutableLanguage | null;
+  const [language, setLanguage] = useState<SubmissionLanguage>(() => {
+    const remembered = getLanguage(questionId) as SubmissionLanguage | null;
     if (remembered && availableLanguages.includes(remembered)) {
       return remembered;
     }
     return availableLanguages[0] ?? ("cpp" as ExecutableLanguage);
   });
   // Per-language edits for this question, seeded from the persisted draft.
-  const [drafts, setDrafts] = useState<Partial<Record<ExecutableLanguage, string>>>({});
+  const [drafts, setDrafts] = useState<Partial<Record<SubmissionLanguage, string>>>({});
   const [runResult, setRunResult] = useState<SubmissionResult | null>(null);
   const [verdict, setVerdict] = useState<Submission | null>(null);
 
   const code = drafts[language] ?? getDraft(questionId, language) ?? getStarterCode(language);
 
-  const changeLanguage = (next: ExecutableLanguage) => {
+  const changeLanguage = (next: SubmissionLanguage) => {
     setLanguage(next);
     persistLanguage(questionId, next);
   };
@@ -214,7 +218,9 @@ export function ContestCodingBody({
 
   const statusLine = useMemo(() => {
     if (runResult) {
-      return `${runResult.status === "ACCEPTED" ? "Ran Successfully" : toStatusLabel(runResult.status)} · Runtime ${runResult.runtimeMs} ms · Memory ${Math.max(runResult.memoryKb / 1024, 0).toFixed(1)} MB`;
+      return question.kind === "sql"
+        ? `${runResult.status === "ACCEPTED" ? "Query ran successfully" : toStatusLabel(runResult.status)} · Runtime ${runResult.runtimeMs} ms`
+        : `${runResult.status === "ACCEPTED" ? "Ran Successfully" : toStatusLabel(runResult.status)} · Runtime ${runResult.runtimeMs} ms · Memory ${Math.max(runResult.memoryKb / 1024, 0).toFixed(1)} MB`;
     }
     if (submitMutation.isPending) {
       return "Judging against all test cases…";
@@ -222,8 +228,8 @@ export function ContestCodingBody({
     if (verdict) {
       return `${toStatusLabel(verdict.status)} · ${verdict.passedCount}/${verdict.totalCount} test cases passed`;
     }
-    return "Run against sample cases, or Submit to judge against all test cases.";
-  }, [runResult, submitMutation.isPending, verdict]);
+    return question.kind === "sql" ? "Run your query, or Submit to compare its result with the expected result." : "Run against sample cases, or Submit to judge against all test cases.";
+  }, [question.kind, runResult, submitMutation.isPending, verdict]);
 
   const output = runResult ?? verdict;
 
@@ -232,7 +238,7 @@ export function ContestCodingBody({
       autoSaveId={autoSaveId}
       stackedWorkHeight={stackedWorkHeight}
       statusLine={statusLine}
-      description={<CodingDescription question={question} />}
+      description={<><CodingDescription question={question} />{question.kind === "sql" && question.sqlSchema && <Card className="m-4 p-4"><h3 className="mb-2 font-semibold">Database schema and seed data</h3><pre className="whitespace-pre-wrap font-mono-code text-xs">{question.sqlSchema}</pre></Card>}</>}
       editor={
         <Card className="flex h-full flex-col overflow-hidden shadow-card">
           <div className="flex items-center justify-between border-b border-border px-3 py-2">
@@ -240,7 +246,7 @@ export function ContestCodingBody({
               {availableLanguages.length > 1 ? (
                 <ThemedSelect
                   value={language}
-                  onValueChange={(value) => changeLanguage(value as ExecutableLanguage)}
+                  onValueChange={(value) => changeLanguage(value as SubmissionLanguage)}
                   disabled={!attemptIsActive}
                   triggerClassName="h-9 w-auto min-w-[130px] text-sm"
                   options={availableLanguages.map((supportedLanguage) => ({
@@ -266,9 +272,11 @@ export function ContestCodingBody({
                 try {
                   await formatCodeInEditor(editorRef.current, language);
                   toast.success(
-                    supportsFullFormatting(language)
-                      ? "Code formatted"
-                      : `${toLanguageLabel(language)} is indentation-sensitive — cleaned up spacing only`,
+                    language === "sql"
+                      ? "Cleaned up spacing — SQL is not reformatted"
+                      : supportsFullFormatting(language)
+                        ? "Code formatted"
+                        : `${toLanguageLabel(language)} is indentation-sensitive — cleaned up spacing only`,
                   );
                 } catch (error) {
                   toast.error((error as Error).message || "Format failed");
@@ -331,6 +339,7 @@ export function ContestCodingBody({
       }
       console={
         <>
+          {output?.sqlResult && <SqlResultTable result={output.sqlResult} />}
           {shouldShowFailedTest(output?.failedTest) && <FailedTestCasePanel failedTest={output!.failedTest!} />}
           {output && (output.stdout || output.stderr) ? (
             <>
