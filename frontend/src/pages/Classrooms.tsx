@@ -22,6 +22,17 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const date = (iso: string) =>
   `${new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })} IST`;
@@ -136,6 +147,7 @@ export function ClassroomPage({ faculty = false }: { faculty?: boolean }) {
     void client.invalidateQueries({ queryKey: ["classroom", id] });
   };
   const [tab, setTab] = useState("sessions");
+  const [studentToRemove, setStudentToRemove] = useState<string | null>(null);
   const [schedule, setSchedule] = useState<ScheduleDraft | null>(null);
   const [editing, setEditing] = useState(false);
   const [workspace, setWorkspace] = useState<{
@@ -169,7 +181,11 @@ export function ClassroomPage({ faculty = false }: { faculty?: boolean }) {
   });
   const remove = useMutation({
     mutationFn: (email: string) => classroomApi.remove(id, email),
-    onSuccess: refresh,
+    onSuccess: () => {
+      setStudentToRemove(null);
+      refresh();
+      toast.success("Student removed from lab workspace");
+    },
     onError: errorToast,
   });
   const detail = query.data;
@@ -471,20 +487,45 @@ export function ClassroomPage({ faculty = false }: { faculty?: boolean }) {
                     <td>{student.rollNumber}</td>
                     <td>{student.batch}</td>
                     <td>
-                      <Button
-                        variant="ghost"
-                        disabled={remove.isPending}
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              `Remove ${student.name} from this lab workspace? Their session records will be retained.`,
-                            )
-                          )
-                            remove.mutate(student.email);
+                      <AlertDialog
+                        open={studentToRemove === student.email}
+                        onOpenChange={(open) => {
+                          if (!remove.isPending)
+                            setStudentToRemove(open ? student.email : null);
                         }}
                       >
-                        Remove
-                      </Button>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" disabled={remove.isPending}>
+                            Remove
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent className="w-[calc(100%-2rem)]">
+                          <AlertDialogHeader>
+                            <AlertDialogTitle className="font-display">
+                              Remove student?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Remove {student.name} from this lab workspace?
+                              Their session records will be retained.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel disabled={remove.isPending}>
+                              Cancel
+                            </AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              disabled={remove.isPending}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                if (!remove.isPending) remove.mutate(student.email);
+                              }}
+                            >
+                              {remove.isPending ? "Removing..." : "Remove student"}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </td>
                   </tr>
                 ))}
